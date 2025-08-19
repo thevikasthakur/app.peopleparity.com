@@ -475,7 +475,7 @@ export class ApiSyncService {
             contentType: 'image/jpeg'
           });
           formData.append('capturedAt', new Date(data.capturedAt).toISOString());
-          formData.append('activityPeriodId', data.activityPeriodId);
+          formData.append('sessionId', data.sessionId); // Direct session relationship
           formData.append('mode', data.mode || 'command_hours');
           formData.append('userId', data.userId);
           
@@ -484,14 +484,14 @@ export class ApiSyncService {
             formData.append('aggregatedScore', data.aggregatedScore.toString());
           }
           
-          // Add related period IDs if available (for 1-minute period aggregation)
-          if (data.relatedPeriodIds && data.relatedPeriodIds.length > 0) {
-            formData.append('relatedPeriodIds', JSON.stringify(data.relatedPeriodIds));
+          // Add activity period IDs if available (for 1-minute period aggregation)
+          if (data.activityPeriodIds && data.activityPeriodIds.length > 0) {
+            formData.append('activityPeriodIds', JSON.stringify(data.activityPeriodIds));
           }
           
-          // Add local capture time for proper ordering
-          if (data.localCaptureTime) {
-            formData.append('localCaptureTime', new Date(data.localCaptureTime).toISOString());
+          // Add notes (copied from session task)
+          if (data.notes) {
+            formData.append('notes', data.notes);
           }
           
           const screenshotResponse = await this.api.post('/screenshots/upload', formData, {

@@ -1,7 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from './user.entity';
 import { Session } from './session.entity';
-import { Screenshot } from './screenshot.entity';
 
 @Entity('activity_periods')
 export class ActivityPeriod {
@@ -51,7 +50,4 @@ export class ActivityPeriod {
 
   @CreateDateColumn()
   createdAt: Date;
-
-  @OneToMany(() => Screenshot, screenshot => screenshot.activityPeriod)
-  screenshots: Screenshot[];
 }

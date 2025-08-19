@@ -139,16 +139,20 @@ export class DatabaseService {
 
   // Activity period management
   async createActivityPeriod(data: any) {
-    const period = this.localDb.createActivityPeriod({
-      ...data,
-      userId: this.getCurrentUserId()
-    });
-    
-    return {
-      id: period.id,
-      ...data,
-      createdAt: new Date(period.createdAt)
+    const periodData = {
+      sessionId: data.sessionId,
+      userId: this.getCurrentUserId(),
+      periodStart: data.startTime || data.periodStart,
+      periodEnd: data.endTime || data.periodEnd,
+      mode: data.mode,
+      activityScore: data.activityScore || 0,
+      isValid: data.isValid !== undefined ? data.isValid : true,
+      classification: data.classification
     };
+    
+    const period = this.localDb.createActivityPeriod(periodData);
+    
+    return period;
   }
 
   async saveCommandHourActivity(periodId: string, data: any) {
@@ -258,9 +262,12 @@ export class DatabaseService {
     return this.localDb.getRecentActivityPeriods(session.id, periodCount);
   }
 
+  async getActivityPeriodsForTimeRange(sessionId: string, windowStart: Date, windowEnd: Date): Promise<any[]> {
+    return this.localDb.getActivityPeriodsForTimeRange(sessionId, windowStart, windowEnd);
+  }
+
   // Screenshot management
   async saveScreenshot(data: {
-    activityPeriodId: string;
     localPath: string;
     thumbnailPath: string;
     capturedAt: Date;
@@ -273,12 +280,11 @@ export class DatabaseService {
     
     this.localDb.saveScreenshot({
       userId: this.getCurrentUserId(),
-      activityPeriodId: data.activityPeriodId,
+      sessionId: data.sessionId || session.id,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
       mode: session.mode,
-      sessionId: data.sessionId || session.id,
       aggregatedScore: data.activityScore,
       relatedPeriodIds: data.relatedPeriodIds
     });
@@ -425,17 +431,21 @@ export class DatabaseService {
         console.log('Warning: Screenshot', s.id, 'has no S3 URL, only local path:', s.thumbnailPath);
       }
       
-      // Get real activity score from the activity period
-      let activityScore = 0;
-      if (s.activityPeriodId) {
-        const period = this.localDb.getActivityPeriod(s.activityPeriodId);
-        if (period) {
-          activityScore = period.activityScore || 0;
-          console.log(`Screenshot ${s.id} has activity score: ${activityScore} from period ${s.activityPeriodId}`);
-        } else {
-          console.log(`Warning: Activity period ${s.activityPeriodId} not found for screenshot ${s.id}`);
+      // Get activity score from the aggregated score
+      let activityScore = s.aggregatedScore || 0;
+      
+      // Parse activity period IDs if stored as JSON string
+      let activityPeriodIds = [];
+      if (s.activityPeriodIds) {
+        try {
+          activityPeriodIds = JSON.parse(s.activityPeriodIds);
+        } catch (e) {
+          // If not JSON, might be a single ID for backward compatibility
+          activityPeriodIds = [s.activityPeriodIds];
         }
       }
+      
+      console.log(`Screenshot ${s.id} has aggregated score: ${activityScore}`);
       
       const result = {
         id: s.id,
@@ -444,8 +454,8 @@ export class DatabaseService {
         timestamp: new Date(s.capturedAt),
         notes: s.notes || '',
         mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
-        activityScore: activityScore,  // Real activity score from activity period
-        activityPeriodId: s.activityPeriodId
+        activityScore: activityScore,  // Aggregated score from multiple periods
+        activityPeriodIds: activityPeriodIds  // Array of period IDs
       };
       
       console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');

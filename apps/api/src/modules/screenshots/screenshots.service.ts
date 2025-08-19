@@ -68,36 +68,29 @@ export class ScreenshotsService {
 
   async create(createScreenshotDto: {
     userId: string;
-    activityPeriodId: string;
-    s3Url: string;
+    sessionId: string; // Required - direct relationship to session
+    url: string;
     thumbnailUrl?: string;
     capturedAt: Date;
-    localCaptureTime?: Date;
     mode: 'client_hours' | 'command_hours';
     aggregatedScore?: number;
-    relatedPeriodIds?: string[];
+    activityPeriodIds?: string[]; // Receive as array
+    notes?: string;
   }) {
-    // Create the main screenshot record
+    // Create the main screenshot record with properly populated columns
     const screenshot = this.screenshotsRepository.create({
       userId: createScreenshotDto.userId,
-      activityPeriodId: createScreenshotDto.activityPeriodId,
-      s3Url: createScreenshotDto.s3Url,
+      sessionId: createScreenshotDto.sessionId, // Direct relationship to session
+      url: createScreenshotDto.url,
       thumbnailUrl: createScreenshotDto.thumbnailUrl,
       capturedAt: createScreenshotDto.capturedAt,
       mode: createScreenshotDto.mode,
-      // Store aggregated score and local capture time if provided
-      metadata: {
-        aggregatedScore: createScreenshotDto.aggregatedScore,
-        localCaptureTime: createScreenshotDto.localCaptureTime,
-        relatedPeriodIds: createScreenshotDto.relatedPeriodIds,
-      }
+      aggregatedScore: createScreenshotDto.aggregatedScore || 0, // Average score from 10 periods
+      activityPeriodIds: createScreenshotDto.activityPeriodIds ? JSON.stringify(createScreenshotDto.activityPeriodIds) : null, // Convert array to JSON string
+      notes: createScreenshotDto.notes || '' // Copy of session task
     });
     
     const savedScreenshot = await this.screenshotsRepository.save(screenshot);
-    
-    // If we have related period IDs, we might want to store them in a junction table
-    // This would require adding a screenshot_periods table to the cloud database
-    // For now, we're storing them in the metadata JSON field
     
     return savedScreenshot;
   }

@@ -2,6 +2,7 @@ import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Many
 import { User } from './user.entity';
 import { Project } from './project.entity';
 import { ActivityPeriod } from './activity-period.entity';
+import { Screenshot } from './screenshot.entity';
 
 export type SessionMode = 'client_hours' | 'command_hours';
 
@@ -50,4 +51,7 @@ export class Session {
 
   @OneToMany(() => ActivityPeriod, period => period.session)
   activityPeriods: ActivityPeriod[];
+
+  @OneToMany(() => Screenshot, screenshot => screenshot.session)
+  screenshots: Screenshot[];
 }

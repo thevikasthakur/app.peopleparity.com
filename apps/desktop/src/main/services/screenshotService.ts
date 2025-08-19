@@ -105,12 +105,97 @@ export class ScreenshotService {
       return;
     }
     
-    // Get the last 10 activity periods (10 minutes worth of 1-minute periods)
-    // This will aggregate the activity scores for this screenshot
-    const aggregatedScore = await this.db.getAggregatedActivityScore(10);
-    const relatedPeriods = await this.db.getRecentActivityPeriods(10);
-    const relatedPeriodIds = relatedPeriods.map(p => p.id);
-    console.log(`Aggregated activity score from last 10 periods: ${aggregatedScore}`);
+    // Get the full session data
+    const session = await this.db.getActiveSession();
+    
+    // Calculate the 10-minute window this screenshot belongs to
+    const now = new Date();
+    const currentMinute = now.getMinutes();
+    const windowStartMinute = Math.floor(currentMinute / 10) * 10;
+    const windowEndMinute = windowStartMinute + 10;
+    
+    // Calculate the time range for the 10-minute window
+    const windowStart = new Date(now);
+    windowStart.setMinutes(windowStartMinute);
+    windowStart.setSeconds(0);
+    windowStart.setMilliseconds(0);
+    
+    const windowEnd = new Date(windowStart);
+    windowEnd.setMinutes(windowEndMinute);
+    windowEnd.setSeconds(0);
+    windowEnd.setMilliseconds(0);
+    
+    console.log(`Screenshot window: ${windowStart.toLocaleTimeString()} - ${windowEnd.toLocaleTimeString()}`);
+    
+    // Get activity periods for this 10-minute window
+    // This includes periods that may not have completed yet
+    let relatedPeriods = await this.db.getActivityPeriodsForTimeRange(
+      currentActivity.sessionId, 
+      windowStart, 
+      windowEnd
+    );
+    
+    // Create placeholder periods for future minutes in the window if they don't exist yet
+    // For example, if screenshot is at 17:28:06, we need periods for 17:28-17:29 and 17:29-17:30
+    const expectedPeriods = [];
+    for (let minute = windowStartMinute; minute < windowEndMinute; minute++) {
+      const periodStart = new Date(windowStart);
+      periodStart.setMinutes(minute);
+      periodStart.setSeconds(0);
+      periodStart.setMilliseconds(0);
+      const periodEnd = new Date(periodStart);
+      periodEnd.setMinutes(minute + 1);
+      periodEnd.setSeconds(0);
+      periodEnd.setMilliseconds(0);
+      expectedPeriods.push({ start: periodStart, end: periodEnd });
+    }
+    
+    // Check which periods are missing and create placeholders for ALL future periods in the window
+    for (const expected of expectedPeriods) {
+      const exists = relatedPeriods.some(p => {
+        // Check if periods match within 1 second tolerance
+        const startDiff = Math.abs(p.periodStart - expected.start.getTime());
+        const endDiff = Math.abs(p.periodEnd - expected.end.getTime());
+        return startDiff < 1000 && endDiff < 1000;
+      });
+      
+      if (!exists) {
+        // Create placeholder period for ALL periods in the window, not just past ones
+        // This ensures future periods are associated with the correct screenshot
+        console.log(`Creating placeholder period for ${expected.start.toLocaleTimeString()}-${expected.end.toLocaleTimeString()}`);
+        const placeholderPeriod = await this.db.createActivityPeriod({
+          mode: session?.mode || 'command_hours',
+          projectId: session?.projectId,
+          task: session?.task,
+          sessionId: currentActivity.sessionId,
+          startTime: expected.start,
+          endTime: expected.end,
+          activityScore: 0,
+          isValid: true
+        });
+        if (placeholderPeriod) {
+          relatedPeriods.push(placeholderPeriod);
+        }
+      }
+    }
+    
+    // Ensure we have unique periods based on normalized timestamps
+    const uniquePeriods = Array.from(new Map(relatedPeriods.map(p => {
+      // Normalize to seconds to group periods with slight millisecond differences
+      const key = `${Math.floor(p.periodStart/1000)}-${Math.floor(p.periodEnd/1000)}`;
+      return [key, p];
+    })).values());
+    
+    // Calculate aggregated score from these periods
+    const totalScore = uniquePeriods.reduce((sum, period) => sum + (period.activityScore || 0), 0);
+    const aggregatedScore = uniquePeriods.length > 0 ? Math.round(totalScore / uniquePeriods.length) : 0;
+    
+    const relatedPeriodIds = uniquePeriods.map(p => p.id);
+    console.log(`Screenshot capturing ${uniquePeriods.length} unique activity periods for window`);
+    console.log(`Period time ranges: ${uniquePeriods.map(p => 
+      `${new Date(p.periodStart).toLocaleTimeString()}-${new Date(p.periodEnd).toLocaleTimeString()}`
+    ).join(', ')}`);
+    console.log(`Aggregated activity score from ${uniquePeriods.length} periods: ${aggregatedScore}`);
     
     // Always take screenshots when there's an active session
     // This allows users to see their actual activity levels, even if 0%
@@ -137,13 +222,13 @@ export class ScreenshotService {
         .toFile(thumbnailPath);
       
       // Save screenshot with the aggregated activity score and capture timestamp
+      // Note: We pass relatedPeriodIds which are the 10 activity periods this screenshot covers
       const screenshotData = {
-        activityPeriodId: currentActivity.periodId,
         localPath,
         thumbnailPath,
         capturedAt: captureTimestamp,  // Use local capture time
         activityScore: aggregatedScore,  // Use aggregated score from 10 periods
-        relatedPeriodIds: relatedPeriodIds,  // Store the 10 related period IDs
+        relatedPeriodIds: relatedPeriodIds,  // Store the 10 related period IDs that belong to this screenshot
         sessionId: currentActivity.sessionId
       };
       

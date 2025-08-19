@@ -37,12 +37,12 @@ export class ScreenshotsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { 
       capturedAt: string; 
-      activityPeriodId?: string; 
+      sessionId: string; // Required
       mode?: 'client_hours' | 'command_hours'; 
       userId?: string;
       aggregatedScore?: string;
-      relatedPeriodIds?: string;
-      localCaptureTime?: string;
+      activityPeriodIds?: string;
+      notes?: string;
     },
     @Request() req,
   ) {
@@ -51,19 +51,19 @@ export class ScreenshotsController {
     
     const { fullUrl, thumbnailUrl } = await this.screenshotsService.uploadToS3(file, userId);
     
-    // Parse related period IDs if provided
-    const relatedPeriodIds = body.relatedPeriodIds ? JSON.parse(body.relatedPeriodIds) : null;
+    // Parse activity period IDs if provided
+    const activityPeriodIds = body.activityPeriodIds ? JSON.parse(body.activityPeriodIds) : null;
     
     const screenshot = await this.screenshotsService.create({
       userId,
-      activityPeriodId: body.activityPeriodId || null,
-      s3Url: fullUrl,
+      sessionId: body.sessionId,
+      url: fullUrl,
       thumbnailUrl,
       capturedAt: new Date(body.capturedAt),
-      localCaptureTime: body.localCaptureTime ? new Date(body.localCaptureTime) : null,
       mode: body.mode || 'client_hours',
-      aggregatedScore: body.aggregatedScore ? parseFloat(body.aggregatedScore) : null,
-      relatedPeriodIds,
+      aggregatedScore: body.aggregatedScore ? parseFloat(body.aggregatedScore) : 0,
+      activityPeriodIds,
+      notes: body.notes || '',
     });
 
     return { success: true, url: fullUrl, thumbnailUrl, screenshot };

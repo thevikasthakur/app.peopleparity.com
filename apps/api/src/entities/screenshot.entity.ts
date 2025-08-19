@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from './user.entity';
-import { ActivityPeriod } from './activity-period.entity';
+import { Session } from './session.entity';
 
 @Entity('screenshots')
 export class Screenshot {
@@ -14,21 +14,21 @@ export class Screenshot {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column()
-  activityPeriodId: string;
+  @Column({ nullable: true }) // Temporarily nullable for migration
+  sessionId: string;
 
-  @ManyToOne(() => ActivityPeriod, period => period.screenshots)
-  @JoinColumn({ name: 'activityPeriodId' })
-  activityPeriod: ActivityPeriod;
+  @ManyToOne(() => Session, session => session.screenshots, { nullable: true })
+  @JoinColumn({ name: 'sessionId' })
+  session: Session;
 
   @Column()
-  s3Url: string;
+  url: string; // Full-size screenshot URL in S3
 
   @Column({ nullable: true })
   thumbnailUrl: string;
 
   @Column({ type: 'timestamp' })
-  capturedAt: Date;
+  capturedAt: Date; // When the screenshot was captured
 
   @Column({
     type: 'enum',
@@ -36,18 +36,17 @@ export class Screenshot {
   })
   mode: string;
 
+  @Column({ type: 'int', default: 0 })
+  aggregatedScore: number; // Average score from 10 periods (0-100)
+
+  @Column({ type: 'text', nullable: true })
+  activityPeriodIds: string; // JSON string array of the 10 activity period IDs
+
   @Column({ nullable: true })
-  notes: string;
+  notes: string; // Copy of session task
 
   @Column({ default: false })
   isDeleted: boolean;
-
-  @Column({ type: 'jsonb', nullable: true })
-  metadata: {
-    aggregatedScore?: number;
-    localCaptureTime?: Date;
-    relatedPeriodIds?: string[];
-  };
 
   @CreateDateColumn()
   createdAt: Date;
