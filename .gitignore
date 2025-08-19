@@ -1,0 +1,114 @@
+# ---- OS & Editor ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.log
+*.bak
+*.idea/
+.vscode/
+*.code-workspace
+
+# ---- Node.js / Frontend ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.pnp.*
+.pnpm-store/
+dist/
+build/
+.cache/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+.eggs/
+.Python
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# ---- Java / JVM ----
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+target/
+.gradle/
+build/
+out/
+
+# ---- Go ----
+bin/
+vendor/
+*.test
+*.out
+
+# ---- Rust ----
+/target/
+Cargo.lock
+
+# ---- PHP / Composer ----
+vendor/
+composer.lock
+
+# ---- Dotnet / C# ----
+bin/
+obj/
+*.exe
+*.dll
+*.pdb
+*.user
+*.vs/
+
+# ---- Databases / Storage ----
+*.db
+*.sqlite
+*.sqlite3
+*.env.local
+*.env.*
+.env
+
+# ---- Monorepo Package Managers ----
+lerna-debug.log*
+.npmrc
+.yarn/*
+.yarnrc.yml
+
+# ---- Misc ----
+*.lock
+*.bak
+*.orig
+*.rej
+
+# ---- Generated Docs ----
+docs/_build/
+site/
+*.pdf
+
+# ---- Secrets (add cautiously) ----
+*.pem
+*.key
+*.crt
+
+
+# Turborepo
+.turbo/

@@ -1,0 +1,1 @@
+{"version":3,"file":"websocketClient.d.ts","sourceRoot":"","sources":["websocketClient.ts"],"names":[],"mappings":"AAEA,qBAAa,eAAe;IAKZ,OAAO,CAAC,IAAI;IAJxB,OAAO,CAAC,EAAE,CAA0B;IACpC,OAAO,CAAC,iBAAiB,CAA6B;IACtD,OAAO,CAAC,WAAW,CAAS;gBAER,IAAI,EAAE,MAAM;IAEhC,OAAO;IA4BP,UAAU;IAYV,OAAO,CAAC,iBAAiB;IAQzB,IAAI,CAAC,IAAI,EAAE,GAAG;IAMd,mBAAmB;CAGtB"}

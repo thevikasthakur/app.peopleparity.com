@@ -1,0 +1,26 @@
+{
+  "name": "people-parity",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "extensions/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "turbo": "^1.11.3",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "npm@10.2.4",
+  "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.2"
+  }
+}

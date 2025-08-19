@@ -1,0 +1,66 @@
+import { DatabaseService } from './databaseService';
+import { EventEmitter } from 'events';
+export declare class ActivityTracker extends EventEmitter {
+    private db;
+    private isTracking;
+    private currentMode;
+    private currentSessionId;
+    private currentProjectId;
+    private metrics;
+    private periodStartTime;
+    private sessionStartTime;
+    private vsCodeExtensionData;
+    private idleTimer;
+    private periodTimer;
+    private lastActivityTime;
+    private activeSeconds;
+    private activeTimeInterval;
+    private keyTimestamps;
+    private clickTimestamps;
+    private lastKeyCode;
+    private repeatedKeyCount;
+    private suspiciousActivityScore;
+    private navigationKeys;
+    private productiveKeys;
+    constructor(db: DatabaseService);
+    private initializeKeySets;
+    restoreSession(sessionId: string, mode: 'client_hours' | 'command_hours', projectId?: string): void;
+    start(): void;
+    stop(): void;
+    private setupKeyboardTracking;
+    private setupMouseTracking;
+    private detectBotActivity;
+    private startActiveTimeTracking;
+    private startPeriodTimer;
+    private startIdleDetection;
+    private savePeriodData;
+    private calculateActivityScore;
+    private determineValidity;
+    private classifyActivity;
+    startSession(mode: 'client_hours' | 'command_hours', projectId?: string, task?: string): Promise<{
+        id: string;
+        userId: string;
+        mode: "client_hours" | "command_hours";
+        projectId: string | undefined;
+        startTime: Date;
+        isActive: boolean;
+        task: string | undefined;
+    }>;
+    stopSession(): Promise<void>;
+    switchMode(mode: 'client_hours' | 'command_hours', projectId?: string, task?: string): Promise<{
+        id: string;
+        userId: string;
+        mode: "client_hours" | "command_hours";
+        projectId: string | undefined;
+        startTime: Date;
+        isActive: boolean;
+        task: string | undefined;
+    }>;
+    receiveVSCodeData(data: any): void;
+    getCurrentActivityScore(): number;
+    private updateCurrentPeriodScore;
+    getCurrentSessionId(): string | null;
+    hasActiveSession(): boolean;
+    private resetMetrics;
+}
+//# sourceMappingURL=activityTracker.d.ts.map

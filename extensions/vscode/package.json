@@ -1,0 +1,51 @@
+{
+  "name": "time-tracker-vscode",
+  "displayName": "Time Tracker VS Code Extension",
+  "description": "Tracks coding activities for time tracking",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "timeTracker.connect",
+        "title": "Time Tracker: Connect to Desktop App"
+      },
+      {
+        "command": "timeTracker.disconnect",
+        "title": "Time Tracker: Disconnect"
+      },
+      {
+        "command": "timeTracker.showStatus",
+        "title": "Time Tracker: Show Status"
+      }
+    ],
+    "configuration": {
+      "title": "Time Tracker",
+      "properties": {
+        "timeTracker.desktopAppPort": {
+          "type": "number",
+          "default": 7823,
+          "description": "Port for communicating with desktop app"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "20.x",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
