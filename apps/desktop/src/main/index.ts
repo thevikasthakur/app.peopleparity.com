@@ -120,6 +120,19 @@ function setupIpcHandlers() {
   ipcMain.handle('auth:check-session', async () => {
     return apiSyncService.checkSession();
   });
+
+  ipcMain.handle('auth:verify-token', async (_, token: string) => {
+    return apiSyncService.verifyToken(token);
+  });
+
+  ipcMain.handle('auth:saml-login', async () => {
+    // Navigate main window to SAML login URL
+    if (mainWindow) {
+      mainWindow.loadURL('http://localhost:3001/api/auth/saml/login');
+      return { success: true };
+    }
+    return { success: false, error: 'Main window not available' };
+  });
   
   ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
     console.log('IPC: Starting session', { mode, task, projectId });

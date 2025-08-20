@@ -15,6 +15,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  setToken: (token: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,9 +30,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const result = await window.electronAPI.auth.checkSession();
-      if (result.user) {
-        setUser(result.user);
+      // Check if we're in Electron environment
+      if (typeof window.electronAPI !== 'undefined' && window.electronAPI.auth) {
+        const result = await window.electronAPI.auth.checkSession();
+        if (result.user) {
+          setUser(result.user);
+        }
+      } else {
+        // In browser environment, can't check session through Electron IPC
+        console.log('Running in browser mode - Electron API not available');
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -41,6 +48,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
+    if (typeof window.electronAPI === 'undefined' || !window.electronAPI.auth) {
+      throw new Error('Electron API not available. Please use the desktop app.');
+    }
+    
     const result = await window.electronAPI.auth.login(email, password);
     if (result.success && result.user) {
       setUser(result.user);
@@ -50,8 +61,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await window.electronAPI.auth.logout();
+    if (typeof window.electronAPI !== 'undefined' && window.electronAPI.auth) {
+      await window.electronAPI.auth.logout();
+    }
     setUser(null);
+  };
+
+  const setToken = async (token: string) => {
+    if (typeof window.electronAPI === 'undefined' || !window.electronAPI.auth) {
+      throw new Error('Electron API not available. Please use the desktop app.');
+    }
+    
+    // Verify token with backend and get user info
+    const result = await window.electronAPI.auth.verifyToken(token);
+    if (result.valid && result.user) {
+      setUser(result.user);
+    } else {
+      throw new Error('Invalid token');
+    }
   };
 
   return (
@@ -62,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
+        setToken,
       }}
     >
       {children}

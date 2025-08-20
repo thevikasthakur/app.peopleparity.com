@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('auth:logout'),
     checkSession: () => 
       ipcRenderer.invoke('auth:check-session'),
+    verifyToken: (token: string) =>
+      ipcRenderer.invoke('auth:verify-token', token),
+    samlLogin: () =>
+      ipcRenderer.invoke('auth:saml-login'),
   },
   session: {
     start: (mode: string, task: string, projectId?: string) => 

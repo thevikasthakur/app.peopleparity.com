@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { LocalStrategy } from './local.strategy';
+import { MicrosoftSamlStrategy } from './saml.strategy';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -23,7 +24,7 @@ import { UsersModule } from '../users/users.module';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy],
+  providers: [AuthService, LocalStrategy, JwtStrategy, MicrosoftSamlStrategy],
   controllers: [AuthController],
   exports: [AuthService],
 })

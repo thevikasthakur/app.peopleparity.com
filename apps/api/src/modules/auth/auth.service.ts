@@ -85,4 +85,28 @@ export class AuthService {
       return { valid: false };
     }
   }
+
+  async handleSamlLogin(samlProfile: any) {
+    const { email, name, microsoftId } = samlProfile;
+    
+    // Check if user exists
+    let user = await this.usersService.findByEmail(email);
+    
+    if (!user) {
+      // Create new user from Microsoft SSO
+      user = await this.usersService.createSSOUser({
+        email,
+        name,
+        microsoftId,
+        authProvider: 'microsoft',
+        role: 'developer', // Default role for new SSO users
+      });
+    } else if (user.authProvider === 'local') {
+      // Update existing local user to link with Microsoft account
+      await this.usersService.linkMicrosoftAccount(user.id, microsoftId);
+    }
+    
+    // Generate JWT and return login response
+    return this.login(user);
+  }
 }

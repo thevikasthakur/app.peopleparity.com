@@ -143,4 +143,38 @@ export class UsersService {
     
     return this.usersRepository.save(user);
   }
+
+  async createSSOUser(ssoUserData: {
+    email: string;
+    name: string;
+    microsoftId: string;
+    authProvider: 'microsoft';
+    role: 'developer' | 'org_admin';
+    organizationId?: string;
+  }) {
+    const user = this.usersRepository.create({
+      email: ssoUserData.email,
+      name: ssoUserData.name,
+      microsoftId: ssoUserData.microsoftId,
+      authProvider: ssoUserData.authProvider,
+      role: ssoUserData.role,
+      organizationId: ssoUserData.organizationId,
+      isActive: true,
+      password: null, // No password for SSO users
+    });
+
+    return this.usersRepository.save(user);
+  }
+
+  async linkMicrosoftAccount(userId: string, microsoftId: string) {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.microsoftId = microsoftId;
+    user.authProvider = 'microsoft';
+    
+    return this.usersRepository.save(user);
+  }
 }

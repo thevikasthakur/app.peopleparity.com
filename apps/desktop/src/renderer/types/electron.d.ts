@@ -1,8 +1,10 @@
 export interface ElectronAPI {
   auth: {
-    login: (email: string, password: string) => Promise<{ success: boolean; user?: any; message?: string }>;
+    login: (email: string, password: string) => Promise<{ success: boolean; user?: any; message?: string; token?: string; projects?: any[] }>;
     logout: () => Promise<void>;
     checkSession: () => Promise<{ user?: any }>;
+    verifyToken: (token: string) => Promise<{ valid: boolean; user?: any }>;
+    samlLogin: () => Promise<{ success: boolean; error?: string }>;
   };
   session: {
     start: (mode: string, task: string, projectId?: string) => Promise<any>;
