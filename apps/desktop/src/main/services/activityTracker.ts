@@ -13,6 +13,8 @@ try {
   UiohookKey = null;
 }
 
+import crypto from 'crypto';
+
 import activeWin from 'active-win';
 import { DatabaseService } from './databaseService';
 import { EventEmitter } from 'events';
@@ -29,6 +31,35 @@ interface ActivityMetrics {
   mouseScrolls: number;
   mouseDistance: number;
   lastMousePosition: { x: number; y: number } | null;
+}
+
+interface MemoryActivityPeriod {
+  id: string;
+  sessionId: string;
+  userId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  mode: 'client_hours' | 'command_hours';
+  activityScore: number;
+  isValid: boolean;
+  classification?: string;
+  metrics: ActivityMetrics;
+  vsCodeData?: any;
+  commandHourData?: any;
+  clientHourData?: any;
+}
+
+interface MemoryScreenshot {
+  id: string;
+  userId: string;
+  sessionId: string;
+  localPath: string;
+  thumbnailPath?: string;
+  capturedAt: Date;
+  mode: 'client_hours' | 'command_hours';
+  notes?: string;
+  windowStart: Date;  // Start of the 10-minute window
+  windowEnd: Date;    // End of the 10-minute window
 }
 
 // Global flag to prevent multiple uIOhook instances
@@ -48,6 +79,13 @@ export class ActivityTracker extends EventEmitter {
   private lastActivityTime: Date = new Date();
   private activeSeconds: number = 0;
   private activeTimeInterval: NodeJS.Timeout | null = null;
+  
+  // Memory storage for activity periods and screenshots
+  private memoryActivityPeriods: Map<string, MemoryActivityPeriod> = new Map();
+  private memoryScreenshots: Map<string, MemoryScreenshot> = new Map();
+  private windowCompletionTimer: NodeJS.Timeout | null = null;
+  private currentWindowEnd: Date | null = null;
+  private savedWindows: Set<string> = new Set();
   
   // Bot detection
   private keyTimestamps: number[] = [];
@@ -141,10 +179,32 @@ export class ActivityTracker extends EventEmitter {
     this.periodStartTime = new Date();
     this.metrics = this.resetMetrics();
     
+    // Clear any existing memory when restoring
+    this.memoryActivityPeriods.clear();
+    this.memoryScreenshots.clear();
+    if (this.windowCompletionTimer) {
+      clearTimeout(this.windowCompletionTimer);
+      this.windowCompletionTimer = null;
+    }
+    
     // Start tracking if not already started
     if (!this.isTracking) {
       this.start();
     }
+    
+    // Schedule the current window completion
+    const now = new Date();
+    const currentMinute = now.getMinutes();
+    const windowEndMinute = Math.ceil(currentMinute / 10) * 10;
+    const windowEnd = new Date(now);
+    windowEnd.setMinutes(windowEndMinute % 60);  // Handle hour rollover
+    if (windowEndMinute >= 60) {
+      windowEnd.setHours(windowEnd.getHours() + Math.floor(windowEndMinute / 60));
+    }
+    windowEnd.setSeconds(0);
+    windowEnd.setMilliseconds(0);
+    console.log(`Session restored at ${now.toISOString()}, scheduling window completion for ${windowEnd.toISOString()}`);
+    this.scheduleWindowCompletion(windowEnd);
   }
   
   start() {
@@ -203,6 +263,17 @@ export class ActivityTracker extends EventEmitter {
       clearInterval(this.activeTimeInterval);
       this.activeTimeInterval = null;
     }
+    
+    // Clear window completion timer
+    if (this.windowCompletionTimer) {
+      clearTimeout(this.windowCompletionTimer);
+      this.windowCompletionTimer = null;
+    }
+    
+    this.currentWindowEnd = null;
+    
+    // Clear saved windows set when session ends
+    this.savedWindows.clear();
     
     console.log('Activity tracker stopped');
   }
@@ -476,6 +547,7 @@ export class ActivityTracker extends EventEmitter {
         
         const timestamp = this.periodStartTime.toLocaleTimeString();
         console.log(`📊 New 1-minute period started at ${timestamp}`);
+        console.log(`  Total periods in memory now: ${this.memoryActivityPeriods.size}`);
       }, 60 * 1000); // 1 minute
     }, msUntilNextMinute);
   }
@@ -497,31 +569,291 @@ export class ActivityTracker extends EventEmitter {
     const isValid = this.determineValidity(activityScore);
     const classification = await this.classifyActivity();
     
-    console.log(`💾 Saving period data with activity score: ${activityScore}`);
+    const currentUser = this.db.getCurrentUser();
+    if (!currentUser) {
+      console.error('No current user found');
+      return;
+    }
     
-    const period = await this.db.createActivityPeriod({
+    console.log(`💾 Storing period data in memory with activity score: ${activityScore}`);
+    
+    // Create period object but store in memory instead of database
+    const periodId = crypto.randomUUID();
+    const memoryPeriod: MemoryActivityPeriod = {
+      id: periodId,
       sessionId: this.currentSessionId,
-      periodStart: this.periodStartTime,
+      userId: currentUser.id,
+      periodStart: new Date(this.periodStartTime),
       periodEnd: new Date(),
       mode: this.currentMode,
       activityScore,
       isValid,
-      classification
-    });
-    
-    if (this.currentMode === 'command_hours') {
-      await this.db.saveCommandHourActivity(period.id, {
+      classification,
+      metrics: { ...this.metrics, uniqueKeys: new Set(this.metrics.uniqueKeys), productiveUniqueKeys: new Set(this.metrics.productiveUniqueKeys) },
+      commandHourData: this.currentMode === 'command_hours' ? {
         uniqueKeys: this.metrics.uniqueKeys.size,
         productiveKeyHits: this.metrics.productiveKeyHits,
         mouseClicks: this.metrics.mouseClicks,
         mouseScrolls: this.metrics.mouseScrolls,
         mouseDistance: this.metrics.mouseDistance
-      });
-    } else {
-      await this.db.saveClientHourActivity(period.id, this.vsCodeExtensionData);
+      } : undefined,
+      clientHourData: this.currentMode === 'client_hours' ? this.vsCodeExtensionData : undefined
+    };
+    
+    // Store in memory
+    this.memoryActivityPeriods.set(periodId, memoryPeriod);
+    console.log(`Stored activity period ${periodId} in memory.`);
+    console.log(`  Period: ${memoryPeriod.periodStart.toISOString()} - ${memoryPeriod.periodEnd.toISOString()}`);
+    console.log(`  Total periods in memory: ${this.memoryActivityPeriods.size}`);
+    
+    this.emit('period:saved', memoryPeriod);
+  }
+  
+  // Store screenshot in memory
+  storeScreenshotInMemory(screenshotData: {
+    id: string;
+    userId: string;
+    sessionId: string;
+    localPath: string;
+    thumbnailPath?: string;
+    capturedAt: Date;
+    mode: 'client_hours' | 'command_hours';
+    notes?: string;
+  }) {
+    // Calculate the 10-minute window this screenshot belongs to
+    const capturedMinute = screenshotData.capturedAt.getMinutes();
+    const windowStartMinute = Math.floor(capturedMinute / 10) * 10;
+    
+    const windowStart = new Date(screenshotData.capturedAt);
+    windowStart.setMinutes(windowStartMinute);
+    windowStart.setSeconds(0);
+    windowStart.setMilliseconds(0);
+    
+    const windowEnd = new Date(windowStart);
+    windowEnd.setMinutes(windowStartMinute + 10);
+    
+    const memoryScreenshot: MemoryScreenshot = {
+      ...screenshotData,
+      windowStart,
+      windowEnd
+    };
+    
+    this.memoryScreenshots.set(screenshotData.id, memoryScreenshot);
+    console.log(`Stored screenshot ${screenshotData.id} in memory for window ${windowStart.toISOString()} - ${windowEnd.toISOString()}`);
+    
+    // Schedule saving when the window completes
+    this.scheduleWindowCompletion(windowEnd);
+  }
+  
+  // Schedule saving data when 10-minute window completes
+  private scheduleWindowCompletion(windowEnd: Date) {
+    // Only schedule if we don't already have a timer for this window
+    if (this.currentWindowEnd && this.currentWindowEnd.getTime() === windowEnd.getTime()) {
+      console.log(`Window completion already scheduled for ${windowEnd.toISOString()}`);
+      return;
     }
     
-    this.emit('period:saved', period);
+    // Clear any existing timer only if scheduling a different window
+    if (this.windowCompletionTimer) {
+      console.log(`Clearing existing window completion timer`);
+      clearTimeout(this.windowCompletionTimer);
+    }
+    
+    this.currentWindowEnd = windowEnd;
+    const now = new Date();
+    const msUntilWindowEnd = windowEnd.getTime() - now.getTime();
+    
+    if (msUntilWindowEnd > 0) {
+      console.log(`Scheduling window completion in ${Math.round(msUntilWindowEnd / 1000)} seconds for ${windowEnd.toISOString()}`);
+      
+      // Safeguard against very long timers - max setTimeout is 2147483647 ms (about 24.8 days)
+      // Also, for reliability, if timer is more than 5 minutes, use a shorter interval approach
+      const MAX_SAFE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+      const actualDelay = msUntilWindowEnd + 1000; // Add 1 second buffer
+      
+      if (actualDelay > MAX_SAFE_TIMEOUT) {
+        console.log(`Timer delay ${actualDelay}ms exceeds safe limit, using intermediate timer`);
+        // Schedule an intermediate check in 1 minute
+        this.windowCompletionTimer = setTimeout(() => {
+          // Re-schedule for the actual window end
+          this.scheduleWindowCompletion(windowEnd);
+        }, 60000); // Check again in 1 minute
+      } else {
+        this.windowCompletionTimer = setTimeout(async () => {
+          console.log(`\n⏰ Window completion timer fired for ${windowEnd.toISOString()}`);
+          await this.saveCompletedWindow(windowEnd);
+          this.currentWindowEnd = null;
+          
+          // Schedule next window if we have an active session
+          if (this.currentSessionId) {
+            const nextWindowEnd = new Date(windowEnd);
+            nextWindowEnd.setMinutes(nextWindowEnd.getMinutes() + 10);
+            this.scheduleWindowCompletion(nextWindowEnd);
+          }
+        }, actualDelay);
+      }
+    } else {
+      // Window already completed, save immediately
+      console.log(`Window already completed, saving immediately`);
+      this.saveCompletedWindow(windowEnd).then(() => {
+        this.currentWindowEnd = null;
+      });
+    }
+  }
+  
+  // Save all data for a completed 10-minute window
+  private async saveCompletedWindow(windowEnd: Date) {
+    console.log(`\n🎯 Window completion triggered for window ending at ${windowEnd.toISOString()}`);
+    const windowStart = new Date(windowEnd);
+    windowStart.setMinutes(windowEnd.getMinutes() - 10);
+    windowStart.setSeconds(0);
+    windowStart.setMilliseconds(0);
+    windowEnd.setSeconds(0);
+    windowEnd.setMilliseconds(0);
+    
+    // Create a window key to track if we've already saved this window
+    const windowKey = `${windowStart.getTime()}_${windowEnd.getTime()}`;
+    
+    // Check if we've already saved this window (safeguard against duplicate calls)
+    if (this.savedWindows && this.savedWindows.has(windowKey)) {
+      console.log(`Window ${windowStart.toISOString()} - ${windowEnd.toISOString()} already saved, skipping`);
+      return;
+    }
+    
+    // Initialize savedWindows Set if not exists
+    if (!this.savedWindows) {
+      this.savedWindows = new Set<string>();
+    }
+    
+    // Mark this window as being saved
+    this.savedWindows.add(windowKey);
+    
+    console.log(`\n🎯 Saving completed window: ${windowStart.toISOString()} - ${windowEnd.toISOString()}`);
+    console.log(`Current memory periods: ${this.memoryActivityPeriods.size}, Screenshots: ${this.memoryScreenshots.size}`);
+    
+    // Find screenshot for this window
+    let windowScreenshot: MemoryScreenshot | null = null;
+    for (const [_, screenshot] of this.memoryScreenshots) {
+      if (screenshot.windowStart.getTime() === windowStart.getTime()) {
+        windowScreenshot = screenshot;
+        break;
+      }
+    }
+    
+    if (!windowScreenshot) {
+      console.log('No screenshot found for this window, saving activity periods without screenshot');
+    }
+    
+    // Save screenshot first if exists
+    let savedScreenshotId: string | null = null;
+    if (windowScreenshot && windowScreenshot.thumbnailPath) {
+      const dbScreenshot = await this.db.saveScreenshot({
+        sessionId: windowScreenshot.sessionId,
+        localPath: windowScreenshot.localPath,
+        thumbnailPath: windowScreenshot.thumbnailPath,
+        capturedAt: windowScreenshot.capturedAt
+      });
+      
+      if (dbScreenshot) {
+        savedScreenshotId = (dbScreenshot as any).id;
+        console.log(`Saved screenshot ${savedScreenshotId} to database`);
+      } else {
+        console.error('Failed to save screenshot - no active session or dbScreenshot is null');
+      }
+      
+      // Remove from memory regardless of save success
+      this.memoryScreenshots.delete(windowScreenshot.id);
+    }
+    
+    // Save all activity periods for this window
+    const periodsToSave: MemoryActivityPeriod[] = [];
+    for (const [periodId, period] of this.memoryActivityPeriods) {
+      // Check if period belongs to this window (with tolerance for periods that overlap the window)
+      const periodStartTime = period.periodStart.getTime();
+      const periodEndTime = period.periodEnd.getTime();
+      const windowStartTime = windowStart.getTime();
+      const windowEndTime = windowEnd.getTime();
+      
+      // Include period if it overlaps with the window at all
+      // A period belongs to this window if:
+      // 1. It starts within the window, OR
+      // 2. It ends within the window, OR  
+      // 3. It spans the entire window
+      const periodOverlapsWindow = 
+        (periodStartTime >= windowStartTime && periodStartTime < windowEndTime) || // Starts within window
+        (periodEndTime > windowStartTime && periodEndTime <= windowEndTime) || // Ends within window
+        (periodStartTime <= windowStartTime && periodEndTime >= windowEndTime); // Spans entire window
+      
+      if (periodOverlapsWindow) {
+        periodsToSave.push(period);
+        console.log(`  Including period: ${period.periodStart.toISOString()} - ${period.periodEnd.toISOString()}`);
+      }
+    }
+    
+    console.log(`Found ${periodsToSave.length} activity periods for this window`);
+    
+    if (periodsToSave.length === 0) {
+      console.log('WARNING: No activity periods found for this window!');
+      console.log('Available periods in memory:');
+      for (const [_, period] of this.memoryActivityPeriods) {
+        console.log(`  ${period.periodStart.toISOString()} - ${period.periodEnd.toISOString()}`);
+      }
+    }
+    
+    for (const period of periodsToSave) {
+      const dbPeriod = await this.db.createActivityPeriod({
+        id: period.id,
+        sessionId: period.sessionId,
+        userId: period.userId,
+        screenshotId: savedScreenshotId || null,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        mode: period.mode,
+        activityScore: period.activityScore,
+        isValid: period.isValid,
+        classification: period.classification
+      });
+      
+      // Save activity data only if period was saved successfully
+      if (dbPeriod) {
+        if (period.commandHourData) {
+          await this.db.saveCommandHourActivity(dbPeriod.id, period.commandHourData);
+        } else if (period.clientHourData) {
+          await this.db.saveClientHourActivity(dbPeriod.id, period.clientHourData);
+        }
+      } else {
+        console.error(`Failed to save activity period ${period.id} - dbPeriod is null`);
+      }
+      
+      // Remove from memory regardless of save success
+      this.memoryActivityPeriods.delete(period.id);
+    }
+    
+    console.log(`✅ Window ${windowStart.toISOString()} - ${windowEnd.toISOString()} saved successfully\n`);
+  }
+  
+  // Deprecated - no longer needed with window-based saving
+  async saveMemoryPeriodsToDatabase(screenshotId: string, screenshotTime: Date): Promise<string[]> {
+    console.log('saveMemoryPeriodsToDatabase is deprecated - data is now saved automatically when window completes');
+    return [];
+  }
+  
+  // Get activity periods from memory for a time range
+  getMemoryActivityPeriods(windowStart: Date, windowEnd: Date): MemoryActivityPeriod[] {
+    const periods: MemoryActivityPeriod[] = [];
+    
+    for (const [_, period] of this.memoryActivityPeriods) {
+      // Check if period falls within the window
+      if (
+        (period.periodStart >= windowStart && period.periodStart < windowEnd) ||
+        (period.periodEnd > windowStart && period.periodEnd <= windowEnd) ||
+        (period.periodStart <= windowStart && period.periodEnd >= windowEnd)
+      ) {
+        periods.push(period);
+      }
+    }
+    
+    return periods;
   }
   
   private calculateActivityScore(): number {
@@ -739,6 +1071,19 @@ export class ActivityTracker extends EventEmitter {
         this.start();
       }
       
+      // Schedule the current window completion
+      const now = new Date();
+      const currentMinute = now.getMinutes();
+      const windowEndMinute = Math.ceil(currentMinute / 10) * 10;
+      const windowEnd = new Date(now);
+      windowEnd.setMinutes(windowEndMinute % 60);  // Handle hour rollover
+      if (windowEndMinute >= 60) {
+        windowEnd.setHours(windowEnd.getHours() + Math.floor(windowEndMinute / 60));
+      }
+      windowEnd.setSeconds(0);
+      windowEnd.setMilliseconds(0);
+      console.log(`Session started at ${now.toISOString()}, scheduling window completion for ${windowEnd.toISOString()}`);
+      
       console.log('Session started:', session.id);
       this.emit('session:started', session);
       return session;
@@ -753,13 +1098,24 @@ export class ActivityTracker extends EventEmitter {
       console.log('Stopping tracking session:', this.currentSessionId);
       
       if (this.currentSessionId) {
-        // Save the last period before stopping
+        // Save the last period to memory before stopping
         await this.savePeriodData();
+        
+        // Note: Memory periods will be saved when next screenshot is captured
+        // Or we could optionally save them now if needed
         
         // End the session
         await this.db.endSession(this.currentSessionId);
         
         this.emit('session:stopped', this.currentSessionId);
+      }
+      
+      // Clear memory when session stops
+      this.memoryActivityPeriods.clear();
+      this.memoryScreenshots.clear();
+      if (this.windowCompletionTimer) {
+        clearTimeout(this.windowCompletionTimer);
+        this.windowCompletionTimer = null;
       }
       
       this.currentSessionId = null;

@@ -66,6 +66,7 @@ app.whenReady().then(async () => {
   }
   
   screenshotService = new ScreenshotService(databaseService);
+  screenshotService.setActivityTracker(activityTracker); // Link the tracker to screenshot service
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
   

@@ -346,7 +346,18 @@ export class ApiSyncService {
         }
       }
       
-      // Then sync activity periods, but only if their session is synced
+      // Sync screenshots before activity periods (since periods now reference screenshots)
+      for (const item of screenshots) {
+        try {
+          await this.syncItem(item);
+          this.db.markSynced(item.id);
+        } catch (error: any) {
+          console.error(`Failed to sync screenshot ${item.id}:`, error.message);
+          this.db.incrementSyncAttempts(item.id);
+        }
+      }
+      
+      // Then sync activity periods, but only if their session and screenshot are synced
       for (const item of activityPeriods) {
         const data = JSON.parse(item.data);
         
@@ -368,6 +379,21 @@ export class ApiSyncService {
           }
         }
         
+        // Check if screenshot exists (if period has a screenshot reference)
+        if (data.screenshotId) {
+          try {
+            // Verify screenshot exists on server
+            const response = await this.api.get(`/screenshots/${data.screenshotId}`);
+            if (!response.data) {
+              console.log(`Screenshot ${data.screenshotId} doesn't exist on server yet, skipping activity period`);
+              continue;
+            }
+          } catch (error) {
+            console.log(`Cannot verify screenshot ${data.screenshotId}, skipping activity period`);
+            continue;
+          }
+        }
+        
         try {
           await this.syncItem(item);
           this.db.markSynced(item.id);
@@ -376,60 +402,14 @@ export class ApiSyncService {
           
           // If it's a foreign key error, don't increment attempts (will retry)
           if (error.message?.includes('foreign key constraint')) {
-            console.log(`Will retry activity period ${item.entityId} later (session not ready)`);
+            console.log(`Will retry activity period ${item.entityId} later (dependencies not ready)`);
           } else {
             this.db.incrementSyncAttempts(item.id);
           }
         }
       }
       
-      // Track successfully synced activity periods
-      const syncedPeriodIds = new Set<string>();
-      
-      // Collect already synced periods for reference
-      for (const item of activityPeriods) {
-        const data = JSON.parse(item.data);
-        if (data.id) {
-          syncedPeriodIds.add(data.id);
-        }
-      }
-      
-      // Sync screenshots only if their activity period is synced
-      for (const item of screenshots) {
-        const data = JSON.parse(item.data);
-        
-        // Check if the activity period exists (either just synced or previously synced)
-        if (data.activityPeriodId) {
-          // If period wasn't in this batch, verify it exists on server
-          if (!syncedPeriodIds.has(data.activityPeriodId)) {
-            try {
-              // Verify activity period exists on server
-              const response = await this.api.get(`/activity-periods/${data.activityPeriodId}`);
-              if (!response.data) {
-                console.log(`Activity period ${data.activityPeriodId} doesn't exist on server yet, skipping screenshot`);
-                continue;
-              }
-            } catch (error) {
-              console.log(`Activity period ${data.activityPeriodId} not found on server, skipping screenshot`);
-              continue;
-            }
-          }
-        }
-        
-        try {
-          await this.syncItem(item);
-          this.db.markSynced(item.id);
-        } catch (error: any) {
-          console.error(`Failed to sync screenshot ${item.id}:`, error.message);
-          
-          // If it's a foreign key error, don't increment attempts (will retry)
-          if (error.message?.includes('foreign key constraint')) {
-            console.log(`Will retry screenshot ${item.id} later (activity period not ready)`);
-          } else {
-            this.db.incrementSyncAttempts(item.id);
-          }
-        }
-      }
+      // Note: Screenshots are now synced before activity periods
       
       // Finally sync other items
       for (const item of others) {
@@ -475,17 +455,18 @@ export class ApiSyncService {
           break;
           
         case 'activity_period':
-          console.log('Syncing activity period:', item.entityId, 'for session:', data.sessionId);
+          console.log('Syncing activity period:', item.entityId, 'for session:', data.sessionId, 'screenshot:', data.screenshotId);
           const activityResponse = await this.api.post('/activity-periods', {
             id: item.entityId, // Use the local activity period ID
             ...data,
             periodStart: new Date(data.periodStart).toISOString(),
-            periodEnd: new Date(data.periodEnd).toISOString()
+            periodEnd: new Date(data.periodEnd).toISOString(),
+            screenshotId: data.screenshotId // Include screenshot FK
           });
           
           if (!activityResponse.data.success) {
             console.error('Activity period sync failed:', activityResponse.data);
-            if (activityResponse.data.error === 'Session does not exist') {
+            if (activityResponse.data.error === 'Session does not exist' || activityResponse.data.error === 'Screenshot does not exist') {
               throw new Error(`foreign key constraint: ${activityResponse.data.message}`);
             }
             throw new Error(activityResponse.data.message || 'Activity period creation failed');
@@ -509,20 +490,11 @@ export class ApiSyncService {
             filename: path.basename(data.localPath),
             contentType: 'image/jpeg'
           });
+          formData.append('id', item.entityId); // Include screenshot ID for reference
           formData.append('capturedAt', new Date(data.capturedAt).toISOString());
           formData.append('sessionId', data.sessionId); // Direct session relationship
           formData.append('mode', data.mode || 'command_hours');
           formData.append('userId', data.userId);
-          
-          // Add aggregated score if available
-          if (data.aggregatedScore !== undefined) {
-            formData.append('aggregatedScore', data.aggregatedScore.toString());
-          }
-          
-          // Add activity period IDs if available (for 1-minute period aggregation)
-          if (data.activityPeriodIds && data.activityPeriodIds.length > 0) {
-            formData.append('activityPeriodIds', JSON.stringify(data.activityPeriodIds));
-          }
           
           // Add notes (copied from session task)
           if (data.notes) {

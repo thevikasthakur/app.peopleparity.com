@@ -7,7 +7,7 @@ import Store from 'electron-store';
 
 export class DatabaseService {
   private static instance: DatabaseService;
-  private localDb: LocalDatabase;
+  public localDb: LocalDatabase; // Made public for access from ScreenshotService
   private activityTracker: any = null; // Will be set by index.ts
   private api: AxiosInstance | null = null;
   private store: Store;
@@ -140,8 +140,10 @@ export class DatabaseService {
   // Activity period management
   async createActivityPeriod(data: any) {
     const periodData = {
+      id: data.id, // Pass through the ID if provided
       sessionId: data.sessionId,
-      userId: this.getCurrentUserId(),
+      userId: data.userId || this.getCurrentUserId(),
+      screenshotId: data.screenshotId || null, // Include screenshotId
       periodStart: data.startTime || data.periodStart,
       periodEnd: data.endTime || data.periodEnd,
       mode: data.mode,
@@ -276,17 +278,16 @@ export class DatabaseService {
     sessionId?: string;
   }) {
     const session = this.localDb.getActiveSession(this.getCurrentUserId());
-    if (!session) return;
+    if (!session) return null;
     
-    this.localDb.saveScreenshot({
+    return this.localDb.saveScreenshot({
       userId: this.getCurrentUserId(),
       sessionId: data.sessionId || session.id,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
       mode: session.mode,
-      aggregatedScore: data.activityScore,
-      relatedPeriodIds: data.relatedPeriodIds
+      task: session?.task || undefined
     });
   }
 
@@ -405,7 +406,7 @@ export class DatabaseService {
     
     console.log('Raw screenshots from DB:', screenshots.map(s => ({
       id: s.id,
-      s3Url: s.s3Url,
+      url: s.url,
       thumbnailUrl: s.thumbnailUrl,
       thumbnailPath: s.thumbnailPath,
       localPath: s.localPath
@@ -418,34 +419,29 @@ export class DatabaseService {
       
       if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
         thumbnailUrl = s.thumbnailUrl;
-      } else if (s.s3Url && s.s3Url.startsWith('http')) {
-        thumbnailUrl = s.s3Url.replace('_full.jpg', '_thumb.jpg');
+      } else if (s.url && s.url.startsWith('http')) {
+        thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
       }
       
-      if (s.s3Url && s.s3Url.startsWith('http')) {
-        fullUrl = s.s3Url;
+      if (s.url && s.url.startsWith('http')) {
+        fullUrl = s.url;
       }
       
       // If we still don't have valid URLs, don't include file:// paths
       if (!thumbnailUrl && s.thumbnailPath) {
-        console.log('Warning: Screenshot', s.id, 'has no S3 URL, only local path:', s.thumbnailPath);
+        console.log('Warning: Screenshot', s.id, 'has no URL, only local path:', s.thumbnailPath);
       }
       
-      // Get activity score from the aggregated score
-      let activityScore = s.aggregatedScore || 0;
+      // Get activity score from related periods (calculated in getTodayScreenshots)
+      let activityScore = (s as any).activityScore || 0;
       
-      // Parse activity period IDs if stored as JSON string
+      // Get related period IDs from the already loaded data
       let activityPeriodIds = [];
-      if (s.activityPeriodIds) {
-        try {
-          activityPeriodIds = JSON.parse(s.activityPeriodIds);
-        } catch (e) {
-          // If not JSON, might be a single ID for backward compatibility
-          activityPeriodIds = [s.activityPeriodIds];
-        }
+      if ((s as any).relatedPeriods && Array.isArray((s as any).relatedPeriods)) {
+        activityPeriodIds = (s as any).relatedPeriods.map((p: any) => p.id);
       }
       
-      console.log(`Screenshot ${s.id} has aggregated score: ${activityScore}`);
+      console.log(`Screenshot ${s.id} has activity score: ${activityScore}`);
       
       const result = {
         id: s.id,
@@ -454,8 +450,8 @@ export class DatabaseService {
         timestamp: new Date(s.capturedAt),
         notes: s.notes || '',
         mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
-        activityScore: activityScore,  // Aggregated score from multiple periods
-        activityPeriodIds: activityPeriodIds  // Array of period IDs
+        activityScore: activityScore,  // Calculated from related periods
+        activityPeriodIds: activityPeriodIds  // Array of period IDs from related periods
       };
       
       console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
@@ -492,8 +488,8 @@ export class DatabaseService {
       // Transform API response to match our format
       return response.data.map((s: any) => ({
         id: s.id,
-        thumbnailUrl: s.thumbnailUrl || s.s3Url?.replace('_full.jpg', '_thumb.jpg') || '',
-        fullUrl: s.s3Url || '',
+        thumbnailUrl: s.thumbnailUrl || s.url?.replace('_full.jpg', '_thumb.jpg') || '',
+        fullUrl: s.url || '',
         timestamp: new Date(s.capturedAt),
         notes: s.notes || '',
         mode: s.mode === 'client_hours' ? 'client' : 'command',
@@ -512,8 +508,8 @@ export class DatabaseService {
     console.log('Updating screenshot notes:', ids, notes);
   }
   
-  updateScreenshotUrls(screenshotId: string, s3Url: string, thumbnailUrl: string) {
-    this.localDb.updateScreenshotUrls(screenshotId, s3Url, thumbnailUrl);
+  updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
+    this.localDb.updateScreenshotUrls(screenshotId, url, thumbnailUrl);
   }
 
   async transferScreenshotMode(ids: string[], mode: 'client_hours' | 'command_hours') {

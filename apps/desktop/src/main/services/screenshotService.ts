@@ -4,16 +4,22 @@ import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
 import { DatabaseService } from './databaseService';
+import { ActivityTracker } from './activityTracker';
 import crypto from 'crypto';
 
 export class ScreenshotService {
   private isCapturing = false;
   private screenshotDir: string;
   private captureTimers: Map<number, NodeJS.Timeout> = new Map();
+  private activityTracker: ActivityTracker | null = null;
   
   constructor(private db: DatabaseService) {
     this.screenshotDir = path.join(app.getPath('userData'), 'screenshots');
     this.ensureScreenshotDir();
+  }
+  
+  setActivityTracker(tracker: ActivityTracker) {
+    this.activityTracker = tracker;
   }
   
   async start() {
@@ -107,104 +113,18 @@ export class ScreenshotService {
     
     // Get the full session data
     const session = await this.db.getActiveSession();
-    
-    // Calculate the 10-minute window this screenshot belongs to
-    const now = new Date();
-    const currentMinute = now.getMinutes();
-    const windowStartMinute = Math.floor(currentMinute / 10) * 10;
-    const windowEndMinute = windowStartMinute + 10;
-    
-    // Calculate the time range for the 10-minute window
-    const windowStart = new Date(now);
-    windowStart.setMinutes(windowStartMinute);
-    windowStart.setSeconds(0);
-    windowStart.setMilliseconds(0);
-    
-    const windowEnd = new Date(windowStart);
-    windowEnd.setMinutes(windowEndMinute);
-    windowEnd.setSeconds(0);
-    windowEnd.setMilliseconds(0);
-    
-    console.log(`Screenshot window: ${windowStart.toLocaleTimeString()} - ${windowEnd.toLocaleTimeString()}`);
-    
-    // Get activity periods for this 10-minute window
-    // This includes periods that may not have completed yet
-    let relatedPeriods = await this.db.getActivityPeriodsForTimeRange(
-      currentActivity.sessionId, 
-      windowStart, 
-      windowEnd
-    );
-    
-    // Create placeholder periods for future minutes in the window if they don't exist yet
-    // For example, if screenshot is at 17:28:06, we need periods for 17:28-17:29 and 17:29-17:30
-    const expectedPeriods = [];
-    for (let minute = windowStartMinute; minute < windowEndMinute; minute++) {
-      const periodStart = new Date(windowStart);
-      periodStart.setMinutes(minute);
-      periodStart.setSeconds(0);
-      periodStart.setMilliseconds(0);
-      const periodEnd = new Date(periodStart);
-      periodEnd.setMinutes(minute + 1);
-      periodEnd.setSeconds(0);
-      periodEnd.setMilliseconds(0);
-      expectedPeriods.push({ start: periodStart, end: periodEnd });
+    const currentUser = this.db.getCurrentUser();
+    if (!currentUser) {
+      console.error('No current user found');
+      return;
     }
     
-    // Check which periods are missing and create placeholders for ALL future periods in the window
-    for (const expected of expectedPeriods) {
-      const exists = relatedPeriods.some(p => {
-        // Check if periods match within 1 second tolerance
-        const startDiff = Math.abs(p.periodStart - expected.start.getTime());
-        const endDiff = Math.abs(p.periodEnd - expected.end.getTime());
-        return startDiff < 1000 && endDiff < 1000;
-      });
-      
-      if (!exists) {
-        // Create placeholder period for ALL periods in the window, not just past ones
-        // This ensures future periods are associated with the correct screenshot
-        console.log(`Creating placeholder period for ${expected.start.toLocaleTimeString()}-${expected.end.toLocaleTimeString()}`);
-        const placeholderPeriod = await this.db.createActivityPeriod({
-          mode: session?.mode || 'command_hours',
-          projectId: session?.projectId,
-          task: session?.task,
-          sessionId: currentActivity.sessionId,
-          startTime: expected.start,
-          endTime: expected.end,
-          activityScore: 0,
-          isValid: true
-        });
-        if (placeholderPeriod) {
-          relatedPeriods.push(placeholderPeriod);
-        }
-      }
-    }
-    
-    // Ensure we have unique periods based on normalized timestamps
-    const uniquePeriods = Array.from(new Map(relatedPeriods.map(p => {
-      // Normalize to seconds to group periods with slight millisecond differences
-      const key = `${Math.floor(p.periodStart/1000)}-${Math.floor(p.periodEnd/1000)}`;
-      return [key, p];
-    })).values());
-    
-    // Calculate aggregated score from these periods
-    const totalScore = uniquePeriods.reduce((sum, period) => sum + (period.activityScore || 0), 0);
-    const aggregatedScore = uniquePeriods.length > 0 ? Math.round(totalScore / uniquePeriods.length) : 0;
-    
-    const relatedPeriodIds = uniquePeriods.map(p => p.id);
-    console.log(`Screenshot capturing ${uniquePeriods.length} unique activity periods for window`);
-    console.log(`Period time ranges: ${uniquePeriods.map(p => 
-      `${new Date(p.periodStart).toLocaleTimeString()}-${new Date(p.periodEnd).toLocaleTimeString()}`
-    ).join(', ')}`);
-    console.log(`Aggregated activity score from ${uniquePeriods.length} periods: ${aggregatedScore}`);
-    
-    // Always take screenshots when there's an active session
-    // This allows users to see their actual activity levels, even if 0%
+    // Store the capture timestamp
+    const captureTimestamp = new Date();
     
     try {
       const img = await screenshot();
       
-      // Store the capture timestamp locally
-      const captureTimestamp = new Date();
       const filename = `${captureTimestamp.getTime()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
       const localPath = path.join(this.screenshotDir, filename);
       
@@ -221,21 +141,27 @@ export class ScreenshotService {
         .jpeg({ quality: 70 })
         .toFile(thumbnailPath);
       
-      // Save screenshot with the aggregated activity score and capture timestamp
-      // Note: We pass relatedPeriodIds which are the 10 activity periods this screenshot covers
+      // Store screenshot in memory instead of saving to database immediately
+      const screenshotId = crypto.randomUUID();
       const screenshotData = {
+        id: screenshotId,
+        userId: currentUser.id,
+        sessionId: currentActivity.sessionId,
         localPath,
         thumbnailPath,
-        capturedAt: captureTimestamp,  // Use local capture time
-        activityScore: aggregatedScore,  // Use aggregated score from 10 periods
-        relatedPeriodIds: relatedPeriodIds,  // Store the 10 related period IDs that belong to this screenshot
-        sessionId: currentActivity.sessionId
+        capturedAt: captureTimestamp,
+        mode: session?.mode || 'command_hours',
+        notes: session?.task || undefined
       };
       
-      await this.db.saveScreenshot(screenshotData);
+      // Store in memory via activity tracker
+      if (this.activityTracker) {
+        this.activityTracker.storeScreenshotInMemory(screenshotData);
+        console.log(`Screenshot ${screenshotId} stored in memory, will be saved when window completes`);
+      } else {
+        console.warn('ActivityTracker not set, cannot store screenshot in memory');
+      }
       
-      // Also store the related activity period IDs for detailed breakdown
-      console.log(`Screenshot saved with aggregated activity score: ${aggregatedScore}%`);
       console.log(`Screenshot captured at ${captureTimestamp.toISOString()}: ${filename}`);
     } catch (error) {
       console.error('Failed to capture screenshot:', error);

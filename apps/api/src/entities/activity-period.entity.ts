@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from './user.entity';
 import { Session } from './session.entity';
+import { Screenshot } from './screenshot.entity';
 
 @Entity('activity_periods')
 export class ActivityPeriod {
@@ -20,6 +21,13 @@ export class ActivityPeriod {
   @ManyToOne(() => User, user => user.activityPeriods)
   @JoinColumn({ name: 'userId' })
   user: User;
+
+  @Column({ nullable: true })
+  screenshotId: string;
+
+  @ManyToOne(() => Screenshot, screenshot => screenshot.activityPeriods, { nullable: true })
+  @JoinColumn({ name: 'screenshotId' })
+  screenshot: Screenshot;
 
   @Column({ type: 'timestamp' })
   periodStart: Date;

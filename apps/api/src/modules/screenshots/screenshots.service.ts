@@ -73,8 +73,6 @@ export class ScreenshotsService {
     thumbnailUrl?: string;
     capturedAt: Date;
     mode: 'client_hours' | 'command_hours';
-    aggregatedScore?: number;
-    activityPeriodIds?: string[]; // Receive as array
     notes?: string;
   }) {
     // Create the main screenshot record with properly populated columns
@@ -85,8 +83,6 @@ export class ScreenshotsService {
       thumbnailUrl: createScreenshotDto.thumbnailUrl,
       capturedAt: createScreenshotDto.capturedAt,
       mode: createScreenshotDto.mode,
-      aggregatedScore: createScreenshotDto.aggregatedScore || 0, // Average score from 10 periods
-      activityPeriodIds: createScreenshotDto.activityPeriodIds ? JSON.stringify(createScreenshotDto.activityPeriodIds) : null, // Convert array to JSON string
       notes: createScreenshotDto.notes || '' // Copy of session task
     });
     

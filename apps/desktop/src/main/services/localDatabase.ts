@@ -35,6 +35,7 @@ interface ActivityPeriod {
   id: string;
   sessionId: string;
   userId: string;
+  screenshotId?: string | null;
   periodStart: number;
   periodEnd: number;
   mode: 'client_hours' | 'command_hours';
@@ -50,13 +51,11 @@ interface Screenshot {
   id: string;
   userId: string;
   sessionId: string;
-  activityPeriodIds?: string; // JSON string array
   localPath: string;
   thumbnailPath?: string;
-  s3Url?: string;
+  url?: string;  // S3 URL after upload
   thumbnailUrl?: string;
   capturedAt: number;
-  aggregatedScore: number;
   mode: 'client_hours' | 'command_hours';
   notes?: string;
   isDeleted: number;
@@ -90,33 +89,29 @@ export class LocalDatabase {
   }
   
   private runMigrations() {
-    // Migrate screenshots table to new schema
     try {
-      // Check if the screenshots table exists
-      const tableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshots'").get();
+      // Migration 1: Update screenshots table to remove activityPeriodIds and aggregatedScore, rename s3Url to url
+      const screenshotsTableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshots'").get();
       
-      if (tableInfo) {
-        // Table exists, check columns
+      if (screenshotsTableInfo) {
         const columns = this.db.prepare("PRAGMA table_info(screenshots)").all() as any[];
         const columnNames = columns.map(col => col.name);
         
-        // Check if we need to migrate to new schema (has old activityPeriodId column)
-        if (columnNames.includes('activityPeriodId') || !columnNames.includes('sessionId')) {
+        // Check if we need to migrate (has old columns or s3Url)
+        if (columnNames.includes('activityPeriodIds') || columnNames.includes('aggregatedScore') || columnNames.includes('s3Url')) {
           console.log('Migrating screenshots table to new schema...');
           
-          // Create new table with correct schema
+          // Create new table without the removed columns
           this.db.exec(`
             CREATE TABLE IF NOT EXISTS screenshots_new (
               id TEXT PRIMARY KEY,
               userId TEXT NOT NULL,
               sessionId TEXT NOT NULL,
-              activityPeriodIds TEXT,
               localPath TEXT NOT NULL,
               thumbnailPath TEXT,
-              s3Url TEXT,
+              url TEXT,
               thumbnailUrl TEXT,
               capturedAt INTEGER NOT NULL,
-              aggregatedScore INTEGER DEFAULT 0,
               mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
               notes TEXT,
               isDeleted INTEGER DEFAULT 0,
@@ -126,35 +121,37 @@ export class LocalDatabase {
             )
           `);
           
-          // Copy data from old table to new table
+          // Copy data from old table to new table (handle both url and s3Url columns)
+          // Check which columns exist in the old table
+          const hasUrl = columnNames.includes('url');
+          const hasS3Url = columnNames.includes('s3Url');
+          
+          let urlExpression = 'NULL';
+          if (hasUrl && hasS3Url) {
+            urlExpression = 'COALESCE(url, s3Url)';
+          } else if (hasUrl) {
+            urlExpression = 'url';
+          } else if (hasS3Url) {
+            urlExpression = 's3Url';
+          }
+          
+          let thumbnailExpression = 'thumbnailUrl';
+          if (hasUrl && hasS3Url) {
+            thumbnailExpression = `COALESCE(thumbnailUrl, ${urlExpression})`;
+          }
+          
           this.db.exec(`
             INSERT INTO screenshots_new (
-              id, userId, sessionId, activityPeriodIds, localPath, thumbnailPath,
-              s3Url, thumbnailUrl, capturedAt, aggregatedScore, mode, notes,
+              id, userId, sessionId, localPath, thumbnailPath,
+              url, thumbnailUrl, capturedAt, mode, notes,
               isDeleted, isSynced, createdAt
             )
             SELECT 
-              id, 
-              userId,
-              COALESCE(sessionId, (
-                SELECT s.id FROM sessions s 
-                WHERE s.userId = screenshots.userId 
-                AND s.startTime <= screenshots.capturedAt 
-                AND (s.endTime IS NULL OR s.endTime >= screenshots.capturedAt)
-                LIMIT 1
-              ), 'default-session'),
-              activityPeriodIds,
-              localPath,
-              thumbnailPath,
-              s3Url,
-              COALESCE(thumbnailUrl, s3Url),
-              capturedAt,
-              COALESCE(aggregatedScore, 0),
-              mode,
-              notes,
-              isDeleted,
-              isSynced,
-              createdAt
+              id, userId, sessionId, localPath, thumbnailPath,
+              ${urlExpression},
+              ${thumbnailExpression},
+              capturedAt, mode, notes,
+              isDeleted, isSynced, createdAt
             FROM screenshots
           `);
           
@@ -164,13 +161,33 @@ export class LocalDatabase {
           
           console.log('Screenshots table migration completed');
         }
+      }
+      
+      // Migration 2: Add screenshotId column to activity_periods table
+      const activityPeriodsTableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='activity_periods'").get();
+      
+      if (activityPeriodsTableInfo) {
+        const columns = this.db.prepare("PRAGMA table_info(activity_periods)").all() as any[];
+        const columnNames = columns.map(col => col.name);
         
-        // Drop screenshot_periods table if it exists (no longer needed)
-        const screenshotPeriodsTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshot_periods'").get();
-        if (screenshotPeriodsTable) {
-          console.log('Dropping unnecessary screenshot_periods table...');
-          this.db.exec('DROP TABLE IF EXISTS screenshot_periods');
+        // Check if screenshotId column exists
+        if (!columnNames.includes('screenshotId')) {
+          console.log('Adding screenshotId column to activity_periods table...');
+          
+          // Add the column (SQLite doesn't support adding FK constraint to existing column)
+          this.db.exec(`
+            ALTER TABLE activity_periods ADD COLUMN screenshotId TEXT
+          `);
+          
+          console.log('Activity periods table migration completed');
         }
+      }
+      
+      // Drop screenshot_periods table if it exists (no longer needed)
+      const screenshotPeriodsTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshot_periods'").get();
+      if (screenshotPeriodsTable) {
+        console.log('Dropping unnecessary screenshot_periods table...');
+        this.db.exec('DROP TABLE IF EXISTS screenshot_periods');
       }
     } catch (error) {
       console.error('Migration error:', error);
@@ -230,6 +247,7 @@ export class LocalDatabase {
         id TEXT PRIMARY KEY,
         sessionId TEXT NOT NULL,
         userId TEXT NOT NULL,
+        screenshotId TEXT,  -- FK to associate with screenshot
         periodStart INTEGER NOT NULL,
         periodEnd INTEGER NOT NULL,
         mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
@@ -239,7 +257,8 @@ export class LocalDatabase {
         classification TEXT,
         isSynced INTEGER DEFAULT 0,
         createdAt INTEGER NOT NULL,
-        FOREIGN KEY (sessionId) REFERENCES sessions(id)
+        FOREIGN KEY (sessionId) REFERENCES sessions(id),
+        FOREIGN KEY (screenshotId) REFERENCES screenshots(id)
       )
     `);
     
@@ -249,12 +268,10 @@ export class LocalDatabase {
         id TEXT PRIMARY KEY,
         userId TEXT NOT NULL,
         sessionId TEXT NOT NULL,
-        activityPeriodIds TEXT,  -- JSON array of the 10 activity period IDs
         localPath TEXT NOT NULL,
         thumbnailPath TEXT,
         s3Url TEXT,
         capturedAt INTEGER NOT NULL,
-        aggregatedScore INTEGER DEFAULT 0,  -- Average score from 10 periods
         mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
         notes TEXT,  -- Will contain session task
         isDeleted INTEGER DEFAULT 0,
@@ -352,7 +369,6 @@ export class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_screenshots_session ON screenshots(sessionId);
       CREATE INDEX IF NOT EXISTS idx_screenshots_user_time ON screenshots(userId, capturedAt);
       CREATE INDEX IF NOT EXISTS idx_screenshots_sync ON screenshots(isSynced);
-      CREATE INDEX IF NOT EXISTS idx_screenshots_aggregated_score ON screenshots(aggregatedScore);
       CREATE INDEX IF NOT EXISTS idx_sync_queue_attempts ON sync_queue(attempts);
     `);
     
@@ -526,6 +542,26 @@ export class LocalDatabase {
     return stmt.all(sessionId, limit) || [];
   }
   
+  getActivityPeriodsForScreenshot(screenshotId: string): any[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM activity_periods 
+      WHERE screenshotId = ?
+      ORDER BY periodStart ASC
+    `);
+    
+    return stmt.all(screenshotId) || [];
+  }
+  
+  updateActivityPeriodScreenshot(periodId: string, screenshotId: string) {
+    const stmt = this.db.prepare(`
+      UPDATE activity_periods 
+      SET screenshotId = ?, isSynced = 0
+      WHERE id = ?
+    `);
+    
+    stmt.run(screenshotId, periodId);
+  }
+  
   getActivityPeriodsForTimeRange(sessionId: string, windowStart: Date, windowEnd: Date): any[] {
     // Get all activity periods that fall within or overlap with the time window
     // Normalize timestamps to avoid millisecond issues
@@ -596,6 +632,7 @@ export class LocalDatabase {
     id?: string;
     sessionId: string;
     userId: string;
+    screenshotId?: string | null;
     periodStart: Date;
     periodEnd: Date;
     mode: 'client_hours' | 'command_hours';
@@ -645,6 +682,7 @@ export class LocalDatabase {
       id: data.id || crypto.randomUUID(),
       sessionId: data.sessionId,
       userId: data.userId,
+      screenshotId: data.screenshotId || null,
       periodStart: normalizedStart.getTime(),
       periodEnd: normalizedEnd.getTime(),
       mode: data.mode,
@@ -658,10 +696,10 @@ export class LocalDatabase {
     
     const stmt = this.db.prepare(`
       INSERT INTO activity_periods (
-        id, sessionId, userId, periodStart, periodEnd, mode, 
+        id, sessionId, userId, screenshotId, periodStart, periodEnd, mode, 
         notes, activityScore, isValid, classification, isSynced, createdAt
       ) VALUES (
-        @id, @sessionId, @userId, @periodStart, @periodEnd, @mode,
+        @id, @sessionId, @userId, @screenshotId, @periodStart, @periodEnd, @mode,
         @notes, @activityScore, @isValid, @classification, @isSynced, @createdAt
       )
     `);
@@ -682,10 +720,40 @@ export class LocalDatabase {
     thumbnailPath?: string;
     capturedAt: Date;
     mode: 'client_hours' | 'command_hours';
-    aggregatedScore?: number;
-    relatedPeriodIds?: string[];
     task?: string;  // From session
   }) {
+    // Check if a screenshot with the same localPath already exists
+    const existingScreenshot = this.db.prepare(`
+      SELECT * FROM screenshots WHERE localPath = ?
+    `).get(data.localPath) as any;
+    
+    if (existingScreenshot) {
+      console.log(`Screenshot already exists with id ${existingScreenshot.id}, not saving duplicate`);
+      
+      // Check if it's already in sync queue
+      const existingInQueue = this.db.prepare(`
+        SELECT id FROM sync_queue 
+        WHERE entityType = 'screenshot' AND entityId = ? AND attempts < 5
+      `).get(existingScreenshot.id) as any;
+      
+      if (!existingInQueue) {
+        // Add the existing screenshot to sync queue if not already there
+        this.addToSyncQueue('screenshot', existingScreenshot.id, 'upload', {
+          localPath: existingScreenshot.localPath,
+          capturedAt: existingScreenshot.capturedAt,
+          mode: existingScreenshot.mode,
+          userId: existingScreenshot.userId,
+          sessionId: existingScreenshot.sessionId,
+          notes: existingScreenshot.notes
+        });
+        console.log(`Added existing screenshot ${existingScreenshot.id} to sync queue`);
+      } else {
+        console.log(`Screenshot ${existingScreenshot.id} already in sync queue`);
+      }
+      
+      return existingScreenshot;
+    }
+    
     // Get session task for notes field
     const session = this.db.prepare('SELECT task FROM sessions WHERE id = ?').get(data.sessionId) as any;
     const notes = session?.task || null;
@@ -694,12 +762,10 @@ export class LocalDatabase {
       id: crypto.randomUUID(),
       userId: data.userId,
       sessionId: data.sessionId,
-      activityPeriodIds: data.relatedPeriodIds ? JSON.stringify(data.relatedPeriodIds) : null,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath || null,
-      s3Url: null,
+      url: null,
       capturedAt: data.capturedAt.getTime(),
-      aggregatedScore: data.aggregatedScore || 0,
       mode: data.mode,
       notes: notes,  // Copy from session task
       isDeleted: 0,
@@ -709,29 +775,28 @@ export class LocalDatabase {
     
     const stmt = this.db.prepare(`
       INSERT INTO screenshots (
-        id, userId, sessionId, activityPeriodIds, localPath, thumbnailPath, s3Url,
-        capturedAt, aggregatedScore, mode, notes, isDeleted, isSynced, createdAt
+        id, userId, sessionId, localPath, thumbnailPath, url,
+        capturedAt, mode, notes, isDeleted, isSynced, createdAt
       ) VALUES (
-        @id, @userId, @sessionId, @activityPeriodIds, @localPath, @thumbnailPath, @s3Url,
-        @capturedAt, @aggregatedScore, @mode, @notes, @isDeleted, @isSynced, @createdAt
+        @id, @userId, @sessionId, @localPath, @thumbnailPath, @url,
+        @capturedAt, @mode, @notes, @isDeleted, @isSynced, @createdAt
       )
     `);
     
     stmt.run(screenshot);
     
-    console.log(`Saved screenshot ${screenshot.id} with ${data.relatedPeriodIds?.length || 0} activity periods`);
+    console.log(`Saved new screenshot ${screenshot.id}`);
     
     // Add to sync queue for S3 upload with all new fields
     this.addToSyncQueue('screenshot', screenshot.id, 'upload', {
       localPath: screenshot.localPath,
       capturedAt: screenshot.capturedAt,
-      aggregatedScore: screenshot.aggregatedScore,
-      activityPeriodIds: data.relatedPeriodIds || [],
       mode: screenshot.mode,
       userId: screenshot.userId,
       sessionId: screenshot.sessionId,
       notes: screenshot.notes
     });
+    console.log(`Added screenshot ${screenshot.id} to sync queue`);
     
     return screenshot;
   }
@@ -741,9 +806,7 @@ export class LocalDatabase {
     todayStart.setHours(0, 0, 0, 0);
     
     const stmt = this.db.prepare(`
-      SELECT 
-        s.*,
-        s.aggregatedScore as activityScore
+      SELECT s.*
       FROM screenshots s
       WHERE s.userId = ? AND s.capturedAt >= ? AND s.isDeleted = 0
       ORDER BY s.capturedAt ASC
@@ -751,42 +814,32 @@ export class LocalDatabase {
     
     const screenshots = stmt.all(userId, todayStart.getTime()) as any[];
     
-    // Parse the activity period IDs from JSON if stored
+    // For each screenshot, get its associated activity periods and calculate aggregated score
     return screenshots.map((s: any) => {
-      let relatedPeriods = [];
-      if (s.activityPeriodIds) {
-        try {
-          const periodIds = JSON.parse(s.activityPeriodIds);
-          // Could optionally fetch the actual period data here if needed
-          relatedPeriods = periodIds;
-        } catch (e) {
-          console.error('Failed to parse activityPeriodIds:', e);
-        }
-      }
+      // Get activity periods for this screenshot
+      const periods = this.getActivityPeriodsForScreenshot(s.id);
+      
+      // Calculate aggregated score from associated periods
+      const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
+      const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
       
       return {
         ...s,
-        activityScore: s.activityScore || s.aggregatedScore || 0,
-        relatedPeriods: relatedPeriods
+        activityScore: aggregatedScore,
+        aggregatedScore: aggregatedScore, // For backward compatibility
+        relatedPeriods: periods
       };
     });
   }
   
-  updateScreenshotUrls(screenshotId: string, s3Url: string, thumbnailUrl: string) {
-    // First, check if we need to add thumbnailUrl column (for existing DBs)
-    try {
-      this.db.exec(`ALTER TABLE screenshots ADD COLUMN thumbnailUrl TEXT`);
-    } catch (e) {
-      // Column already exists, ignore error
-    }
-    
+  updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
     const stmt = this.db.prepare(`
       UPDATE screenshots 
-      SET s3Url = ?, thumbnailUrl = ?, isSynced = 1
+      SET url = ?, thumbnailUrl = ?, isSynced = 1
       WHERE id = ?
     `);
     
-    stmt.run(s3Url, thumbnailUrl, screenshotId);
+    stmt.run(url, thumbnailUrl, screenshotId);
     console.log(`Updated screenshot ${screenshotId} with S3 URLs`);
   }
   

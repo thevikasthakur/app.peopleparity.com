@@ -36,12 +36,11 @@ export class ScreenshotsController {
   async uploadScreenshot(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { 
+      id?: string; // Optional screenshot ID from desktop
       capturedAt: string; 
       sessionId: string; // Required
       mode?: 'client_hours' | 'command_hours'; 
       userId?: string;
-      aggregatedScore?: string;
-      activityPeriodIds?: string;
       notes?: string;
     },
     @Request() req,
@@ -51,9 +50,6 @@ export class ScreenshotsController {
     
     const { fullUrl, thumbnailUrl } = await this.screenshotsService.uploadToS3(file, userId);
     
-    // Parse activity period IDs if provided
-    const activityPeriodIds = body.activityPeriodIds ? JSON.parse(body.activityPeriodIds) : null;
-    
     const screenshot = await this.screenshotsService.create({
       userId,
       sessionId: body.sessionId,
@@ -61,8 +57,6 @@ export class ScreenshotsController {
       thumbnailUrl,
       capturedAt: new Date(body.capturedAt),
       mode: body.mode || 'client_hours',
-      aggregatedScore: body.aggregatedScore ? parseFloat(body.aggregatedScore) : 0,
-      activityPeriodIds,
       notes: body.notes || '',
     });
 
