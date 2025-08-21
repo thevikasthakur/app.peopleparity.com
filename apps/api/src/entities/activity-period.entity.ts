@@ -22,10 +22,13 @@ export class ActivityPeriod {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column({ nullable: true })
+  @Column({ nullable: false }) // MANDATORY - Cannot be null
   screenshotId: string;
 
-  @ManyToOne(() => Screenshot, screenshot => screenshot.activityPeriods, { nullable: true })
+  @ManyToOne(() => Screenshot, screenshot => screenshot.activityPeriods, { 
+    nullable: false,  // MANDATORY relationship
+    onDelete: 'CASCADE' // Delete period when screenshot is deleted
+  })
   @JoinColumn({ name: 'screenshotId' })
   screenshot: Screenshot;
 

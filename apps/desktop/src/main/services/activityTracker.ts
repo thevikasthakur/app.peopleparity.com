@@ -602,9 +602,21 @@ export class ActivityTracker extends EventEmitter {
     
     // Store in memory
     this.memoryActivityPeriods.set(periodId, memoryPeriod);
-    console.log(`Stored activity period ${periodId} in memory.`);
+    console.log(`\n📊 ACTIVITY PERIOD STORED IN MEMORY:`);
+    console.log(`  Period ID: ${periodId}`);
     console.log(`  Period: ${memoryPeriod.periodStart.toISOString()} - ${memoryPeriod.periodEnd.toISOString()}`);
+    console.log(`  Activity Score: ${activityScore}`);
+    console.log(`  Session ID: ${this.currentSessionId}`);
+    console.log(`  Mode: ${this.currentMode}`);
     console.log(`  Total periods in memory: ${this.memoryActivityPeriods.size}`);
+    
+    // Log all periods in memory for debugging
+    console.log(`  All periods in memory:`);
+    let i = 1;
+    for (const [id, period] of this.memoryActivityPeriods) {
+      console.log(`    ${i}. ${period.periodStart.toISOString()} - ${period.periodEnd.toISOString()} (score: ${period.activityScore})`);
+      i++;
+    }
     
     this.emit('period:saved', memoryPeriod);
   }
@@ -655,13 +667,20 @@ export class ActivityTracker extends EventEmitter {
     
     // Clear any existing timer only if scheduling a different window
     if (this.windowCompletionTimer) {
-      console.log(`Clearing existing window completion timer`);
+      console.log(`Clearing existing window completion timer for ${this.currentWindowEnd?.toISOString()}`);
       clearTimeout(this.windowCompletionTimer);
     }
     
     this.currentWindowEnd = windowEnd;
     const now = new Date();
     const msUntilWindowEnd = windowEnd.getTime() - now.getTime();
+    
+    console.log(`\n📅 scheduleWindowCompletion called:
+  Current time: ${now.toISOString()}
+  Window end: ${windowEnd.toISOString()}
+  Delay until window end: ${Math.round(msUntilWindowEnd / 1000)} seconds
+  Activity periods in memory: ${this.memoryActivityPeriods.size}
+  Screenshots in memory: ${this.memoryScreenshots.size}`);
     
     if (msUntilWindowEnd > 0) {
       console.log(`Scheduling window completion in ${Math.round(msUntilWindowEnd / 1000)} seconds for ${windowEnd.toISOString()}`);
@@ -679,15 +698,25 @@ export class ActivityTracker extends EventEmitter {
           this.scheduleWindowCompletion(windowEnd);
         }, 60000); // Check again in 1 minute
       } else {
+        console.log(`Setting window completion timer for ${actualDelay}ms (${Math.round(actualDelay/1000)}s)`);
         this.windowCompletionTimer = setTimeout(async () => {
-          console.log(`\n⏰ Window completion timer fired for ${windowEnd.toISOString()}`);
+          console.log(`\n⏰ WINDOW COMPLETION TIMER FIRED!`);
+          console.log(`  Time now: ${new Date().toISOString()}`);
+          console.log(`  Window end: ${windowEnd.toISOString()}`);
+          console.log(`  Activity periods in memory before save: ${this.memoryActivityPeriods.size}`);
+          console.log(`  Screenshots in memory before save: ${this.memoryScreenshots.size}`);
+          
           await this.saveCompletedWindow(windowEnd);
           this.currentWindowEnd = null;
+          
+          console.log(`  Activity periods in memory after save: ${this.memoryActivityPeriods.size}`);
+          console.log(`  Screenshots in memory after save: ${this.memoryScreenshots.size}`);
           
           // Schedule next window if we have an active session
           if (this.currentSessionId) {
             const nextWindowEnd = new Date(windowEnd);
             nextWindowEnd.setMinutes(nextWindowEnd.getMinutes() + 10);
+            console.log(`  Scheduling next window for ${nextWindowEnd.toISOString()}`);
             this.scheduleWindowCompletion(nextWindowEnd);
           }
         }, actualDelay);
@@ -746,11 +775,11 @@ export class ActivityTracker extends EventEmitter {
     
     // Save screenshot first if exists
     let savedScreenshotId: string | null = null;
-    if (windowScreenshot && windowScreenshot.thumbnailPath) {
+    if (windowScreenshot && windowScreenshot.localPath) {
       const dbScreenshot = await this.db.saveScreenshot({
         sessionId: windowScreenshot.sessionId,
         localPath: windowScreenshot.localPath,
-        thumbnailPath: windowScreenshot.thumbnailPath,
+        thumbnailPath: windowScreenshot.thumbnailPath || '',
         capturedAt: windowScreenshot.capturedAt
       });
       
@@ -1083,6 +1112,7 @@ export class ActivityTracker extends EventEmitter {
       windowEnd.setSeconds(0);
       windowEnd.setMilliseconds(0);
       console.log(`Session started at ${now.toISOString()}, scheduling window completion for ${windowEnd.toISOString()}`);
+      this.scheduleWindowCompletion(windowEnd);
       
       console.log('Session started:', session.id);
       this.emit('session:started', session);

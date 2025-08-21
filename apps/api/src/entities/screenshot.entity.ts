@@ -15,11 +15,12 @@ export class Screenshot {
   @JoinColumn({ name: "userId" })
   user: User;
 
-  @Column({ nullable: true }) // Temporarily nullable for migration
+  @Column({ nullable: false }) // MANDATORY - Cannot be null
   sessionId: string;
 
   @ManyToOne(() => Session, (session) => session.screenshots, {
-    nullable: true,
+    nullable: false, // MANDATORY relationship
+    onDelete: 'CASCADE' // Delete screenshot when session is deleted
   })
   @JoinColumn({ name: "sessionId" })
   session: Session;
@@ -38,12 +39,6 @@ export class Screenshot {
     enum: ["client_hours", "command_hours"],
   })
   mode: string;
-
-  @Column({ type: "int", default: 0 })
-  aggregatedScore: number; // Average score from 10 periods (0-100)
-
-  @Column({ type: "text", nullable: true })
-  activityPeriodIds: string; // JSON string array of the 10 activity period IDs
 
   @Column({ nullable: true })
   notes: string; // Copy of session task

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, screen, desktopCapturer } from 'electron';
 import path from 'path';
-import { ActivityTrackerV2 } from './services/activityTrackerV2';
-import { ScreenshotServiceV2 } from './services/screenshotServiceV2';
+import { ActivityTracker } from './services/activityTracker';
+import { ScreenshotService } from './services/screenshotService';
 import { DatabaseService } from './services/databaseService';
 import { ApiSyncService } from './services/apiSyncService';
 import { BrowserExtensionBridge } from './services/browserExtensionBridge';
@@ -9,8 +9,8 @@ import Store from 'electron-store';
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
-let activityTracker: ActivityTrackerV2;
-let screenshotService: ScreenshotServiceV2;
+let activityTracker: ActivityTracker;
+let screenshotService: ScreenshotService;
 let databaseService: DatabaseService;
 let apiSyncService: ApiSyncService;
 let browserBridge: BrowserExtensionBridge;
@@ -44,55 +44,57 @@ const createWindow = () => {
 app.whenReady().then(async () => {
   createWindow();
   
-  console.log('\n🚀 Initializing application services...');
-  
-  // Initialize database
   databaseService = new DatabaseService();
   await databaseService.initialize();
-  console.log('✅ Database initialized');
   
-  // Initialize activity tracker V2
-  activityTracker = new ActivityTrackerV2(databaseService);
-  databaseService.setActivityTracker(activityTracker as any); // Type cast for compatibility
-  console.log('✅ Activity tracker V2 initialized');
+  activityTracker = new ActivityTracker(databaseService);
+  databaseService.setActivityTracker(activityTracker); // Link the tracker to the database service
   
   // Restore existing active session if any
   try {
     const activeSession = databaseService.getActiveSession();
     if (activeSession) {
-      console.log(`📄 Found existing active session: ${activeSession.id}`);
+      console.log('Found existing active session, restoring:', activeSession.id);
       activityTracker.restoreSession(
         activeSession.id,
         activeSession.mode,
         activeSession.projectId || undefined
       );
-      console.log('✅ Session restored');
-    } else {
-      console.log('ℹ️ No active session found');
     }
   } catch (error) {
-    console.error('❌ Failed to restore session:', error);
+    console.error('Failed to restore session:', error);
   }
   
-  // Initialize screenshot service V2
-  screenshotService = new ScreenshotServiceV2(databaseService);
-  screenshotService.setActivityTracker(activityTracker);
-  console.log('✅ Screenshot service V2 initialized');
-  
-  // Initialize other services
+  screenshotService = new ScreenshotService(databaseService);
+  screenshotService.setActivityTracker(activityTracker); // Link the tracker to screenshot service
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
-  console.log('✅ API sync and browser bridge initialized');
   
-  // Start services
+  // Start API sync service
   apiSyncService.start();
   browserBridge.start();
-  screenshotService.start();
-  console.log('✅ All services started');
+  
+  // Try to start activity tracking with proper error handling
+  try {
+    console.log('Attempting to start activity tracker...');
+    // Note: Activity tracker will start when a session is started
+    // activityTracker.start(); // Will be started when session starts
+    console.log('Activity tracker initialized');
+  } catch (error) {
+    console.error('Failed to start activity tracker:', error);
+    console.log('App will continue without keyboard/mouse tracking. Grant accessibility permissions to enable.');
+  }
+  
+  // Start screenshot service
+  try {
+    console.log('Starting screenshot service...');
+    screenshotService.start();
+    console.log('Screenshot service started');
+  } catch (error) {
+    console.error('Failed to start screenshot service:', error);
+  }
   
   setupIpcHandlers();
-  console.log('✅ IPC handlers registered');
-  console.log('\n🎉 Application ready!\n');
 });
 
 app.on('window-all-closed', () => {
@@ -108,23 +110,12 @@ app.on('activate', () => {
 });
 
 function setupIpcHandlers() {
-  // Auth handlers
   ipcMain.handle('auth:login', async (_, email: string, password: string) => {
-    return databaseService.authenticateUser(email, password);
-  });
-  
-  ipcMain.handle('auth:current-user', async () => {
-    return databaseService.getCurrentUser();
-  });
-  
-  ipcMain.handle('auth:set-user', async (_, userData: any) => {
-    databaseService.setCurrentUser(userData);
-    return true;
+    return apiSyncService.login(email, password);
   });
   
   ipcMain.handle('auth:logout', async () => {
-    databaseService.clearCurrentUser();
-    return true;
+    return apiSyncService.logout();
   });
   
   ipcMain.handle('auth:check-session', async () => {
@@ -134,7 +125,7 @@ function setupIpcHandlers() {
   ipcMain.handle('auth:verify-token', async (_, token: string) => {
     return apiSyncService.verifyToken(token);
   });
-  
+
   ipcMain.handle('auth:saml-login', async () => {
     // Navigate main window to SAML login URL
     if (mainWindow) {
@@ -144,35 +135,25 @@ function setupIpcHandlers() {
     return { success: false, error: 'Main window not available' };
   });
   
-  // Session handlers
-  ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
+  ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
+    console.log('IPC: Starting session', { mode, task, projectId });
     return activityTracker.startSession(mode, projectId, task);
   });
   
   ipcMain.handle('session:stop', async () => {
+    console.log('IPC: Stopping session');
     return activityTracker.stopSession();
   });
   
-  ipcMain.handle('session:current', async () => {
-    return databaseService.getActiveSession();
+  ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
+    console.log('IPC: Switching mode', { mode, task, projectId });
+    return activityTracker.switchMode(mode, projectId, task);
   });
   
-  ipcMain.handle('session:activity', async () => {
-    return databaseService.getCurrentActivity();
-  });
-  
-  ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
-    // Stop current session and start new one
-    await activityTracker.stopSession();
-    return activityTracker.startSession(mode, projectId, task);
-  });
-  
-  // Dashboard handlers
   ipcMain.handle('dashboard:get-data', async () => {
     return databaseService.getDashboardData();
   });
   
-  // Screenshot handlers
   ipcMain.handle('screenshots:get-today', async () => {
     return databaseService.getTodayScreenshots();
   });
@@ -189,12 +170,10 @@ function setupIpcHandlers() {
     return databaseService.deleteScreenshots(screenshotIds);
   });
   
-  // Activity handlers
   ipcMain.handle('activity:get-period-details', async (_, periodId: string) => {
     return databaseService.getActivityPeriodDetails(periodId);
   });
   
-  // Notes handlers
   ipcMain.handle('notes:get-recent', async () => {
     return databaseService.getRecentNotes();
   });
@@ -203,17 +182,14 @@ function setupIpcHandlers() {
     return databaseService.saveNote(noteText);
   });
   
-  // Leaderboard handler
   ipcMain.handle('leaderboard:get', async () => {
     return databaseService.getLeaderboard();
   });
   
-  // Browser activity handler
   ipcMain.handle('browser:activity', async (_, data: any) => {
     return browserBridge.handleBrowserActivity(data);
   });
   
-  // Database handlers
   ipcMain.handle('database:info', async () => {
     return databaseService.getDatabaseInfo();
   });
@@ -222,12 +198,11 @@ function setupIpcHandlers() {
     return databaseService.exportUserData();
   });
   
-  // Projects handler
   ipcMain.handle('projects:list', async () => {
     return databaseService.getProjects();
   });
   
-  // Organization handlers
+  // Organization management
   ipcMain.handle('organizations:create', async (_, name: string, code: string, timezone?: string) => {
     return databaseService.createOrganization(name, code, timezone);
   });
@@ -240,7 +215,7 @@ function setupIpcHandlers() {
     return databaseService.getOrganizationStats(organizationId);
   });
   
-  // User management handlers
+  // User management
   ipcMain.handle('users:create', async (_, data: any) => {
     return databaseService.createUser(data);
   });

@@ -67,6 +67,7 @@ export class ScreenshotsService {
   }
 
   async create(createScreenshotDto: {
+    id?: string; // Optional ID from desktop app
     userId: string;
     sessionId: string; // Required - direct relationship to session
     url: string;
@@ -77,6 +78,7 @@ export class ScreenshotsService {
   }) {
     // Create the main screenshot record with properly populated columns
     const screenshot = this.screenshotsRepository.create({
+      ...(createScreenshotDto.id && { id: createScreenshotDto.id }), // Use provided ID if available
       userId: createScreenshotDto.userId,
       sessionId: createScreenshotDto.sessionId, // Direct relationship to session
       url: createScreenshotDto.url,
@@ -106,5 +108,9 @@ export class ScreenshotsService {
     }
 
     return query.getMany();
+  }
+
+  async findById(id: string) {
+    return this.screenshotsRepository.findOne({ where: { id } });
   }
 }

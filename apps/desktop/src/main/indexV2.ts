@@ -127,23 +127,6 @@ function setupIpcHandlers() {
     return true;
   });
   
-  ipcMain.handle('auth:check-session', async () => {
-    return apiSyncService.checkSession();
-  });
-
-  ipcMain.handle('auth:verify-token', async (_, token: string) => {
-    return apiSyncService.verifyToken(token);
-  });
-  
-  ipcMain.handle('auth:saml-login', async () => {
-    // Navigate main window to SAML login URL
-    if (mainWindow) {
-      mainWindow.loadURL('http://localhost:3001/api/auth/saml/login');
-      return { success: true };
-    }
-    return { success: false, error: 'Main window not available' };
-  });
-  
   // Session handlers
   ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
     return activityTracker.startSession(mode, projectId, task);
