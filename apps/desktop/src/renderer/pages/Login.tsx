@@ -157,6 +157,44 @@ export function Login() {
             </button>
           </form>
 
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Or continue with</span>
+            </div>
+          </div>
+
+          {/* Microsoft Sign In Button */}
+          <button
+            onClick={async () => {
+              // Navigate to Microsoft SAML login within the Electron window
+              if (typeof window.electronAPI !== 'undefined' && window.electronAPI.auth) {
+                try {
+                  await window.electronAPI.auth.samlLogin();
+                } catch (error) {
+                  console.error('Failed to initiate SAML login:', error);
+                  setError('Failed to start Microsoft login. Please try again.');
+                }
+              } else {
+                // Fallback for browser environment
+                window.location.href = 'http://localhost:3001/api/auth/saml/login';
+              }
+            }}
+            disabled={isLoading}
+            className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 border-gray-300 hover:border-gray-400 flex items-center justify-center gap-3 hover:shadow-md"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            Sign in with Microsoft
+          </button>
+
           {/* Fun Stats */}
           <div className="mt-8 pt-6 border-t border-gray-200">
             <div className="grid grid-cols-3 gap-4 text-center">

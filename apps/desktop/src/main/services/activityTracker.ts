@@ -671,38 +671,43 @@ export class ActivityTracker extends EventEmitter {
   }
   
   private async classifyActivity(): Promise<string> {
-    const window = await activeWin();
-    
-    if (!window) return 'unknown';
-    
-    const app = window.owner.name.toLowerCase();
-    const title = window.title.toLowerCase();
-    
-    if (app.includes('code') || app.includes('visual studio') || 
-        app.includes('intellij') || app.includes('webstorm')) {
-      return 'coding';
-    }
-    
-    if (app.includes('chrome') || app.includes('firefox') || 
-        app.includes('safari') || app.includes('edge')) {
-      if (title.includes('github') || title.includes('gitlab') || 
-          title.includes('stackoverflow') || title.includes('developer')) {
-        return 'research';
+    try {
+      const window = await activeWin();
+      
+      if (!window) return 'unknown';
+      
+      const app = window.owner.name.toLowerCase();
+      const title = window.title.toLowerCase();
+      
+      if (app.includes('code') || app.includes('visual studio') || 
+          app.includes('intellij') || app.includes('webstorm')) {
+        return 'coding';
       }
-      return 'browsing';
+      
+      if (app.includes('chrome') || app.includes('firefox') || 
+          app.includes('safari') || app.includes('edge')) {
+        if (title.includes('github') || title.includes('gitlab') || 
+            title.includes('stackoverflow') || title.includes('developer')) {
+          return 'research';
+        }
+        return 'browsing';
+      }
+      
+      if (app.includes('slack') || app.includes('teams') || 
+          app.includes('discord') || app.includes('zoom')) {
+        return 'communication';
+      }
+      
+      if (app.includes('terminal') || app.includes('iterm') || 
+          app.includes('cmd') || app.includes('powershell')) {
+        return 'terminal';
+      }
+      
+      return 'other';
+    } catch (error) {
+      console.warn('Could not get active window for classification:', error);
+      return 'unknown';
     }
-    
-    if (app.includes('slack') || app.includes('teams') || 
-        app.includes('discord') || app.includes('zoom')) {
-      return 'communication';
-    }
-    
-    if (app.includes('terminal') || app.includes('iterm') || 
-        app.includes('cmd') || app.includes('powershell')) {
-      return 'terminal';
-    }
-    
-    return 'other';
   }
   
   async startSession(mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) {

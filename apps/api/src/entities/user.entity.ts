@@ -17,8 +17,14 @@ export class User {
   @Column()
   name: string;
 
-  @Column()
+  @Column({ nullable: true })
   password: string;
+
+  @Column({ nullable: true })
+  microsoftId: string;
+
+  @Column({ default: 'local' })
+  authProvider: 'local' | 'microsoft';
 
   @Column({
     type: 'enum',

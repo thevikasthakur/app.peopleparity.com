@@ -197,6 +197,41 @@ export class ApiSyncService {
     return {};
   }
 
+  async verifyToken(token: string): Promise<{ valid: boolean; user?: any }> {
+    try {
+      // Set the token temporarily for this request
+      const response = await this.api.get('/auth/verify', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      if (response.data.valid) {
+        const user = response.data.user;
+        
+        // Store the token and user info
+        this.store.set('authToken', token);
+        this.store.set('user', user);
+        
+        // Update local cache
+        this.db.setCurrentUser({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          organizationId: user.organizationId || '',
+          organizationName: user.organizationName || '',
+          role: user.role
+        });
+        
+        return { valid: true, user };
+      }
+    } catch (error) {
+      console.error('Token verification failed:', error);
+    }
+
+    return { valid: false };
+  }
+
   async fetchProjects() {
     try {
       const response = await this.api.get('/projects');

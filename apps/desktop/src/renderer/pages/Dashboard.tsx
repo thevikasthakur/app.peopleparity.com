@@ -6,6 +6,7 @@ import { ScreenshotGrid } from '../components/ScreenshotGrid';
 import { Analytics } from '../components/Analytics';
 import { Leaderboard } from '../components/Leaderboard';
 import { TaskSelector } from '../components/TaskSelector';
+import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
 import { Coffee, Zap, Trophy, Activity, Play, Square } from 'lucide-react';
@@ -127,6 +128,8 @@ export function Dashboard() {
                 onModeChange={handleModeToggle}
                 disabled={showTaskSelector || !currentSession}
               />
+              
+              <ProfileDropdown />
             </div>
           </div>
         </div>
