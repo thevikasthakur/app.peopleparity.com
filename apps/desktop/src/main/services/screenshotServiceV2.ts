@@ -171,9 +171,10 @@ export class ScreenshotServiceV2 {
     let session = this.db.getActiveSession();
     
     // If no active session, check with activity tracker
-    let sessionId = session?.id;
+    let sessionId: string | undefined = session?.id;
     if (!sessionId && this.activityTracker) {
-      sessionId = this.activityTracker.getCurrentSessionId();
+      const trackerSessionId = this.activityTracker.getCurrentSessionId();
+      sessionId = trackerSessionId || undefined;
       if (sessionId) {
         // Get session details from database
         const trackerSession = (this.db as any).getSession?.(sessionId);

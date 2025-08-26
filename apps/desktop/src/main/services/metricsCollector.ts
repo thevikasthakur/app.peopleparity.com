@@ -240,6 +240,7 @@ export class MetricsCollector {
   
   /**
    * Calculate comprehensive activity score with detailed breakdown
+   * Using PeopleParity-style weighted scoring without consistency bonus
    */
   calculateDetailedScore(
     keyboardMetrics: any,
@@ -253,85 +254,109 @@ export class MetricsCollector {
     rawScore: number;
     finalScore: number;
   } {
-    // Score components (0-100 scale)
+    // Calculate per-minute metrics (PeopleParity approach)
+    const minutesPassed = timeMetrics.periodDurationSeconds / 60;
+    const keyHitsPerMin = keyboardMetrics.totalKeystrokes / minutesPassed;
+    const uniqueKeysPerMin = keyboardMetrics.uniqueKeys / minutesPassed;
+    const clicksPerMin = mouseMetrics.totalClicks / minutesPassed;
+    const scrollsPerMin = mouseMetrics.totalScrolls / minutesPassed;
+    const mouseDistancePerMin = mouseMetrics.distancePixels / minutesPassed;
+    
+    // Score components (0-10 scale each) - Based on PeopleParity algorithm
     const components = {
-      keyboardScore: 0,
-      mouseScore: 0,
-      consistencyScore: 0,
-      activityTimeScore: 0
+      // Key hits: 0-60 per minute maps to 0-10 (25% weight)
+      keyHits: Math.min(10, (keyHitsPerMin / 60) * 10),
+      
+      // Key diversity: 0-15 unique keys per minute maps to 0-10 (45% weight - MOST IMPORTANT)
+      keyDiversity: Math.min(10, (uniqueKeysPerMin / 15) * 10),
+      
+      // Mouse clicks: 0-20 per minute maps to 0-10 (10% weight)
+      mouseClicks: Math.min(10, (clicksPerMin / 20) * 10),
+      
+      // Mouse scrolls: 0-10 per minute maps to 0-10 (10% weight)
+      mouseScrolls: Math.min(10, (scrollsPerMin / 10) * 10),
+      
+      // Mouse movement: 0-3000 pixels per minute maps to 0-10 (10% weight)
+      mouseMovement: Math.min(10, (mouseDistancePerMin / 3000) * 10),
+      
+      // NO CONSISTENCY BONUS - removed as per user request
+      // Previously had 20 points for consistency, now purely activity-based
     };
     
-    // Keyboard score (0-40 points max)
-    const keysPerMinute = keyboardMetrics.keysPerMinute || 0;
-    components.keyboardScore = Math.min(40, keysPerMinute * 0.5);
-    
-    // Mouse score (0-30 points max)
-    const clicksPerMinute = (mouseMetrics.totalClicks / (timeMetrics.periodDurationSeconds / 60)) || 0;
-    const mouseMovementScore = Math.min(15, (mouseMetrics.distancePerMinute / 1000) * 2);
-    const mouseClickScore = Math.min(15, clicksPerMinute * 3);
-    components.mouseScore = mouseMovementScore + mouseClickScore;
-    
-    // Consistency score (0-20 points max)
-    if (keyboardMetrics.typingRhythm?.consistent) {
-      components.consistencyScore += 10;
-    }
-    if (mouseMetrics.movementPattern?.smooth) {
-      components.consistencyScore += 10;
-    }
-    
-    // Activity time score (0-10 points max)
-    const activityPercentage = timeMetrics.activityPercentage || 0;
-    components.activityTimeScore = Math.min(10, activityPercentage / 10);
-    
-    // Calculate penalties
+    // Calculate penalties for suspicious behavior
     const penalties = {
       botPenalty: 0,
       idlePenalty: 0,
       suspiciousActivityPenalty: 0
     };
     
-    // Bot penalty (0-50% reduction)
+    // Bot penalty (scale to 0-10 range for proportional impact)
     if (botDetection.keyboardBotDetected) {
-      penalties.botPenalty += 0.25;
+      penalties.botPenalty += 1.5; // Reduced from 25% to 1.5 points
     }
     if (botDetection.mouseBotDetected) {
-      penalties.botPenalty += 0.25;
+      penalties.botPenalty += 1.5; // Reduced from 25% to 1.5 points
     }
     
-    // Idle penalty (0-20% reduction)
+    // Idle penalty (scale to 0-10 range)
+    const activityPercentage = timeMetrics.activityPercentage || 0;
     if (activityPercentage < 30) {
-      penalties.idlePenalty = 0.2;
+      penalties.idlePenalty = 2; // 2 point penalty for very low activity
     } else if (activityPercentage < 50) {
-      penalties.idlePenalty = 0.1;
+      penalties.idlePenalty = 1; // 1 point penalty for low activity
     }
     
     // Suspicious activity penalty
     if (botDetection.suspiciousIntervals > 10) {
-      penalties.suspiciousActivityPenalty = 0.1;
+      penalties.suspiciousActivityPenalty = 1;
     }
     
-    // Calculate final score
-    const rawScore = components.keyboardScore + 
-                    components.mouseScore + 
-                    components.consistencyScore + 
-                    components.activityTimeScore;
+    // Calculate weighted average (PeopleParity-style scoring)
+    // NO consistency bonus - pure activity-based scoring
+    const weightedScore = 
+      components.keyHits * 0.25 +           // 25% weight
+      components.keyDiversity * 0.45 +       // 45% weight (MOST IMPORTANT)
+      components.mouseClicks * 0.10 +       // 10% weight
+      components.mouseScrolls * 0.10 +       // 10% weight
+      components.mouseMovement * 0.10;      // 10% weight
     
-    const totalPenalty = Math.min(0.8, // Max 80% penalty
-      penalties.botPenalty + 
-      penalties.idlePenalty + 
-      penalties.suspiciousActivityPenalty
-    );
+    // Apply penalties
+    const totalPenalties = penalties.botPenalty + penalties.idlePenalty + penalties.suspiciousActivityPenalty;
     
-    const finalScore = Math.round(rawScore * (1 - totalPenalty));
+    // Scale to 0-100 and apply penalties
+    const rawScore = weightedScore * 10;
+    const finalScore = Math.max(0, Math.min(100, rawScore - totalPenalties));
     
-    const formula = `(keyboard[${components.keyboardScore.toFixed(1)}] + mouse[${components.mouseScore.toFixed(1)}] + consistency[${components.consistencyScore}] + time[${components.activityTimeScore.toFixed(1)}]) * (1 - penalties[${totalPenalty.toFixed(2)}]) = ${finalScore}`;
+    // Debug logging for transparency
+    console.log('PeopleParity Scoring:', {
+      perMinute: {
+        keyHits: keyHitsPerMin.toFixed(1),
+        uniqueKeys: uniqueKeysPerMin.toFixed(1),
+        clicks: clicksPerMin.toFixed(1),
+        scrolls: scrollsPerMin.toFixed(1),
+        distance: mouseDistancePerMin.toFixed(0) + 'px'
+      },
+      scores: {
+        keyHits: components.keyHits.toFixed(1),
+        keyDiversity: components.keyDiversity.toFixed(1),
+        mouseClicks: components.mouseClicks.toFixed(1),
+        mouseScrolls: components.mouseScrolls.toFixed(1),
+        mouseMovement: components.mouseMovement.toFixed(1)
+      },
+      weights: '25% + 45% + 10% + 10% + 10%',
+      weighted: weightedScore.toFixed(1),
+      penalties: totalPenalties.toFixed(1),
+      final: finalScore.toFixed(0)
+    });
+    
+    const formula = `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}]`;
     
     return {
       components,
       penalties,
       formula,
       rawScore: Math.round(rawScore),
-      finalScore: Math.min(100, Math.max(0, finalScore))
+      finalScore: Math.round(finalScore)
     };
   }
   
@@ -579,5 +604,131 @@ export class MetricsCollector {
     this.keystrokeTimestamps = [];
     this.clickTimestamps = [];
     this.mousePositions = [];
+  }
+  
+  /**
+   * Simplified scoring method for direct use with raw metrics
+   */
+  calculateSimpleScore(
+    keystrokes: number,
+    uniqueKeystrokes: number, 
+    mouseClicks: number,
+    mouseScrolls: number,
+    mouseDistance: number,
+    periodDuration: number
+  ): {
+    components: any;
+    penalties: any;
+    formula: string;
+    rawScore: number;
+    finalScore: number;
+  } {
+    const durationMinutes = periodDuration / (60 * 1000);
+    
+    // Normalize per minute for consistent scoring (following PeopleParity approach)
+    const keyHitsPerMin = keystrokes / durationMinutes;
+    const uniqueKeysPerMin = uniqueKeystrokes / durationMinutes;
+    const clicksPerMin = mouseClicks / durationMinutes;
+    const scrollsPerMin = mouseScrolls / durationMinutes;
+    const mouseDistancePerMin = mouseDistance / durationMinutes;
+
+    // Score components (0-10 scale each) - Based on PeopleParity algorithm
+    const components = {
+      // Key hits: 0-60 per minute maps to 0-10 (25% weight)
+      keyHits: Math.min(10, (keyHitsPerMin / 60) * 10),
+      
+      // Key diversity: 0-15 unique keys per minute maps to 0-10 (45% weight - MOST IMPORTANT)
+      keyDiversity: Math.min(10, (uniqueKeysPerMin / 15) * 10),
+      
+      // Mouse clicks: 0-20 per minute maps to 0-10 (10% weight)
+      mouseClicks: Math.min(10, (clicksPerMin / 20) * 10),
+      
+      // Mouse scrolls: 0-10 per minute maps to 0-10 (10% weight)
+      mouseScrolls: Math.min(10, (scrollsPerMin / 10) * 10),
+      
+      // Mouse movement: 0-3000 pixels per minute maps to 0-10 (10% weight)
+      mouseMovement: Math.min(10, (mouseDistancePerMin / 3000) * 10)
+    };
+
+    // Penalties for suspicious behavior
+    const penalties = {
+      lowKeyboardDiversity: 0,
+      noMouseActivity: 0,
+      suspiciousBehavior: 0
+    };
+
+    // Apply penalties for bot-like behavior
+    if (keyHitsPerMin > 10 && uniqueKeysPerMin < 3) {
+      penalties.lowKeyboardDiversity = 0.5; // Likely repetitive/bot behavior
+    }
+
+    if (clicksPerMin === 0 && mouseDistancePerMin < 100) {
+      penalties.noMouseActivity = 0.3; // No mouse interaction
+    }
+
+    // Check for suspicious patterns
+    const patterns = this.detectSuspiciousPatterns(keystrokes, uniqueKeystrokes, mouseClicks);
+    if (patterns.isSuspicious) {
+      penalties.suspiciousBehavior = patterns.penaltyScore / 10; // Scale down penalty to 0-10 range
+    }
+
+    // Calculate weighted average (PeopleParity-style scoring)
+    // NO consistency bonus - pure activity-based scoring
+    const weightedScore = 
+      components.keyHits * 0.25 +           // 25% weight
+      components.keyDiversity * 0.45 +       // 45% weight (MOST IMPORTANT)
+      components.mouseClicks * 0.10 +       // 10% weight
+      components.mouseScrolls * 0.10 +       // 10% weight
+      components.mouseMovement * 0.10;      // 10% weight
+
+    // Apply penalties
+    const totalPenalties = Object.values(penalties).reduce((sum, p) => sum + p, 0);
+    
+    // Scale to 0-100 and apply penalties
+    const rawScore = weightedScore * 10;
+    const finalScore = Math.max(0, Math.min(100, rawScore - (totalPenalties * 10)));
+
+    const formula = `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)})`;
+
+    return {
+      components,
+      penalties,
+      formula,
+      rawScore: Math.round(rawScore),
+      finalScore: Math.round(finalScore)
+    };
+  }
+  
+  /**
+   * Detect suspicious patterns in activity
+   */
+  private detectSuspiciousPatterns(
+    keystrokes: number,
+    uniqueKeystrokes: number,
+    mouseClicks: number
+  ): { isSuspicious: boolean; penaltyScore: number } {
+    let penaltyScore = 0;
+    
+    // Check for repetitive keystrokes
+    if (keystrokes > 100 && uniqueKeystrokes < 5) {
+      penaltyScore += 5; // Very repetitive
+    } else if (keystrokes > 50 && uniqueKeystrokes < 10) {
+      penaltyScore += 2; // Somewhat repetitive
+    }
+    
+    // Check for unusual ratios
+    if (keystrokes > 0 && uniqueKeystrokes === 0) {
+      penaltyScore += 10; // All same key
+    }
+    
+    // Check for bot-like click patterns
+    if (mouseClicks > 100) {
+      penaltyScore += 3; // Excessive clicking
+    }
+    
+    return {
+      isSuspicious: penaltyScore > 0,
+      penaltyScore
+    };
   }
 }
