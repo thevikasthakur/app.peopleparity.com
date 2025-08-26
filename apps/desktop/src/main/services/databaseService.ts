@@ -136,6 +136,10 @@ export class DatabaseService {
       return null;
     }
   }
+  
+  getSession(sessionId: string) {
+    return this.localDb.getSession(sessionId);
+  }
 
   // Activity period management
   async createActivityPeriod(data: any) {
@@ -149,7 +153,8 @@ export class DatabaseService {
       mode: data.mode,
       activityScore: data.activityScore || 0,
       isValid: data.isValid !== undefined ? data.isValid : true,
-      classification: data.classification
+      classification: data.classification,
+      metricsBreakdown: data.metricsBreakdown // Include detailed metrics
     };
     
     const period = this.localDb.createActivityPeriod(periodData);

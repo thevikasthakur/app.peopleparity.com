@@ -28,7 +28,7 @@ export class ApiSyncService {
     private store: Store
   ) {
     this.api = axios.create({
-      baseURL: process.env.API_URL || 'http://localhost:3001/api',
+      baseURL: process.env.API_URL || 'http://127.0.0.1:3001/api',
       timeout: 10000,
     });
 
@@ -315,10 +315,13 @@ export class ApiSyncService {
     if (!token || token === 'offline-token') return;
 
     try {
-      console.log('Syncing data with server...');
-      
       // Get unsynced items from local database
       const unsyncedItems = this.db.getUnsyncedItems();
+      
+      // Only log if there are items to sync
+      if (unsyncedItems.length > 0) {
+        console.log(`Syncing ${unsyncedItems.length} items with server...`);
+      }
       
       // Group items by type to ensure correct sync order
       const sessions = unsyncedItems.filter(item => item.entityType === 'session');
@@ -361,6 +364,11 @@ export class ApiSyncService {
       for (const item of activityPeriods) {
         const data = JSON.parse(item.data);
         
+        // Skip items that have failed too many times
+        if (item.attempts >= 2) {
+          continue; // Skip after 2 attempts to avoid flooding
+        }
+        
         // Check if the session exists (either just synced or previously synced)
         if (data.sessionId) {
           // If session wasn't in this batch, verify it exists on server
@@ -369,11 +377,19 @@ export class ApiSyncService {
               // Verify session exists on server
               const response = await this.api.get(`/sessions/${data.sessionId}`);
               if (!response.data) {
-                console.log(`Session ${data.sessionId} doesn't exist on server yet, skipping activity period`);
+                // Only log first attempt
+                if (item.attempts === 0) {
+                  console.log(`Session ${data.sessionId} doesn't exist on server, will retry later`);
+                }
+                this.db.incrementSyncAttempts(item.id); // Increment attempts for non-existent sessions
                 continue;
               }
             } catch (error) {
-              console.log(`Cannot verify session ${data.sessionId}, skipping activity period`);
+              // Only log first attempt
+              if (item.attempts === 0) {
+                console.log(`Cannot verify session ${data.sessionId}, will retry later`);
+              }
+              this.db.incrementSyncAttempts(item.id);
               continue;
             }
           }
@@ -385,11 +401,17 @@ export class ApiSyncService {
             // Verify screenshot exists on server
             const response = await this.api.get(`/screenshots/${data.screenshotId}`);
             if (!response.data) {
-              console.log(`Screenshot ${data.screenshotId} doesn't exist on server yet, skipping activity period`);
+              if (item.attempts === 0) {
+                console.log(`Screenshot ${data.screenshotId} doesn't exist on server, will retry later`);
+              }
+              this.db.incrementSyncAttempts(item.id);
               continue;
             }
           } catch (error) {
-            console.log(`Cannot verify screenshot ${data.screenshotId}, skipping activity period`);
+            if (item.attempts === 0) {
+              console.log(`Cannot verify screenshot ${data.screenshotId}, will retry later`);
+            }
+            this.db.incrementSyncAttempts(item.id);
             continue;
           }
         }
@@ -456,12 +478,26 @@ export class ApiSyncService {
           
         case 'activity_period':
           console.log('Syncing activity period:', item.entityId, 'for session:', data.sessionId, 'screenshot:', data.screenshotId);
+          
+          // Parse metricsBreakdown if it's a string
+          let metricsBreakdown = null;
+          if (data.metricsBreakdown) {
+            try {
+              metricsBreakdown = typeof data.metricsBreakdown === 'string' 
+                ? JSON.parse(data.metricsBreakdown) 
+                : data.metricsBreakdown;
+            } catch (e) {
+              console.warn('Failed to parse metricsBreakdown:', e);
+            }
+          }
+          
           const activityResponse = await this.api.post('/activity-periods', {
             id: item.entityId, // Use the local activity period ID
             ...data,
             periodStart: new Date(data.periodStart).toISOString(),
             periodEnd: new Date(data.periodEnd).toISOString(),
-            screenshotId: data.screenshotId // Include screenshot FK
+            screenshotId: data.screenshotId, // Include screenshot FK
+            metricsBreakdown // Include detailed metrics
           });
           
           if (!activityResponse.data.success) {

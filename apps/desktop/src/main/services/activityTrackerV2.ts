@@ -23,15 +23,21 @@ import { powerMonitor } from 'electron';
 import crypto from 'crypto';
 import { DatabaseService } from './databaseService';
 import { WindowManager, ActivityPeriod, Screenshot } from './windowManager';
+import { MetricsCollector, DetailedActivityMetrics } from './metricsCollector';
 
 interface ActivityMetrics {
   keyHits: number;
   productiveKeyHits: number;
+  navigationKeyHits: number;
   uniqueKeys: Set<number>;
+  productiveUniqueKeys: Set<number>;
   mouseClicks: number;
+  rightClicks: number;
+  doubleClicks: number;
   mouseScrolls: number;
   mouseDistance: number;
   lastMousePosition: { x: number; y: number } | null;
+  activeSeconds: number;
 }
 
 // Global flag to track if uIOhook has been started
@@ -40,6 +46,7 @@ let globalUIOhookStarted = false;
 export class ActivityTrackerV2 extends EventEmitter {
   private db: DatabaseService;
   private windowManager: WindowManager;
+  private metricsCollector: MetricsCollector;
   
   // Session state
   private isTracking: boolean = false;
@@ -65,6 +72,7 @@ export class ActivityTrackerV2 extends EventEmitter {
     super();
     this.db = db;
     this.windowManager = new WindowManager();
+    this.metricsCollector = new MetricsCollector();
     this.currentMetrics = this.createEmptyMetrics();
     this.periodStartTime = new Date();
     this.lastActivityTime = new Date();
@@ -149,7 +157,8 @@ export class ActivityTrackerV2 extends EventEmitter {
             mode: period.mode,
             activityScore: period.activityScore,
             isValid: period.isValid,
-            classification: period.classification
+            classification: period.classification,
+            metricsBreakdown: period.metricsBreakdown // Include detailed metrics
           });
           
           if (dbPeriod) {
@@ -159,7 +168,14 @@ export class ActivityTrackerV2 extends EventEmitter {
             } else if (period.clientHourData) {
               await this.db.saveClientHourActivity(dbPeriod.id, period.clientHourData);
             }
-            console.log(`✅ Saved activity period ${dbPeriod.id}`);
+            
+            // Log if bot activity was detected
+            if (period.metricsBreakdown?.botDetection?.keyboardBotDetected || 
+                period.metricsBreakdown?.botDetection?.mouseBotDetected) {
+              console.log(`⚠️ Bot activity detected in period ${dbPeriod.id}`);
+            }
+            
+            console.log(`✅ Saved activity period ${dbPeriod.id} with metrics`);
           }
         }
         
@@ -265,11 +281,12 @@ export class ActivityTrackerV2 extends EventEmitter {
     this.currentMode = mode;
     this.isTracking = true;
     
-    // Reset metrics
+    // Reset metrics and collector
     this.currentMetrics = this.createEmptyMetrics();
     this.periodStartTime = new Date();
     this.lastActivityTime = new Date();
     this.activeSeconds = 0;
+    this.metricsCollector.reset(); // Reset metrics collector
     
     // Start the window manager
     this.windowManager.startSession(sessionId, currentUser.id, mode);
@@ -342,16 +359,24 @@ export class ActivityTrackerV2 extends EventEmitter {
       if (!this.isTracking) return;
       
       const keycode = e.keycode;
+      const timestamp = Date.now();
       this.lastActivityTime = new Date();
       
       // Track unique keys
       this.currentMetrics.uniqueKeys.add(keycode);
       
+      // Record in metrics collector for bot detection
+      this.metricsCollector.recordKeystroke(keycode, timestamp);
+      
       // Classify key
       if (this.productiveKeys.has(keycode)) {
         this.currentMetrics.productiveKeyHits++;
+        this.currentMetrics.productiveUniqueKeys.add(keycode);
         this.currentMetrics.keyHits++;
-      } else if (!this.navigationKeys.has(keycode)) {
+      } else if (this.navigationKeys.has(keycode)) {
+        this.currentMetrics.navigationKeyHits++;
+        this.currentMetrics.keyHits++;
+      } else {
         this.currentMetrics.keyHits++;
       }
     });
@@ -367,12 +392,31 @@ export class ActivityTrackerV2 extends EventEmitter {
     uIOhook.removeAllListeners('mousedown');
     uIOhook.removeAllListeners('wheel');
     uIOhook.removeAllListeners('mousemove');
+    uIOhook.removeAllListeners('mouseup');
+    
+    let lastClickTime = 0;
     
     uIOhook.on('mousedown', (e: any) => {
       if (!this.isTracking) return;
       
+      const timestamp = Date.now();
       this.lastActivityTime = new Date();
-      this.currentMetrics.mouseClicks++;
+      
+      // Record in metrics collector for bot detection
+      this.metricsCollector.recordClick(timestamp);
+      
+      // Track click types
+      if (e.button === 2) { // Right click
+        this.currentMetrics.rightClicks++;
+      } else if (e.button === 1) { // Left click
+        this.currentMetrics.mouseClicks++;
+        
+        // Check for double click (within 500ms)
+        if (timestamp - lastClickTime < 500) {
+          this.currentMetrics.doubleClicks++;
+        }
+        lastClickTime = timestamp;
+      }
     });
     
     uIOhook.on('wheel', () => {
@@ -384,6 +428,11 @@ export class ActivityTrackerV2 extends EventEmitter {
     
     uIOhook.on('mousemove', (e: any) => {
       if (!this.isTracking) return;
+      
+      const timestamp = Date.now();
+      
+      // Record position for bot detection
+      this.metricsCollector.recordMousePosition(e.x, e.y, timestamp);
       
       if (this.currentMetrics.lastMousePosition) {
         const distance = Math.sqrt(
@@ -431,6 +480,7 @@ export class ActivityTrackerV2 extends EventEmitter {
       const idleTime = powerMonitor.getSystemIdleTime();
       if (idleTime < 60) {
         this.activeSeconds++;
+        this.currentMetrics.activeSeconds++; // Track in current metrics
       }
     }, 1000);
   }
@@ -441,14 +491,48 @@ export class ActivityTrackerV2 extends EventEmitter {
   private async savePeriodData() {
     if (!this.currentSessionId || !this.currentUserId) return;
     
+    // Verify session exists (don't require it to be active)
+    // Sessions can become inactive when windows complete, but tracking should continue
+    const activeSession = this.db.getActiveSession();
+    if (!activeSession || activeSession.id !== this.currentSessionId) {
+      console.log('⚠️ Session is no longer active in database, but continuing to track');
+      // Don't stop tracking - the session might have been marked inactive by window completion
+      // but we should continue collecting data
+    }
+    
     const periodEnd = new Date();
-    const activityScore = this.calculateActivityScore();
+    const periodDuration = (periodEnd.getTime() - this.periodStartTime.getTime()) / 1000; // in seconds
+    
+    // Generate detailed metrics using MetricsCollector
+    const detailedMetrics = this.metricsCollector.generateMetricsBreakdown(
+      {
+        keyHits: this.currentMetrics.keyHits,
+        productiveKeyHits: this.currentMetrics.productiveKeyHits,
+        navigationKeyHits: this.currentMetrics.navigationKeyHits,
+        uniqueKeys: this.currentMetrics.uniqueKeys,
+        productiveUniqueKeys: this.currentMetrics.productiveUniqueKeys,
+        mouseClicks: this.currentMetrics.mouseClicks,
+        rightClicks: this.currentMetrics.rightClicks,
+        doubleClicks: this.currentMetrics.doubleClicks,
+        mouseScrolls: this.currentMetrics.mouseScrolls,
+        mouseDistance: this.currentMetrics.mouseDistance,
+        activeSeconds: this.currentMetrics.activeSeconds
+      },
+      periodDuration
+    );
+    
+    // Use the calculated score from detailed metrics
+    const activityScore = detailedMetrics.scoreCalculation.finalScore;
     
     console.log(`\n📊 Saving period: ${this.periodStartTime.toISOString()} - ${periodEnd.toISOString()}`);
-    console.log(`  Activity score: ${activityScore}`);
-    console.log(`  Keystrokes: ${this.currentMetrics.keyHits}, Clicks: ${this.currentMetrics.mouseClicks}`);
+    console.log(`  Activity score: ${activityScore} (formula: ${detailedMetrics.scoreCalculation.formula})`);
+    console.log(`  Keystrokes: ${this.currentMetrics.keyHits} (${this.currentMetrics.productiveKeyHits} productive)`);
+    console.log(`  Mouse: ${this.currentMetrics.mouseClicks} clicks, ${Math.round(this.currentMetrics.mouseDistance)}px distance`);
+    if (detailedMetrics.botDetection.keyboardBotDetected || detailedMetrics.botDetection.mouseBotDetected) {
+      console.log(`  ⚠️ Bot activity detected: ${detailedMetrics.botDetection.details.join(', ')}`);
+    }
     
-    // Create activity period object
+    // Create activity period object with detailed metrics
     const period: ActivityPeriod = {
       id: crypto.randomUUID(),
       sessionId: this.currentSessionId,
@@ -458,7 +542,8 @@ export class ActivityTrackerV2 extends EventEmitter {
       mode: this.currentMode,
       activityScore,
       isValid: true,
-      classification: this.classifyActivity(activityScore),
+      classification: detailedMetrics.classification.category,
+      metricsBreakdown: detailedMetrics, // Add detailed metrics
       commandHourData: this.currentMode === 'command_hours' ? {
         uniqueKeys: this.currentMetrics.uniqueKeys.size,
         productiveKeyHits: this.currentMetrics.productiveKeyHits,
@@ -471,10 +556,11 @@ export class ActivityTrackerV2 extends EventEmitter {
     // Add to current window
     this.windowManager.addActivityPeriod(period);
     
-    // Reset metrics for next period
+    // Reset metrics for next period but keep metrics collector data
     this.currentMetrics = this.createEmptyMetrics();
     this.periodStartTime = new Date();
     this.activeSeconds = 0;
+    // Note: We don't reset metricsCollector here as it maintains rolling windows
     
     // Get window info
     const windowInfo = this.windowManager.getCurrentWindowInfo();
@@ -577,11 +663,16 @@ export class ActivityTrackerV2 extends EventEmitter {
     return {
       keyHits: 0,
       productiveKeyHits: 0,
+      navigationKeyHits: 0,
       uniqueKeys: new Set(),
+      productiveUniqueKeys: new Set(),
       mouseClicks: 0,
+      rightClicks: 0,
+      doubleClicks: 0,
       mouseScrolls: 0,
       mouseDistance: 0,
-      lastMousePosition: null
+      lastMousePosition: null,
+      activeSeconds: 0
     };
   }
 }

@@ -21,11 +21,15 @@ export class ActivityController {
       
       console.log('Received activity period with ID:', cleanDto.id, 'and sessionId:', cleanDto.sessionId);
       
+      // Map metricsBreakdown to metrics field for the entity
+      const { metricsBreakdown, ...restDto } = cleanDto;
+      
       const period = await this.activityService.create({
-        ...cleanDto,
-        periodStart: new Date(cleanDto.periodStart),
-        periodEnd: new Date(cleanDto.periodEnd),
+        ...restDto,
+        periodStart: new Date(restDto.periodStart),
+        periodEnd: new Date(restDto.periodEnd),
         userId: req.user.userId,
+        metrics: metricsBreakdown || restDto.metrics, // Use metricsBreakdown if provided, fallback to metrics
       });
       return { success: true, period };
     } catch (error: any) {
@@ -53,11 +57,15 @@ export class ActivityController {
         // Remove only auto-generated timestamp fields, preserve the ID if provided
         const { createdAt, updatedAt, ...cleanPeriod } = period;
         
+        // Map metricsBreakdown to metrics field for the entity
+        const { metricsBreakdown, ...restPeriod } = cleanPeriod;
+        
         return this.activityService.create({
-          ...cleanPeriod,
-          periodStart: new Date(cleanPeriod.periodStart),
-          periodEnd: new Date(cleanPeriod.periodEnd),
+          ...restPeriod,
+          periodStart: new Date(restPeriod.periodStart),
+          periodEnd: new Date(restPeriod.periodEnd),
           userId: req.user.userId,
+          metrics: metricsBreakdown || restPeriod.metrics, // Use metricsBreakdown if provided, fallback to metrics
         });
       })
     );

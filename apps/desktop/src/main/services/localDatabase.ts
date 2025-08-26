@@ -181,6 +181,17 @@ export class LocalDatabase {
           
           console.log('Activity periods table migration completed');
         }
+        
+        // Migration 3: Add metricsBreakdown column for detailed metrics
+        if (!columnNames.includes('metricsBreakdown')) {
+          console.log('Adding metricsBreakdown column to activity_periods table...');
+          
+          this.db.exec(`
+            ALTER TABLE activity_periods ADD COLUMN metricsBreakdown TEXT
+          `);
+          
+          console.log('Metrics breakdown column added successfully');
+        }
       }
       
       // Drop screenshot_periods table if it exists (no longer needed)
@@ -498,7 +509,14 @@ export class LocalDatabase {
     }
   }
   
-  getActiveSession(userId: string): Session | null {
+  getActiveSession(userId?: string): Session | null {
+    // If no userId provided, get for current user
+    if (!userId) {
+      const currentUser = this.getCurrentUser();
+      if (!currentUser) return null;
+      userId = currentUser.id;
+    }
+    
     const stmt = this.db.prepare(`
       SELECT * FROM sessions 
       WHERE userId = ? AND isActive = 1 
@@ -506,6 +524,14 @@ export class LocalDatabase {
       LIMIT 1
     `);
     return stmt.get(userId) as Session | null;
+  }
+  
+  getSession(sessionId: string): Session | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM sessions 
+      WHERE id = ?
+    `);
+    return stmt.get(sessionId) as Session | null;
   }
   
   // Activity period operations
@@ -639,6 +665,7 @@ export class LocalDatabase {
     activityScore: number;
     isValid: boolean;
     classification?: string;
+    metricsBreakdown?: any; // Detailed metrics from MetricsCollector
   }): ActivityPeriod {
     // Normalize timestamps to start of second to avoid millisecond mismatches
     const normalizedStart = new Date(data.periodStart);
@@ -690,6 +717,7 @@ export class LocalDatabase {
       activityScore: data.activityScore,
       isValid: data.isValid ? 1 : 0,
       classification: data.classification || null,
+      metricsBreakdown: data.metricsBreakdown ? JSON.stringify(data.metricsBreakdown) : null,
       isSynced: 0,
       createdAt: Date.now()
     };
@@ -697,10 +725,10 @@ export class LocalDatabase {
     const stmt = this.db.prepare(`
       INSERT INTO activity_periods (
         id, sessionId, userId, screenshotId, periodStart, periodEnd, mode, 
-        notes, activityScore, isValid, classification, isSynced, createdAt
+        notes, activityScore, isValid, classification, metricsBreakdown, isSynced, createdAt
       ) VALUES (
         @id, @sessionId, @userId, @screenshotId, @periodStart, @periodEnd, @mode,
-        @notes, @activityScore, @isValid, @classification, @isSynced, @createdAt
+        @notes, @activityScore, @isValid, @classification, @metricsBreakdown, @isSynced, @createdAt
       )
     `);
     

@@ -26,6 +26,7 @@ export interface ActivityPeriod {
   isValid: boolean;
   classification?: string;
   metrics?: any;
+  metricsBreakdown?: any; // Detailed metrics from MetricsCollector
   commandHourData?: any;
   clientHourData?: any;
 }
@@ -206,12 +207,47 @@ export class WindowManager extends EventEmitter {
     const windowStart = this.currentWindow.windowStart.getTime();
     const windowEnd = this.currentWindow.windowEnd.getTime();
     
+    // Check if we've passed the window end time (timer might have failed)
+    const now = new Date().getTime();
+    if (now > windowEnd + 60000) { // More than 1 minute past window end
+      console.log(`⚠️ Current window is overdue (ended ${new Date(windowEnd).toISOString()}), completing it now`);
+      this.completeWindow();
+      
+      // Try adding to the new window if one was created
+      if (this.currentWindow && periodStart >= this.currentWindow.windowStart.getTime()) {
+        this.currentWindow.activityPeriods.push(period);
+        console.log(`✅ Added activity period to new window (total: ${this.currentWindow.activityPeriods.length})`);
+      }
+      return;
+    }
+    
     // Period should overlap with the window
     if (periodStart >= windowStart && periodStart < windowEnd) {
+      // Safety check: windows should not have more than 10 periods
+      if (this.currentWindow.activityPeriods.length >= 10) {
+        console.log(`⚠️ Window already has 10 periods, forcing completion`);
+        this.completeWindow();
+        
+        // Add to new window
+        if (this.currentWindow) {
+          this.addActivityPeriod(period);
+        }
+        return;
+      }
+      
       this.currentWindow.activityPeriods.push(period);
       console.log(`✅ Added activity period to window (total: ${this.currentWindow.activityPeriods.length})`);
+    } else if (periodStart >= windowEnd) {
+      // Period is for a future window, complete current and create new
+      console.log(`⚠️ Period is for next window, completing current window`);
+      this.completeWindow();
+      
+      // Try adding to the new window
+      if (this.currentWindow) {
+        this.addActivityPeriod(period); // Recursive call to add to new window
+      }
     } else {
-      console.log(`⚠️ Activity period ${period.periodStart.toISOString()} doesn't belong to current window`);
+      console.log(`⚠️ Activity period ${period.periodStart.toISOString()} is from the past, ignoring`);
     }
   }
   

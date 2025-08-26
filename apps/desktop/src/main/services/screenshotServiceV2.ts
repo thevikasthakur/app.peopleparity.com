@@ -35,13 +35,8 @@ export class ScreenshotServiceV2 {
     console.log('📷 Starting screenshot service...');
     this.isCapturing = true;
     
-    // Schedule screenshots for current hour
-    this.scheduleScreenshots();
-    
-    // Re-schedule every hour
-    setInterval(() => {
-      this.scheduleScreenshots();
-    }, 60 * 60 * 1000); // Every hour
+    // Schedule screenshots immediately
+    this.scheduleNextScreenshot();
     
     console.log('✅ Screenshot service started');
   }
@@ -66,7 +61,56 @@ export class ScreenshotServiceV2 {
   }
   
   /**
-   * Schedule screenshots for the next hour (one per 10-minute window)
+   * Schedule the next screenshot within the current 10-minute window
+   */
+  private scheduleNextScreenshot() {
+    if (!this.isCapturing) return;
+    
+    const now = new Date();
+    const currentMinute = now.getMinutes();
+    const windowStartMinute = Math.floor(currentMinute / 10) * 10;
+    const windowEndMinute = windowStartMinute + 10;
+    
+    // Calculate random time within current window (if time remains) or next window
+    let captureTime = new Date();
+    
+    if (currentMinute < windowEndMinute - 1) {
+      // Still time in current window, schedule within it
+      const remainingMinutes = windowEndMinute - currentMinute - 1;
+      const randomMinutes = Math.random() * remainingMinutes;
+      captureTime.setMinutes(currentMinute + randomMinutes);
+    } else {
+      // Move to next window
+      captureTime.setMinutes(windowEndMinute + Math.random() * 9 + 1);
+    }
+    
+    captureTime.setSeconds(Math.random() * 60);
+    captureTime.setMilliseconds(0);
+    
+    // Handle hour rollover
+    if (captureTime.getMinutes() >= 60) {
+      captureTime.setHours(captureTime.getHours() + 1);
+      captureTime.setMinutes(captureTime.getMinutes() % 60);
+    }
+    
+    const delay = Math.max(1000, captureTime.getTime() - now.getTime()); // At least 1 second
+    
+    console.log(`\n📅 Next screenshot scheduled at ${captureTime.toISOString()} (in ${Math.round(delay/1000)}s)`);
+    
+    // Clear any existing timer
+    if (this.captureTimers.has(0)) {
+      clearTimeout(this.captureTimers.get(0));
+    }
+    
+    const timer = setTimeout(() => {
+      this.captureScreenshot(0);
+    }, delay);
+    
+    this.captureTimers.set(0, timer);
+  }
+  
+  /**
+   * Schedule screenshots for the next hour (one per 10-minute window) - DEPRECATED
    */
   private scheduleScreenshots() {
     console.log('\n📅 Scheduling screenshots for next hour...');
@@ -116,18 +160,34 @@ export class ScreenshotServiceV2 {
       return;
     }
     
-    // Check if we have an active session
-    const currentActivity = await this.db.getCurrentActivity();
-    if (!currentActivity || !currentActivity.isActive) {
-      console.log('⚠️ No active session, skipping screenshot');
+    // Get current user (required)
+    const currentUser = this.db.getCurrentUser();
+    if (!currentUser) {
+      console.log('⚠️ No current user, skipping screenshot');
       return;
     }
     
-    const session = await this.db.getActiveSession();
-    const currentUser = this.db.getCurrentUser();
-    if (!currentUser || !session) {
-      console.log('⚠️ No user or session, skipping screenshot');
-      return;
+    // Try to get active session, but don't fail if none exists
+    let session = this.db.getActiveSession();
+    
+    // If no active session, check with activity tracker
+    let sessionId = session?.id;
+    if (!sessionId && this.activityTracker) {
+      sessionId = this.activityTracker.getCurrentSessionId();
+      if (sessionId) {
+        // Get session details from database
+        const trackerSession = (this.db as any).getSession?.(sessionId);
+        if (trackerSession) {
+          session = trackerSession;
+        }
+      }
+    }
+    
+    // If still no session, log warning but continue
+    if (!session || !sessionId) {
+      console.log('⚠️ No active session found, but continuing with screenshot capture');
+      // Use a fallback session ID or create a temporary one
+      sessionId = 'TEMP-' + Date.now();
     }
     
     const captureTime = new Date();
@@ -159,12 +219,12 @@ export class ScreenshotServiceV2 {
       const screenshotData = {
         id: crypto.randomUUID(),
         userId: currentUser.id,
-        sessionId: currentActivity.sessionId,
+        sessionId: sessionId!, // Use sessionId variable (guaranteed to have value)
         localPath,
         thumbnailPath,
         capturedAt: captureTime,
-        mode: session.mode || 'command_hours' as 'client_hours' | 'command_hours',
-        notes: session.task || undefined
+        mode: session?.mode || 'command_hours' as 'client_hours' | 'command_hours',
+        notes: session?.task || undefined
       };
       
       // Store in activity tracker (which will add to window manager)
@@ -177,6 +237,9 @@ export class ScreenshotServiceV2 {
       
     } catch (error) {
       console.error('❌ Failed to capture screenshot:', error);
+    } finally {
+      // Always schedule the next screenshot
+      this.scheduleNextScreenshot();
     }
   }
   

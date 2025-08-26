@@ -14,15 +14,28 @@ export class ActivityService {
     id?: string;
     sessionId: string;
     userId: string;
+    screenshotId?: string; // Add screenshotId field
     periodStart: Date;
     periodEnd: Date;
     mode: 'client_hours' | 'command_hours';
     activityScore: number;
     isValid: boolean;
     classification?: string;
-    metrics?: any;
+    metrics?: any; // This will store the detailed metrics breakdown
   }) {
     console.log('Creating activity period with ID:', createActivityDto.id, 'for session:', createActivityDto.sessionId);
+    
+    // Log if metrics are present
+    if (createActivityDto.metrics) {
+      const metricsKeys = Object.keys(createActivityDto.metrics);
+      console.log('Activity period includes detailed metrics:', metricsKeys.join(', '));
+      
+      // Log bot detection if present
+      if (createActivityDto.metrics.botDetection?.keyboardBotDetected || 
+          createActivityDto.metrics.botDetection?.mouseBotDetected) {
+        console.log('⚠️ Bot activity detected in period:', createActivityDto.id);
+      }
+    }
     
     try {
       const period = this.activityPeriodsRepository.create(createActivityDto);
