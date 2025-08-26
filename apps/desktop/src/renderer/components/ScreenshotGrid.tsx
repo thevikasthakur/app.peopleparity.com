@@ -74,6 +74,26 @@ function getSafeUrl(url: string): string {
   return url;
 }
 
+// Convert percentage score to scale of 10
+function percentageToTenScale(percentage: number): number {
+  return Math.round(percentage) / 10; // Convert 67% to 6.7
+}
+
+// Get activity level info based on score (0-10 scale)
+function getActivityLevel(score: number): { name: string; color: string; bgColor: string; textColor: string } {
+  if (score >= 8.5) {
+    return { name: 'Good', color: '#10B981', bgColor: 'bg-green-600', textColor: 'text-green-700' }; // Dark Green
+  } else if (score >= 7.0) {
+    return { name: 'Fair', color: '#84CC16', bgColor: 'bg-lime-500', textColor: 'text-lime-700' }; // Lemon Green
+  } else if (score >= 5.5) {
+    return { name: 'Low', color: '#FFA500', bgColor: 'bg-orange-500', textColor: 'text-orange-700' }; // Orange
+  } else if (score >= 4.0) {
+    return { name: 'Poor', color: '#FF4444', bgColor: 'bg-red-500', textColor: 'text-red-700' }; // Red
+  } else {
+    return { name: 'Critical', color: '#B71C1C', bgColor: 'bg-red-800', textColor: 'text-red-900' }; // Dark Red
+  }
+}
+
 interface ScreenshotGridProps {
   screenshots: Screenshot[];
   onScreenshotClick: (id: string) => void;
@@ -278,17 +298,26 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   
                   {/* Activity Score */}
                   <div className="absolute top-2 right-2">
-                    <div className={`
-                      px-2 py-1 rounded-full text-xs font-medium backdrop-blur
-                      ${screenshot.activityScore >= 70 
-                        ? 'bg-green-500/80 text-white' 
-                        : screenshot.activityScore >= 40
-                        ? 'bg-yellow-500/80 text-white'
-                        : 'bg-red-500/80 text-white'
-                      }
-                    `}>
-                      {screenshot.activityScore}%
-                    </div>
+                    {(() => {
+                      const scoreOutOf10 = percentageToTenScale(screenshot.activityScore);
+                      const level = getActivityLevel(scoreOutOf10);
+                      return (
+                        <div className="text-right">
+                          <div 
+                            className="px-2 py-1 rounded-full text-xs font-medium backdrop-blur text-white"
+                            style={{ backgroundColor: level.color + 'CC' }} // Add transparency
+                          >
+                            {scoreOutOf10.toFixed(1)}
+                          </div>
+                          <div 
+                            className="mt-1 px-1 py-0.5 rounded text-[10px] font-medium backdrop-blur text-white"
+                            style={{ backgroundColor: level.color + 'AA' }}
+                          >
+                            {level.name}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   
                   {/* Mode Badge */}
@@ -384,7 +413,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-[95vw] max-w-[1680px] h-[94vh] bg-white rounded-xl overflow-hidden shadow-2xl"
+              className="relative w-[calc(100vw-20px)] max-w-[calc(100vw-20px)] h-[94vh] bg-white rounded-xl overflow-hidden shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -441,20 +470,42 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     <div className="space-y-3">
                       <div>
                         <label className="text-xs text-gray-500 uppercase tracking-wider">Overall Score</label>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-full rounded-full ${
-                                modalScreenshot.activityScore >= 70 
-                                  ? 'bg-green-500' 
-                                  : modalScreenshot.activityScore >= 40
-                                  ? 'bg-yellow-500'
-                                  : 'bg-red-500'
-                              }`}
-                              style={{ width: `${modalScreenshot.activityScore}%` }}
-                            />
-                          </div>
-                          <span className="text-sm font-bold">{modalScreenshot.activityScore}%</span>
+                        <div className="flex items-center gap-3 mt-1">
+                          {(() => {
+                            const scoreOutOf10 = percentageToTenScale(modalScreenshot.activityScore);
+                            const level = getActivityLevel(scoreOutOf10);
+                            return (
+                              <>
+                                <div className="flex-1">
+                                  <div className="bg-gray-200 rounded-full h-2">
+                                    <div 
+                                      className="h-full rounded-full"
+                                      style={{ 
+                                        width: `${modalScreenshot.activityScore}%`,
+                                        backgroundColor: level.color
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex justify-between text-[9px] mt-1 text-gray-400">
+                                    <span>Critical</span>
+                                    <span>Poor</span>
+                                    <span>Low</span>
+                                    <span>Fair</span>
+                                    <span>Good</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg font-bold">{scoreOutOf10.toFixed(1)}</span>
+                                  <span 
+                                    className="text-xs px-2 py-1 rounded-full text-white font-medium"
+                                    style={{ backgroundColor: level.color }}
+                                  >
+                                    {level.name}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                       <div className="flex justify-between">
@@ -508,17 +559,23 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                   <Info className="w-4 h-4 text-gray-500" />
                                 </button>
                               </div>
-                              {metrics?.scoreCalculation && (
-                                <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
-                                  metrics.scoreCalculation.finalScore >= 70 
-                                    ? 'bg-green-100 text-green-700' 
-                                    : metrics.scoreCalculation.finalScore >= 40
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-red-100 text-red-700'
-                                }`}>
-                                  {metrics.scoreCalculation.finalScore}%
-                                </span>
-                              )}
+                              {metrics?.scoreCalculation && (() => {
+                                const scoreOutOf10 = percentageToTenScale(metrics.scoreCalculation.finalScore);
+                                const level = getActivityLevel(scoreOutOf10);
+                                return (
+                                  <div className="text-center">
+                                    <div 
+                                      className="text-sm font-semibold px-3 py-1 rounded text-white inline-block"
+                                      style={{ backgroundColor: level.color }}
+                                    >
+                                      {scoreOutOf10.toFixed(1)}
+                                    </div>
+                                    <div className="text-[10px] font-medium mt-1" style={{ color: level.color }}>
+                                      {level.name}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                             
                             {/* Expandable Details */}
@@ -598,8 +655,8 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                               </div>
                             )}
                             
-                            {/* Bot Detection */}
-                            {metrics?.botDetection && (
+                            {/* Bot Detection - Only show if bot activity detected */}
+                            {metrics?.botDetection && (metrics.botDetection.keyboardBotDetected || metrics.botDetection.mouseBotDetected) && (
                               <div className="bg-gray-50 rounded p-2">
                                 <div className="flex items-center gap-2 mb-2">
                                   <AlertCircle className="w-4 h-4 text-orange-500" />
@@ -647,7 +704,9 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                     {metrics.scoreCalculation.components && Object.entries(metrics.scoreCalculation.components).map(([key, value]) => (
                                       <div key={key} className="flex justify-between">
                                         <span className="text-gray-600">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                        <span className="font-medium">{typeof value === 'number' ? value.toFixed(1) : value}</span>
+                                        <span className="font-medium">
+                                          {typeof value === 'number' ? (value / 10).toFixed(1) : value}
+                                        </span>
                                       </div>
                                     ))}
                                   </div>
@@ -664,19 +723,26 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                   <div className="mt-1 pt-1 border-t">
                                     <div className="flex justify-between">
                                       <span className="text-gray-600">Raw Score:</span>
-                                      <span className="font-medium">{metrics.scoreCalculation.rawScore}</span>
+                                      <span className="font-medium">
+                                        {percentageToTenScale(metrics.scoreCalculation.rawScore).toFixed(1)}
+                                      </span>
                                     </div>
                                     <div className="flex justify-between font-bold">
                                       <span className="text-gray-700">Final Score:</span>
-                                      <span className={
-                                        metrics.scoreCalculation.finalScore >= 70 
-                                          ? 'text-green-600' 
-                                          : metrics.scoreCalculation.finalScore >= 40
-                                          ? 'text-yellow-600'
-                                          : 'text-red-600'
-                                      }>
-                                        {metrics.scoreCalculation.finalScore}
-                                      </span>
+                                      {(() => {
+                                        const scoreOutOf10 = percentageToTenScale(metrics.scoreCalculation.finalScore);
+                                        const level = getActivityLevel(scoreOutOf10);
+                                        return (
+                                          <div className="flex items-center gap-1">
+                                            <span style={{ color: level.color }}>
+                                              {scoreOutOf10.toFixed(1)}
+                                            </span>
+                                            <span className="text-[10px] font-medium" style={{ color: level.color }}>
+                                              ({level.name})
+                                            </span>
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                 </div>

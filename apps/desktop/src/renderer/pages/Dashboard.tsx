@@ -90,12 +90,19 @@ export function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen p-4" data-mode={mode}>
-      <div className="w-full space-y-4">
-        
-        {/* Header */}
-        <div className="glass-card p-4 bounce-in">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen" data-mode={mode}>
+      {/* Fixed Draggable Title Bar */}
+      <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center z-50">
+        <span className="text-xs text-gray-500 font-medium">People Parity Tracker</span>
+      </div>
+      
+      {/* Content with padding to account for fixed header */}
+      <div className="p-6 pt-12">
+        <div className="w-full space-y-4">
+          
+          {/* Header */}
+          <div className="glass-card p-4 bounce-in shadow-lg">
+            <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                 People Parity
@@ -210,6 +217,7 @@ export function Dashboard() {
             onScreenshotClick={(id) => console.log('Screenshot clicked:', id)}
             onSelectionChange={(ids) => console.log('Selection changed:', ids)}
           />
+        </div>
         </div>
       </div>
 
