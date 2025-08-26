@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (ids: string[]) => 
       ipcRenderer.invoke('screenshots:delete', ids),
   },
+  activity: {
+    getPeriodDetails: (periodId: string) =>
+      ipcRenderer.invoke('activity:get-period-details', periodId),
+    getPeriodsWithMetrics: (periodIds: string[]) =>
+      ipcRenderer.invoke('activity:get-periods-with-metrics', periodIds),
+  },
   debug: {
     clearSyncQueue: () => 
       ipcRenderer.invoke('debug:clear-sync-queue'),

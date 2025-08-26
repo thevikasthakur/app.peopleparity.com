@@ -194,6 +194,10 @@ function setupIpcHandlers() {
     return databaseService.getActivityPeriodDetails(periodId);
   });
   
+  ipcMain.handle('activity:get-periods-with-metrics', async (_, periodIds: string[]) => {
+    return databaseService.getActivityPeriodsWithMetrics(periodIds);
+  });
+  
   // Notes handlers
   ipcMain.handle('notes:get-recent', async () => {
     return databaseService.getRecentNotes();

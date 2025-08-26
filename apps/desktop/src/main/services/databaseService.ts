@@ -528,15 +528,31 @@ export class DatabaseService {
   }
 
   async getActivityPeriodDetails(periodId: string) {
-    // This would need to be implemented in LocalDatabase
+    const period = this.localDb.getActivityPeriodWithMetrics(periodId);
+    if (!period) {
+      return null;
+    }
+    
     return {
-      id: periodId,
-      activities: [
-        { type: 'keypress', count: 523 },
-        { type: 'mouseclick', count: 89 },
-        { type: 'scroll', count: 34 }
-      ]
+      id: period.id,
+      periodStart: new Date(period.periodStart),
+      periodEnd: new Date(period.periodEnd),
+      activityScore: period.activityScore,
+      metricsBreakdown: period.metricsBreakdown,
+      classification: period.classification
     };
+  }
+  
+  async getActivityPeriodsWithMetrics(periodIds: string[]) {
+    const periods = this.localDb.getActivityPeriodsWithMetrics(periodIds);
+    return periods.map(period => ({
+      id: period.id,
+      periodStart: new Date(period.periodStart),
+      periodEnd: new Date(period.periodEnd),
+      activityScore: period.activityScore,
+      metricsBreakdown: period.metricsBreakdown,
+      classification: period.classification
+    }));
   }
 
   // Notes management

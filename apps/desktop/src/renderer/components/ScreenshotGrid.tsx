@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2 } from 'lucide-react';
+import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Screenshot {
@@ -12,12 +12,57 @@ interface Screenshot {
   mode: 'client' | 'command';
   activityScore: number;
   activityPeriodId?: string;
+  activityPeriodIds?: string[];
   relatedPeriods?: {
     id: string;
     periodStart: Date;
     periodEnd: Date;
     activityScore: number;
+    metricsBreakdown?: any;
   }[];
+}
+
+interface DetailedMetrics {
+  keyboard?: {
+    totalKeystrokes: number;
+    productiveKeystrokes: number;
+    uniqueKeys: number;
+    keysPerMinute: number;
+    typingRhythm?: {
+      consistent: boolean;
+      avgIntervalMs: number;
+      stdDeviationMs: number;
+    };
+  };
+  mouse?: {
+    totalClicks: number;
+    totalScrolls: number;
+    distancePixels: number;
+    distancePerMinute: number;
+    movementPattern?: {
+      smooth: boolean;
+      avgSpeed: number;
+      maxSpeed: number;
+    };
+  };
+  botDetection?: {
+    keyboardBotDetected: boolean;
+    mouseBotDetected: boolean;
+    confidence: number;
+    details: string[];
+  };
+  scoreCalculation?: {
+    components: any;
+    penalties: any;
+    formula: string;
+    rawScore: number;
+    finalScore: number;
+  };
+  classification?: {
+    category: string;
+    confidence: number;
+    tags: string[];
+  };
 }
 
 // Create a safe URL that avoids file:// protocol
@@ -39,6 +84,10 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [modalScreenshot, setModalScreenshot] = useState<Screenshot | null>(null);
+  const [detailedMetrics, setDetailedMetrics] = useState<DetailedMetrics[]>([]);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const toggleSelection = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -50,6 +99,56 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
     }
     setSelectedIds(newSelection);
     onSelectionChange(Array.from(newSelection));
+  };
+
+  const scrollMetrics = (direction: 'left' | 'right') => {
+    if (!scrollContainerRef.current) return;
+    const scrollAmount = 400;
+    const currentScroll = scrollContainerRef.current.scrollLeft;
+    const newScroll = direction === 'left' 
+      ? currentScroll - scrollAmount 
+      : currentScroll + scrollAmount;
+    
+    scrollContainerRef.current.scrollTo({
+      left: newScroll,
+      behavior: 'smooth'
+    });
+  };
+
+  const fetchDetailedMetrics = async (screenshot: Screenshot) => {
+    console.log('Fetching metrics for screenshot:', screenshot.id);
+    console.log('Related periods:', screenshot.relatedPeriods);
+    console.log('Activity period IDs:', screenshot.activityPeriodIds);
+    
+    // Try to get period IDs
+    const periodIds = screenshot.activityPeriodIds || 
+                     (screenshot.relatedPeriods?.map(p => p.id)) || 
+                     [];
+    
+    if (periodIds.length === 0) {
+      console.log('No period IDs found for screenshot');
+      return;
+    }
+    
+    console.log('Fetching metrics for period IDs:', periodIds);
+    setLoadingMetrics(true);
+    
+    try {
+      const metrics = await (window as any).electronAPI.activity.getPeriodsWithMetrics(periodIds);
+      console.log('Fetched metrics:', metrics);
+      
+      // Extract metricsBreakdown from each period
+      const detailedMetricsData = metrics
+        .map((m: any) => m.metricsBreakdown)
+        .filter(Boolean);
+      
+      console.log('Detailed metrics data:', detailedMetricsData);
+      setDetailedMetrics(detailedMetricsData);
+    } catch (error) {
+      console.error('Failed to fetch metrics:', error);
+    } finally {
+      setLoadingMetrics(false);
+    }
   };
 
   const groupScreenshotsByHour = () => {
@@ -144,7 +243,10 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                       : 'ring-2 ring-emerald-100'
                     }
                   `}
-                  onClick={() => setModalScreenshot(screenshot)}
+                  onClick={() => {
+                    setModalScreenshot(screenshot);
+                    fetchDetailedMetrics(screenshot);
+                  }}
                   onMouseEnter={() => setHoveredId(screenshot.id)}
                   onMouseLeave={() => setHoveredId(null)}
                 >
@@ -282,7 +384,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-6xl max-h-[90vh] w-full bg-white rounded-xl overflow-hidden shadow-2xl"
+              className="relative w-[95vw] max-w-[1680px] h-[94vh] bg-white rounded-xl overflow-hidden shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -309,116 +411,297 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                 </button>
               </div>
               
-              {/* Modal Body */}
-              <div className="flex flex-col lg:flex-row h-full">
-                {/* Screenshot Image */}
-                <div className="flex-1 bg-gray-100 p-4 flex items-center justify-center overflow-auto">
+              {/* Modal Body - Side by side layout */}
+              <div className="h-[calc(100%-4rem)] flex">
+                {/* Left side - Large Screenshot Image */}
+                <div className="flex-1 bg-gray-100 p-6 flex items-center justify-center overflow-auto">
                   <img
-                    src={getSafeUrl(modalScreenshot.fullUrl)}
+                    src={getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl)}
                     alt="Full size screenshot"
-                    className="max-w-full h-auto rounded-lg shadow-lg"
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                    style={{ maxHeight: 'calc(94vh - 8rem)' }}
                     onError={(e) => {
-                      // Fallback to thumbnail if full URL fails
-                      (e.target as HTMLImageElement).src = getSafeUrl(modalScreenshot.thumbnailUrl) || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjQwMCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTNhZiI+U2NyZWVuc2hvdCBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4=';
+                      const img = e.target as HTMLImageElement;
+                      // Try thumbnail first
+                      if (img.src !== getSafeUrl(modalScreenshot.thumbnailUrl)) {
+                        img.src = getSafeUrl(modalScreenshot.thumbnailUrl);
+                      } else {
+                        // Final fallback
+                        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjQwMCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTNhZiI+U2NyZWVuc2hvdCBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4=';
+                      }
                     }}
                   />
                 </div>
                 
-                {/* Activity Details */}
-                <div className="w-full lg:w-80 p-4 border-t lg:border-t-0 lg:border-l bg-gray-50">
-                  <h4 className="font-semibold mb-3">Activity Details</h4>
-                  
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs text-gray-500 uppercase tracking-wider">Activity Score</label>
-                      <div className="mt-1 flex items-center gap-2">
-                        <div className="flex-1 bg-gray-200 rounded-full h-2">
-                          <div 
-                            className={`h-full rounded-full ${
-                              modalScreenshot.activityScore >= 70 
-                                ? 'bg-green-500' 
-                                : modalScreenshot.activityScore >= 40
-                                ? 'bg-yellow-500'
-                                : 'bg-red-500'
-                            }`}
-                            style={{ width: `${modalScreenshot.activityScore}%` }}
-                          />
+                {/* Right side - Activity Details */}
+                <div className="w-[400px] border-l bg-white overflow-y-auto">
+                  {/* Summary Section */}
+                  <div className="p-4 border-b">
+                    <h3 className="text-sm font-semibold mb-3">Activity Summary</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Overall Score</label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className={`h-full rounded-full ${
+                                modalScreenshot.activityScore >= 70 
+                                  ? 'bg-green-500' 
+                                  : modalScreenshot.activityScore >= 40
+                                  ? 'bg-yellow-500'
+                                  : 'bg-red-500'
+                              }`}
+                              style={{ width: `${modalScreenshot.activityScore}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-bold">{modalScreenshot.activityScore}%</span>
                         </div>
-                        <span className="text-sm font-medium">{modalScreenshot.activityScore}%</span>
                       </div>
-                    </div>
-                    
-                    <div>
-                      <label className="text-xs text-gray-500 uppercase tracking-wider">Time Captured</label>
-                      <p className="mt-1 text-sm">{new Date(modalScreenshot.timestamp).toLocaleTimeString()}</p>
-                    </div>
-                    
-                    <div>
-                      <label className="text-xs text-gray-500 uppercase tracking-wider">Notes</label>
-                      <p className="mt-1 text-sm text-gray-700">
-                        {modalScreenshot.notes || 'No notes available'}
-                      </p>
-                    </div>
-                    
-                    {modalScreenshot.activityPeriodId && (
-                      <div>
-                        <label className="text-xs text-gray-500 uppercase tracking-wider">Period ID</label>
-                        <p className="mt-1 text-xs font-mono text-gray-600">
-                          {modalScreenshot.activityPeriodId.slice(0, 8)}...
-                        </p>
+                      <div className="flex justify-between">
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-wider">Time</label>
+                          <p className="text-sm font-medium mt-1">{new Date(modalScreenshot.timestamp).toLocaleTimeString()}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-wider">Mode</label>
+                          <p className="text-sm font-medium mt-1">{modalScreenshot.mode === 'client' ? 'Client' : 'Command'}</p>
+                        </div>
                       </div>
-                    )}
+                      {modalScreenshot.notes && (
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-wider">Notes</label>
+                          <p className="text-sm text-gray-700 mt-1">{modalScreenshot.notes}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                     
-                    {/* Per-minute activity breakdown */}
-                    {modalScreenshot.relatedPeriods && modalScreenshot.relatedPeriods.length > 0 && (
-                      <div>
-                        <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                          Activity Breakdown (Per Minute)
-                        </label>
-                        <div className="space-y-1 max-h-48 overflow-y-auto">
-                          {modalScreenshot.relatedPeriods.map((period, index) => {
-                            const periodTime = new Date(period.periodStart);
-                            return (
-                              <div key={period.id} className="flex items-center gap-2 text-xs">
-                                <span className="text-gray-500 w-12">
-                                  {periodTime.toLocaleTimeString('en-US', { 
-                                    hour: '2-digit', 
-                                    minute: '2-digit'
-                                  })}
+                  {/* Per-Minute Activity Breakdown */}
+                  <div className="p-4">
+                    <h3 className="text-sm font-semibold mb-3">Per-Minute Activity Breakdown</h3>
+                    
+                    {loadingMetrics ? (
+                      <div className="text-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+                        <p className="text-xs text-gray-500 mt-2">Loading metrics...</p>
+                      </div>
+                    ) : detailedMetrics.length > 0 ? (
+                      <div className="space-y-2">
+                        {detailedMetrics.map((metrics, index) => (
+                          <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">Minute {index + 1}</span>
+                                <button
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedMinutes);
+                                    if (newExpanded.has(index)) {
+                                      newExpanded.delete(index);
+                                    } else {
+                                      newExpanded.add(index);
+                                    }
+                                    setExpandedMinutes(newExpanded);
+                                  }}
+                                  className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                  title="Show details"
+                                >
+                                  <Info className="w-4 h-4 text-gray-500" />
+                                </button>
+                              </div>
+                              {metrics?.scoreCalculation && (
+                                <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
+                                  metrics.scoreCalculation.finalScore >= 70 
+                                    ? 'bg-green-100 text-green-700' 
+                                    : metrics.scoreCalculation.finalScore >= 40
+                                    ? 'bg-yellow-100 text-yellow-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {metrics.scoreCalculation.finalScore}%
                                 </span>
-                                <div className="flex-1 bg-gray-200 rounded-full h-4 relative">
-                                  <div 
-                                    className={`h-full rounded-full transition-all ${
-                                      period.activityScore >= 70 
-                                        ? 'bg-green-500' 
-                                        : period.activityScore >= 40
-                                        ? 'bg-yellow-500'
-                                        : 'bg-red-500'
-                                    }`}
-                                    style={{ width: `${period.activityScore}%` }}
-                                  />
-                                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium">
-                                    {period.activityScore}%
-                                  </span>
+                              )}
+                            </div>
+                            
+                            {/* Expandable Details */}
+                            <AnimatePresence>
+                              {expandedMinutes.has(index) && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.2 }}
+                                  className="overflow-hidden"
+                                >
+                                  <div className="mt-3 pt-3 border-t space-y-3">
+                            {/* Keyboard Activity */}
+                            {metrics?.keyboard && (
+                              <div className="flex items-start gap-2">
+                                <Keyboard className="w-4 h-4 text-gray-500 mt-0.5" />
+                                <div className="flex-1 text-xs">
+                                  <div className="flex justify-between mb-1">
+                                    <span className="text-gray-600">Keystrokes:</span>
+                                    <span className="font-medium">{metrics.keyboard.totalKeystrokes}</span>
+                                  </div>
+                                  <div className="flex justify-between mb-1">
+                                    <span className="text-gray-600">Unique Keys:</span>
+                                    <span className="font-medium">{metrics.keyboard.uniqueKeys}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Keys/min:</span>
+                                    <span className="font-medium">{metrics.keyboard.keysPerMinute.toFixed(1)}</span>
+                                  </div>
+                                  {metrics.keyboard.typingRhythm && (
+                                    <div className="mt-1 pt-1 border-t">
+                                      <span className={`text-[10px] ${
+                                        metrics.keyboard.typingRhythm.consistent 
+                                          ? 'text-green-600' 
+                                          : 'text-yellow-600'
+                                      }`}>
+                                        {metrics.keyboard.typingRhythm.consistent ? 'Consistent' : 'Irregular'} typing
+                                        (±{metrics.keyboard.typingRhythm.stdDeviationMs.toFixed(0)}ms)
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-2 pt-2 border-t text-xs text-gray-500">
-                          Average: {modalScreenshot.activityScore}% over {modalScreenshot.relatedPeriods.length} minute{modalScreenshot.relatedPeriods.length !== 1 ? 's' : ''}
-                        </div>
+                            )}
+                            
+                            {/* Mouse Activity */}
+                            {metrics?.mouse && (
+                              <div className="flex items-start gap-2">
+                                <MousePointer className="w-4 h-4 text-gray-500 mt-0.5" />
+                                <div className="flex-1 text-xs">
+                                  <div className="flex justify-between mb-1">
+                                    <span className="text-gray-600">Clicks:</span>
+                                    <span className="font-medium">{metrics.mouse.totalClicks}</span>
+                                  </div>
+                                  <div className="flex justify-between mb-1">
+                                    <span className="text-gray-600">Scrolls:</span>
+                                    <span className="font-medium">{metrics.mouse.totalScrolls}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Distance:</span>
+                                    <span className="font-medium">{metrics.mouse.distancePixels}px</span>
+                                  </div>
+                                  {metrics.mouse.movementPattern && (
+                                    <div className="mt-1 pt-1 border-t">
+                                      <span className={`text-[10px] ${
+                                        metrics.mouse.movementPattern.smooth 
+                                          ? 'text-green-600' 
+                                          : 'text-yellow-600'
+                                      }`}>
+                                        {metrics.mouse.movementPattern.smooth ? 'Smooth' : 'Erratic'} movement
+                                        (avg: {metrics.mouse.movementPattern.avgSpeed.toFixed(0)}px/s)
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Bot Detection */}
+                            {metrics?.botDetection && (
+                              <div className="bg-gray-50 rounded p-2">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <AlertCircle className="w-4 h-4 text-orange-500" />
+                                  <span className="text-xs font-medium">Bot Detection Analysis</span>
+                                </div>
+                                <div className="space-y-1 text-xs">
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Keyboard Bot:</span>
+                                    <span className={metrics.botDetection.keyboardBotDetected ? 'text-red-600' : 'text-green-600'}>
+                                      {metrics.botDetection.keyboardBotDetected ? 'Detected' : 'Human'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Mouse Bot:</span>
+                                    <span className={metrics.botDetection.mouseBotDetected ? 'text-red-600' : 'text-green-600'}>
+                                      {metrics.botDetection.mouseBotDetected ? 'Detected' : 'Human'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Confidence:</span>
+                                    <span className="font-medium">{(metrics.botDetection.confidence * 100).toFixed(0)}%</span>
+                                  </div>
+                                  {metrics.botDetection.details && metrics.botDetection.details.length > 0 && (
+                                    <div className="mt-1 pt-1 border-t">
+                                      <ul className="list-disc list-inside text-[10px] text-gray-500">
+                                        {metrics.botDetection.details.map((detail, i) => (
+                                          <li key={i}>{detail}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Score Calculation */}
+                            {metrics?.scoreCalculation && (
+                              <div className="bg-blue-50 rounded p-2">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Activity className="w-4 h-4 text-blue-500" />
+                                  <span className="text-xs font-medium">Score Calculation</span>
+                                </div>
+                                <div className="space-y-1 text-xs">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {metrics.scoreCalculation.components && Object.entries(metrics.scoreCalculation.components).map(([key, value]) => (
+                                      <div key={key} className="flex justify-between">
+                                        <span className="text-gray-600">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                        <span className="font-medium">{typeof value === 'number' ? value.toFixed(1) : value}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {metrics.scoreCalculation.penalties && Object.values(metrics.scoreCalculation.penalties).some(v => v > 0) && (
+                                    <div className="mt-1 pt-1 border-t">
+                                      <span className="text-red-600 font-medium">Penalties:</span>
+                                      {Object.entries(metrics.scoreCalculation.penalties).filter(([_, v]) => v > 0).map(([key, value]) => (
+                                        <div key={key} className="text-[10px] text-red-500">
+                                          -{value} ({key.replace(/([A-Z])/g, ' $1').trim()})
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="mt-1 pt-1 border-t">
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Raw Score:</span>
+                                      <span className="font-medium">{metrics.scoreCalculation.rawScore}</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold">
+                                      <span className="text-gray-700">Final Score:</span>
+                                      <span className={
+                                        metrics.scoreCalculation.finalScore >= 70 
+                                          ? 'text-green-600' 
+                                          : metrics.scoreCalculation.finalScore >= 40
+                                          ? 'text-yellow-600'
+                                          : 'text-red-600'
+                                      }>
+                                        {metrics.scoreCalculation.finalScore}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        ))}
                       </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No activity data available</p>
                     )}
-                    
-                    <div className="pt-3 space-y-2">
-                      <button className="w-full px-3 py-2 text-sm rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors">
-                        Transfer to {modalScreenshot.mode === 'client' ? 'Command' : 'Client'} Hours
-                      </button>
-                      <button className="w-full px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors">
-                        Delete Screenshot
-                      </button>
-                    </div>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="p-4 border-t mt-auto">
+                    <button className="w-full px-3 py-2 text-sm rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors mb-2">
+                      Transfer to {modalScreenshot.mode === 'client' ? 'Command' : 'Client'} Hours
+                    </button>
+                    <button className="w-full px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors">
+                      Delete Screenshot
+                    </button>
                   </div>
                 </div>
               </div>

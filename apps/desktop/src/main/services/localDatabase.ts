@@ -555,6 +555,53 @@ export class LocalDatabase {
     
     return stmt.get(periodId);
   }
+  
+  getActivityPeriodWithMetrics(periodId: string): any {
+    const period = this.db.prepare(`
+      SELECT * FROM activity_periods 
+      WHERE id = ?
+    `).get(periodId) as any;
+    
+    if (!period) return null;
+    
+    // Parse the metricsBreakdown JSON if it exists
+    if (period.metricsBreakdown) {
+      try {
+        period.metricsBreakdown = JSON.parse(period.metricsBreakdown);
+      } catch (e) {
+        console.error('Failed to parse metricsBreakdown:', e);
+        period.metricsBreakdown = null;
+      }
+    }
+    
+    return period;
+  }
+  
+  getActivityPeriodsWithMetrics(periodIds: string[]): any[] {
+    if (!periodIds || periodIds.length === 0) return [];
+    
+    const placeholders = periodIds.map(() => '?').join(',');
+    const stmt = this.db.prepare(`
+      SELECT * FROM activity_periods 
+      WHERE id IN (${placeholders})
+      ORDER BY periodStart ASC
+    `);
+    
+    const periods = stmt.all(...periodIds) as any[];
+    
+    // Parse metricsBreakdown for each period
+    return periods.map((period: any) => {
+      if (period.metricsBreakdown) {
+        try {
+          period.metricsBreakdown = JSON.parse(period.metricsBreakdown);
+        } catch (e) {
+          console.error('Failed to parse metricsBreakdown:', e);
+          period.metricsBreakdown = null;
+        }
+      }
+      return period;
+    });
+  }
 
   getRecentActivityPeriods(sessionId: string, limit: number = 10): any[] {
     const stmt = this.db.prepare(`
@@ -851,11 +898,15 @@ export class LocalDatabase {
       const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
       const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
       
+      // Extract period IDs for fetching detailed metrics
+      const periodIds = periods.map((p: any) => p.id);
+      
       return {
         ...s,
         activityScore: aggregatedScore,
         aggregatedScore: aggregatedScore, // For backward compatibility
-        relatedPeriods: periods
+        relatedPeriods: periods,
+        activityPeriodIds: periodIds // Add period IDs for metrics fetching
       };
     });
   }
