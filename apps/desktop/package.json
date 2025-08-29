@@ -16,7 +16,11 @@
     "start": "electron .",
     "dist": "electron-builder",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "fix:connection": "./scripts/fix-connection.sh",
+    "fix:ipv6": "node scripts/fix-ipv6.js",
+    "check:api": "curl -s http://127.0.0.1:3001/api/health || echo 'API server not running'",
+    "start:all": "./scripts/start-all.sh"
   },
   "dependencies": {
     "@people-parity/shared": "*",

@@ -19,17 +19,22 @@ export class DatabaseService {
   }
   
   private initializeApiClient() {
-    const token = this.store.get('auth.token') as string;
-    const apiUrl = process.env.API_URL || 'http://localhost:3001';
+    const token = this.store.get('authToken') as string; // Changed from 'auth.token' to 'authToken'
+    // Use IPv4 explicitly to avoid IPv6 connection issues
+    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
+    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
     
     if (token) {
       this.api = axios.create({
-        baseURL: apiUrl,
+        baseURL: apiUrlFixed,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
-      });
+        },
+        // Force IPv4
+        httpAgent: new (require('http').Agent)({ family: 4 }),
+        httpsAgent: new (require('https').Agent)({ family: 4 })
+      } as any);
       
       // Add response interceptor to handle auth errors
       this.api.interceptors.response.use(
@@ -42,6 +47,10 @@ export class DatabaseService {
           return Promise.reject(error);
         }
       );
+      
+      console.log('API client initialized successfully');
+    } else {
+      console.log('No auth token found, API client not initialized');
     }
   }
 
@@ -73,7 +82,24 @@ export class DatabaseService {
   }
 
   getCurrentUserId(): string {
-    const user = this.localDb.getCurrentUser();
+    let user = this.localDb.getCurrentUser();
+    
+    // If no user exists and we're in development mode, create a default user
+    if (!user && process.env.NODE_ENV === 'development') {
+      console.log('No user found, creating default development user');
+      const defaultUser = {
+        id: 'b09149e6-6ba6-498d-ae3b-f35a1e11f7f5', // Use the user ID we found in screenshots
+        email: 'dev@example.com',
+        name: 'Developer',
+        organizationId: 'dev-org',
+        organizationName: 'Development',
+        role: 'developer' as const,
+        lastSync: Date.now()
+      };
+      this.setCurrentUser(defaultUser);
+      user = defaultUser;
+    }
+    
     if (!user) {
       throw new Error('No user logged in');
     }
@@ -282,17 +308,39 @@ export class DatabaseService {
     relatedPeriodIds?: string[];
     sessionId?: string;
   }) {
-    const session = this.localDb.getActiveSession(this.getCurrentUserId());
-    if (!session) return null;
+    let session = this.localDb.getActiveSession(this.getCurrentUserId());
+    let sessionId = data.sessionId || session?.id;
+    
+    // If no session exists, create an idle session
+    if (!sessionId) {
+      const idleSessionData = {
+        mode: 'command_hours' as const,
+        projectId: undefined,
+        task: 'Idle - No active tracking',
+        startTime: new Date()
+      };
+      
+      const newSession = await this.createSession(idleSessionData);
+      sessionId = newSession.id;
+      console.log(`Created idle session ${sessionId} for screenshot storage`);
+      
+      // Restore the idle session in activity tracker so activity periods are created
+      if (this.activityTracker) {
+        this.activityTracker.restoreSession(sessionId, 'command_hours', undefined);
+        console.log(`Restored idle session ${sessionId} in activity tracker`);
+      }
+    }
+    
+    const mode = session?.mode || 'command_hours';
     
     return this.localDb.saveScreenshot({
       userId: this.getCurrentUserId(),
-      sessionId: data.sessionId || session.id,
+      sessionId: sessionId,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
-      mode: session.mode,
-      task: session?.task || undefined
+      mode: mode,
+      task: session?.task || 'Idle'
     });
   }
 
@@ -394,74 +442,105 @@ export class DatabaseService {
   }
 
   async getTodayScreenshots() {
-    // Always try to fetch from cloud API first (primary source)
-    try {
-      const apiScreenshots = await this.fetchScreenshotsFromAPI();
-      if (apiScreenshots && apiScreenshots.length > 0) {
-        console.log('Using screenshots from cloud database');
-        return apiScreenshots;
-      }
-    } catch (error) {
-      console.log('Failed to fetch from cloud, falling back to local cache:', error);
-    }
+    console.log('\n=== getTodayScreenshots called ===');
+    // Skip API for now to debug the local database issue
+    // // Always try to fetch from cloud API first (primary source)
+    // try {
+    //   const apiScreenshots = await this.fetchScreenshotsFromAPI();
+    //   if (apiScreenshots && apiScreenshots.length > 0) {
+    //     console.log('Using screenshots from cloud database');
+    //     return apiScreenshots;
+    //   }
+    // } catch (error) {
+    //   console.log('Failed to fetch from cloud, falling back to local cache:', error);
+    // }
     
     // Fallback to local database only if API fails (offline mode)
     console.log('Using local database as fallback');
-    const screenshots = this.localDb.getTodayScreenshots(this.getCurrentUserId());
+    
+    // Try to get current user ID, but handle case where no user is logged in
+    let userId: string;
+    try {
+      userId = this.getCurrentUserId();
+    } catch (error) {
+      console.log('No user logged in, returning empty screenshots array');
+      return [];
+    }
+    
+    const screenshots = this.localDb.getTodayScreenshots(userId);
     
     console.log('Raw screenshots from DB:', screenshots.map(s => ({
       id: s.id,
       url: s.url,
       thumbnailUrl: s.thumbnailUrl,
       thumbnailPath: s.thumbnailPath,
-      localPath: s.localPath
+      localPath: s.localPath,
+      activityScore: (s as any).activityScore,
+      relatedPeriods: (s as any).relatedPeriods?.length || 0
     })));
     
-    return screenshots.map(s => {
-      // Never use file:// protocol - use S3 URLs or empty string
-      let thumbnailUrl = '';
-      let fullUrl = '';
+    try {
+      const mappedScreenshots = screenshots.map(s => {
+        try {
+          // Never use file:// protocol - use S3 URLs or empty string
+          let thumbnailUrl = '';
+          let fullUrl = '';
+          
+          if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
+            thumbnailUrl = s.thumbnailUrl;
+          } else if (s.url && s.url.startsWith('http')) {
+            thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
+          }
+          
+          if (s.url && s.url.startsWith('http')) {
+            fullUrl = s.url;
+          }
+          
+          // If we still don't have valid URLs, don't include file:// paths
+          if (!thumbnailUrl && s.thumbnailPath) {
+            console.log('Warning: Screenshot', s.id, 'has no URL, only local path:', s.thumbnailPath);
+          }
+          
+          // Get activity score from related periods (calculated in getTodayScreenshots)
+          let activityScore = (s as any).activityScore || 0;
+          
+          // Get related period IDs from the already loaded data
+          let activityPeriodIds = [];
+          if ((s as any).relatedPeriods && Array.isArray((s as any).relatedPeriods)) {
+            activityPeriodIds = (s as any).relatedPeriods.map((p: any) => p.id);
+          }
+          
+          // Get sync status if available
+          const syncStatus = (s as any).syncStatus || null;
+          
+          console.log(`Screenshot ${s.id} has activity score: ${activityScore}`);
+          
+          const result = {
+            id: s.id,
+            thumbnailUrl: thumbnailUrl || '',  // Empty string if no valid URL
+            fullUrl: fullUrl || '',  // Empty string if no valid URL
+            timestamp: new Date(s.capturedAt),
+            notes: s.notes || '',
+            mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
+            activityScore: activityScore,  // Calculated from related periods
+            activityPeriodIds: activityPeriodIds,  // Array of period IDs from related periods
+            syncStatus: syncStatus  // Add sync status information
+          };
+          
+          console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
+          return result;
+        } catch (mapError) {
+          console.error('Error mapping screenshot:', s.id, mapError);
+          throw mapError;
+        }
+      });
       
-      if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
-        thumbnailUrl = s.thumbnailUrl;
-      } else if (s.url && s.url.startsWith('http')) {
-        thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
-      }
-      
-      if (s.url && s.url.startsWith('http')) {
-        fullUrl = s.url;
-      }
-      
-      // If we still don't have valid URLs, don't include file:// paths
-      if (!thumbnailUrl && s.thumbnailPath) {
-        console.log('Warning: Screenshot', s.id, 'has no URL, only local path:', s.thumbnailPath);
-      }
-      
-      // Get activity score from related periods (calculated in getTodayScreenshots)
-      let activityScore = (s as any).activityScore || 0;
-      
-      // Get related period IDs from the already loaded data
-      let activityPeriodIds = [];
-      if ((s as any).relatedPeriods && Array.isArray((s as any).relatedPeriods)) {
-        activityPeriodIds = (s as any).relatedPeriods.map((p: any) => p.id);
-      }
-      
-      console.log(`Screenshot ${s.id} has activity score: ${activityScore}`);
-      
-      const result = {
-        id: s.id,
-        thumbnailUrl: thumbnailUrl || '',  // Empty string if no valid URL
-        fullUrl: fullUrl || '',  // Empty string if no valid URL
-        timestamp: new Date(s.capturedAt),
-        notes: s.notes || '',
-        mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
-        activityScore: activityScore,  // Calculated from related periods
-        activityPeriodIds: activityPeriodIds  // Array of period IDs from related periods
-      };
-      
-      console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
-      return result;
-    });
+      console.log(`Successfully mapped ${mappedScreenshots.length} screenshots`);
+      return mappedScreenshots;
+    } catch (error) {
+      console.error('Error in screenshot mapping:', error);
+      throw error;
+    }
   }
   
   private async fetchScreenshotsFromAPI(): Promise<any[]> {
@@ -485,7 +564,8 @@ export class DatabaseService {
           startDate: todayStart.toISOString(),
           endDate: todayEnd.toISOString(),
           includeActivityPeriod: true
-        }
+        },
+        timeout: 5000 // 5 second timeout
       });
       
       console.log(`API returned ${response.data.length} screenshots`);

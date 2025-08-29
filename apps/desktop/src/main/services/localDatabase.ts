@@ -880,6 +880,9 @@ export class LocalDatabase {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     
+    console.log('getTodayScreenshots - userId:', userId);
+    console.log('getTodayScreenshots - todayStart:', todayStart.toISOString(), 'timestamp:', todayStart.getTime());
+    
     const stmt = this.db.prepare(`
       SELECT s.*
       FROM screenshots s
@@ -888,6 +891,7 @@ export class LocalDatabase {
     `);
     
     const screenshots = stmt.all(userId, todayStart.getTime()) as any[];
+    console.log('getTodayScreenshots - found', screenshots.length, 'screenshots for user', userId);
     
     // For each screenshot, get its associated activity periods and calculate aggregated score
     return screenshots.map((s: any) => {
@@ -901,14 +905,142 @@ export class LocalDatabase {
       // Extract period IDs for fetching detailed metrics
       const periodIds = periods.map((p: any) => p.id);
       
+      // Get sync status for screenshot and its periods
+      const syncStatus = this.getScreenshotSyncStatus(s.id, periodIds);
+      
       return {
         ...s,
         activityScore: aggregatedScore,
         aggregatedScore: aggregatedScore, // For backward compatibility
         relatedPeriods: periods,
-        activityPeriodIds: periodIds // Add period IDs for metrics fetching
+        activityPeriodIds: periodIds, // Add period IDs for metrics fetching
+        syncStatus // Add sync status information
       };
     });
+  }
+  
+  getScreenshotSyncStatus(screenshotId: string, periodIds: string[]) {
+    // Check screenshot sync status
+    const screenshotSyncQuery = this.db.prepare(`
+      SELECT 
+        s.isSynced as screenshotSynced,
+        s.url,
+        sq.id as queueId,
+        sq.attempts,
+        sq.createdAt as queuedAt,
+        sq.lastAttempt as lastAttemptAt,
+        sq.data
+      FROM screenshots s
+      LEFT JOIN sync_queue sq ON sq.entityId = s.id AND sq.entityType = 'screenshot'
+      WHERE s.id = ?
+    `).get(screenshotId) as any;
+    
+    // Check activity periods sync status
+    let periodsSyncQuery: any = { totalPeriods: 0, syncedPeriods: 0, queuedPeriods: 0, maxAttempts: 0 };
+    
+    if (periodIds.length > 0) {
+      periodsSyncQuery = this.db.prepare(`
+        SELECT 
+          COUNT(*) as totalPeriods,
+          SUM(CASE WHEN isSynced = 1 THEN 1 ELSE 0 END) as syncedPeriods,
+          SUM(CASE WHEN sq.id IS NOT NULL THEN 1 ELSE 0 END) as queuedPeriods,
+          MAX(sq.attempts) as maxAttempts
+        FROM activity_periods ap
+        LEFT JOIN sync_queue sq ON sq.entityId = ap.id AND sq.entityType = 'activity_period'
+        WHERE ap.id IN (${periodIds.map(() => '?').join(',')})
+      `).get(...periodIds) as any;
+    }
+    
+    // Get individual activity period sync status
+    let periodsDetails: any[] = [];
+    if (periodIds.length > 0) {
+      periodsDetails = this.db.prepare(`
+        SELECT 
+          ap.id,
+          ap.periodStart,
+          ap.periodEnd,
+          ap.isSynced,
+          sq.id as queueId,
+          sq.attempts,
+          sq.lastAttempt
+        FROM activity_periods ap
+        LEFT JOIN sync_queue sq ON sq.entityId = ap.id AND sq.entityType = 'activity_period'
+        WHERE ap.id IN (${periodIds.map(() => '?').join(',')})
+        ORDER BY ap.periodStart ASC
+      `).all(...periodIds) as any[];
+    }
+    
+    // Get queue position if in queue
+    let queuePosition = 0;
+    if (screenshotSyncQuery?.queueId) {
+      const positionQuery = this.db.prepare(`
+        SELECT COUNT(*) as position
+        FROM sync_queue
+        WHERE createdAt < (SELECT createdAt FROM sync_queue WHERE id = ?)
+        AND attempts < 5
+      `).get(screenshotSyncQuery.queueId) as any;
+      queuePosition = positionQuery?.position || 0;
+    }
+    
+    // Calculate next retry time based on exponential backoff
+    let nextRetryTime = null;
+    if (screenshotSyncQuery?.attempts > 0 && screenshotSyncQuery?.attempts < 5) {
+      const baseDelay = 5000; // 5 seconds
+      const retryDelay = baseDelay * Math.pow(2, screenshotSyncQuery.attempts - 1);
+      const lastAttempt = new Date(screenshotSyncQuery.lastAttemptAt || screenshotSyncQuery.queuedAt);
+      nextRetryTime = new Date(lastAttempt.getTime() + retryDelay);
+    }
+    
+    // Calculate upload percentage (screenshot = 1 item, each period = 1 item)
+    const totalItems = 1 + periodIds.length; // 1 screenshot + N activity periods
+    const screenshotUploaded = screenshotSyncQuery?.screenshotSynced === 1 || !!screenshotSyncQuery?.url;
+    const syncedItems = (screenshotUploaded ? 1 : 0) + (periodsSyncQuery?.syncedPeriods || 0);
+    const uploadPercentage = (syncedItems / totalItems) * 100;
+    
+    // Determine overall sync status
+    let status: 'synced' | 'partial' | 'pending' | 'failed' | 'queued';
+    const allPeriodsSynced = periodsSyncQuery?.syncedPeriods === periodsSyncQuery?.totalPeriods;
+    
+    if (screenshotUploaded && allPeriodsSynced) {
+      status = 'synced';
+    } else if (screenshotSyncQuery?.attempts >= 5) {
+      status = 'failed';
+    } else if (syncedItems > 0) {
+      // Show partial with percentage
+      status = 'partial';
+    } else if (screenshotSyncQuery?.queueId) {
+      status = 'queued';
+    } else {
+      status = 'pending';
+    }
+    
+    return {
+      status,
+      uploadPercentage: Math.round(uploadPercentage * 10) / 10, // Round to 1 decimal place
+      screenshot: {
+        synced: screenshotUploaded,
+        attempts: screenshotSyncQuery?.attempts || 0,
+        lastError: undefined  // We don't track errors in the current schema
+      },
+      activityPeriods: {
+        total: periodsSyncQuery?.totalPeriods || 0,
+        synced: periodsSyncQuery?.syncedPeriods || 0,
+        queued: periodsSyncQuery?.queuedPeriods || 0,
+        maxAttempts: periodsSyncQuery?.maxAttempts || 0,
+        details: periodsDetails.map(p => ({
+          id: p.id,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          synced: p.isSynced === 1,
+          queued: !!p.queueId,
+          attempts: p.attempts || 0,
+          status: p.isSynced === 1 ? 'synced' : (p.queueId ? (p.attempts >= 5 ? 'failed' : 'queued') : 'pending')
+        }))
+      },
+      queuePosition,
+      nextRetryTime,
+      lastAttemptAt: screenshotSyncQuery?.lastAttemptAt ? new Date(screenshotSyncQuery.lastAttemptAt) : null
+    };
   }
   
   updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
@@ -1041,7 +1173,14 @@ export class LocalDatabase {
     const stmt = this.db.prepare(`
       SELECT * FROM sync_queue 
       WHERE attempts < 5 
-      ORDER BY createdAt ASC 
+      ORDER BY 
+        CASE 
+          WHEN entityType = 'session' THEN 1
+          WHEN entityType = 'screenshot' THEN 2
+          WHEN entityType = 'activity_period' THEN 3
+          ELSE 4
+        END,
+        createdAt DESC 
       LIMIT ?
     `);
     
@@ -1049,6 +1188,25 @@ export class LocalDatabase {
   }
   
   markSynced(queueId: string) {
+    // Get the entity info before deleting from queue
+    const queueItem = this.db.prepare('SELECT entityType, entityId FROM sync_queue WHERE id = ?').get(queueId) as any;
+    
+    if (queueItem) {
+      // Update isSynced flag for the entity
+      switch (queueItem.entityType) {
+        case 'activity_period':
+          this.db.prepare('UPDATE activity_periods SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          break;
+        case 'screenshot':
+          this.db.prepare('UPDATE screenshots SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          break;
+        case 'session':
+          this.db.prepare('UPDATE sessions SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          break;
+      }
+    }
+    
+    // Remove from sync queue
     this.db.prepare('DELETE FROM sync_queue WHERE id = ?').run(queueId);
   }
   

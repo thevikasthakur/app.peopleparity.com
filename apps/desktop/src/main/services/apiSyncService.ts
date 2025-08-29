@@ -27,10 +27,17 @@ export class ApiSyncService {
     private db: DatabaseService,
     private store: Store
   ) {
+    // Use IPv4 explicitly to avoid IPv6 connection issues
+    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
+    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
+    
     this.api = axios.create({
-      baseURL: process.env.API_URL || 'http://127.0.0.1:3001/api',
+      baseURL: apiUrlFixed,
       timeout: 10000,
-    });
+      // Force IPv4
+      httpAgent: new (require('http').Agent)({ family: 4 }),
+      httpsAgent: new (require('https').Agent)({ family: 4 })
+    } as any);
 
     this.setupInterceptors();
   }
@@ -315,8 +322,8 @@ export class ApiSyncService {
     if (!token || token === 'offline-token') return;
 
     try {
-      // Get unsynced items from local database
-      const unsyncedItems = this.db.getUnsyncedItems();
+      // Get unsynced items from local database - increase batch size to handle backlog
+      const unsyncedItems = this.db.getUnsyncedItems(200);
       
       // Only log if there are items to sync
       if (unsyncedItems.length > 0) {
@@ -350,12 +357,16 @@ export class ApiSyncService {
       }
       
       // Sync screenshots before activity periods (since periods now reference screenshots)
+      console.log(`Found ${screenshots.length} screenshots to sync`);
       for (const item of screenshots) {
         try {
+          console.log(`Syncing screenshot ${item.entityId}, attempts: ${item.attempts || 0}`);
           await this.syncItem(item);
           this.db.markSynced(item.id);
+          console.log(`Screenshot ${item.entityId} synced successfully`);
         } catch (error: any) {
-          console.error(`Failed to sync screenshot ${item.id}:`, error.message);
+          console.error(`Failed to sync screenshot ${item.entityId}:`, error.message);
+          console.error(`Error details:`, error.response?.data || error);
           this.db.incrementSyncAttempts(item.id);
         }
       }
@@ -445,9 +456,18 @@ export class ApiSyncService {
       }
       
       console.log('Sync completed successfully');
-    } catch (error) {
-      console.error('Sync failed:', error);
-      this.handleOffline();
+    } catch (error: any) {
+      // Only log ECONNREFUSED once per offline period
+      if (error.code === 'ECONNREFUSED') {
+        if (this.isOnline) {
+          console.log('API server is not available, switching to offline mode');
+          this.handleOffline();
+        }
+        // Don't log repeated connection errors while offline
+      } else {
+        console.error('Sync failed:', error);
+        this.handleOffline();
+      }
     }
   }
 

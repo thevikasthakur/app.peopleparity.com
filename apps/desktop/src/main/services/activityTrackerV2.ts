@@ -572,7 +572,7 @@ export class ActivityTrackerV2 extends EventEmitter {
   /**
    * Store a screenshot (called by ScreenshotService)
    */
-  storeScreenshot(screenshotData: {
+  async storeScreenshot(screenshotData: {
     id: string;
     userId: string;
     sessionId: string;
@@ -593,8 +593,28 @@ export class ActivityTrackerV2 extends EventEmitter {
       notes: screenshotData.notes
     };
     
-    this.windowManager.setScreenshot(screenshot);
-    console.log(`📷 Screenshot stored for current window`);
+    // Check if there's an active window
+    const windowInfo = this.windowManager.getCurrentWindowInfo();
+    if (windowInfo) {
+      // Add to current window
+      this.windowManager.setScreenshot(screenshot);
+      console.log(`📷 Screenshot stored for current window`);
+    } else {
+      // No active window, save directly to database
+      console.log(`⚠️ No active window, saving screenshot directly to database`);
+      
+      // Save screenshot to database (don't pass TEMP sessionId)
+      const savedScreenshot = await this.db.saveScreenshot({
+        sessionId: screenshotData.sessionId.startsWith('TEMP-') ? undefined : screenshotData.sessionId,
+        localPath: screenshotData.localPath,
+        thumbnailPath: screenshotData.thumbnailPath || '',
+        capturedAt: screenshotData.capturedAt
+      });
+      
+      if (savedScreenshot) {
+        console.log(`✅ Screenshot saved directly to database: ${(savedScreenshot as any).id}`);
+      }
+    }
   }
   
   /**

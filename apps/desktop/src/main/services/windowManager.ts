@@ -110,12 +110,13 @@ export class WindowManager extends EventEmitter {
     windowStart.setMilliseconds(0);
     
     const windowEnd = new Date(windowStart);
-    windowEnd.setMinutes(windowEndMinute);
     
     // Handle hour rollover
     if (windowEndMinute >= 60) {
       windowEnd.setHours(windowEnd.getHours() + Math.floor(windowEndMinute / 60));
       windowEnd.setMinutes(windowEndMinute % 60);
+    } else {
+      windowEnd.setMinutes(windowEndMinute);
     }
     
     this.currentWindow = {

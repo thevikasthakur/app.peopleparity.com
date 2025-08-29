@@ -71,19 +71,13 @@ export class ScreenshotServiceV2 {
     const windowStartMinute = Math.floor(currentMinute / 10) * 10;
     const windowEndMinute = windowStartMinute + 10;
     
-    // Calculate random time within current window (if time remains) or next window
-    let captureTime = new Date();
+    // Always schedule for the NEXT window to avoid rapid-fire screenshots
+    // Generate a random time within the next 10-minute window
+    const nextWindowStart = windowEndMinute;
+    const randomMinuteInNextWindow = Math.random() * 10; // 0-10 minutes spread
     
-    if (currentMinute < windowEndMinute - 1) {
-      // Still time in current window, schedule within it
-      const remainingMinutes = windowEndMinute - currentMinute - 1;
-      const randomMinutes = Math.random() * remainingMinutes;
-      captureTime.setMinutes(currentMinute + randomMinutes);
-    } else {
-      // Move to next window
-      captureTime.setMinutes(windowEndMinute + Math.random() * 9 + 1);
-    }
-    
+    let captureTime = new Date(now);
+    captureTime.setMinutes(nextWindowStart + randomMinuteInNextWindow);
     captureTime.setSeconds(Math.random() * 60);
     captureTime.setMilliseconds(0);
     
@@ -93,7 +87,7 @@ export class ScreenshotServiceV2 {
       captureTime.setMinutes(captureTime.getMinutes() % 60);
     }
     
-    const delay = Math.max(1000, captureTime.getTime() - now.getTime()); // At least 1 second
+    const delay = captureTime.getTime() - now.getTime();
     
     console.log(`\n📅 Next screenshot scheduled at ${captureTime.toISOString()} (in ${Math.round(delay/1000)}s)`);
     
@@ -228,10 +222,10 @@ export class ScreenshotServiceV2 {
         notes: session?.task || undefined
       };
       
-      // Store in activity tracker (which will add to window manager)
+      // Store in activity tracker (which will add to window manager or save directly)
       if (this.activityTracker) {
-        this.activityTracker.storeScreenshot(screenshotData);
-        console.log(`✅ Screenshot stored in current window`);
+        await this.activityTracker.storeScreenshot(screenshotData);
+        console.log(`✅ Screenshot processed by activity tracker`);
       } else {
         console.warn('⚠️ ActivityTracker not set, cannot store screenshot');
       }

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ModeToggle } from '../components/ModeToggle';
-import { SessionInfo } from '../components/SessionInfo';
 import { TimeDisplay } from '../components/TimeDisplay';
+import { CurrentSessionDisplay } from '../components/CurrentSessionDisplay';
+import { ActivitySelector } from '../components/ActivitySelector';
+import { ActivityModal } from '../components/ActivityModal';
 import { ScreenshotGrid } from '../components/ScreenshotGrid';
 import { Analytics } from '../components/Analytics';
 import { Leaderboard } from '../components/Leaderboard';
@@ -9,34 +10,20 @@ import { TaskSelector } from '../components/TaskSelector';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Coffee, Zap, Trophy, Activity, Play, Square } from 'lucide-react';
+import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown } from 'lucide-react';
 
-const sarcasticMessages = {
-  client: [
-    "Time to make the magic happen! ✨",
-    "Show that code who's boss! 💪",
-    "Fingers ready? Let's ship it! 🚀",
-    "Building dreams, one commit at a time 🎯",
-    "Code mode: ACTIVATED 🔥"
-  ],
-  command: [
-    "Strategic thinking time! 🧠",
-    "Meetings, reviews, and coffee breaks ☕",
-    "The important 'other stuff' 📋",
-    "Because not everything is coding 🤷",
-    "Admin mode: Because someone has to do it 📝"
-  ],
-  idle: [
-    "Miss me? Your keyboard does! 👀",
-    "Coffee break extended? No judgment... 😏",
-    "AFK detector says: Hello? Anyone there? 🎭",
-    "Your chair is getting lonely 🪑",
-    "Screen's still here when you get back! 👋"
-  ]
-};
+const sarcasticMessages = [
+  "Time to make the magic happen! ✨",
+  "Show that code who's boss! 💪",
+  "Fingers ready? Let's ship it! 🚀",
+  "Building dreams, one commit at a time 🎯",
+  "Code mode: ACTIVATED 🔥",
+  "Strategic thinking time! 🧠",
+  "The important 'other stuff' 📋"
+];
 
 export function Dashboard() {
-  const { mode, setMode } = useTheme();
+  const { mode } = useTheme();
   const { 
     currentSession, 
     todayStats, 
@@ -49,40 +36,71 @@ export function Dashboard() {
   } = useTracker();
   
   const [showTaskSelector, setShowTaskSelector] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
   const [randomMessage, setRandomMessage] = useState('');
   const [pendingMode, setPendingMode] = useState<'client' | 'command' | null>(null);
+  // Load activity and recent activities from localStorage
+  const [currentActivity, setCurrentActivity] = useState(() => {
+    const saved = localStorage.getItem('currentActivity');
+    return saved || currentSession?.activity || '';
+  });
+  const [recentActivities, setRecentActivities] = useState<string[]>(() => {
+    const saved = localStorage.getItem('recentActivities');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   useEffect(() => {
-    const messageType = isIdle ? 'idle' : mode === 'client' ? 'client' : 'command';
-    const messages = sarcasticMessages[messageType];
-    setRandomMessage(messages[Math.floor(Math.random() * messages.length)]);
-  }, [mode, isIdle]);
+    setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
+  }, []);
 
-  const handleModeToggle = async (newMode: 'client' | 'command') => {
-    if (newMode === mode) return;
-    
-    setPendingMode(newMode);
-    setShowTaskSelector(true);
-  };
+  // Client mode disabled - always use command mode
 
   const handleTaskSelected = async (task: string, projectId?: string) => {
-    if (!pendingMode) return;
+    // Check if we have a valid activity
+    if (!currentActivity || currentActivity.trim() === '') {
+      // Show activity modal first
+      setShowTaskSelector(false);
+      setShowActivityModal(true);
+      return;
+    }
     
-    const trackingMode = pendingMode === 'client' ? 'client_hours' : 'command_hours';
+    // Always use command mode
+    const trackingMode = 'command_hours';
+    const activityName = task?.trim() || currentActivity;
     
     if (currentSession) {
-      await switchMode(trackingMode, task, projectId);
+      await switchMode(trackingMode, activityName, projectId);
     } else {
-      await startSession(trackingMode, task, projectId);
+      await startSession(trackingMode, activityName, projectId);
     }
-    setMode(pendingMode);
     setShowTaskSelector(false);
     setPendingMode(null);
   };
 
   const handleStartTracking = () => {
-    setPendingMode(mode);
-    setShowTaskSelector(true);
+    // Always show activity selection when starting tracking
+    setShowActivityModal(true);
+  };
+
+  const handleActivitySelected = (activity: string) => {
+    setCurrentActivity(activity);
+    localStorage.setItem('currentActivity', activity);
+    
+    // Add to recent activities
+    setRecentActivities(prev => {
+      const updated = [activity, ...prev.filter(a => a !== activity)].slice(0, 12);
+      localStorage.setItem('recentActivities', JSON.stringify(updated));
+      return updated;
+    });
+    
+    // Close the activity modal
+    setShowActivityModal(false);
+    
+    // If we don't have an active session, proceed to task selector
+    if (!currentSession) {
+      setPendingMode(mode);
+      setShowTaskSelector(true);
+    }
   };
 
   const handleStopTracking = async () => {
@@ -130,25 +148,24 @@ export function Dashboard() {
                 </button>
               )}
               
-              <ModeToggle 
-                mode={mode} 
-                onModeChange={handleModeToggle}
-                disabled={showTaskSelector || !currentSession}
-              />
-              
               <ProfileDropdown />
             </div>
           </div>
         </div>
 
-        {/* Time Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Time Stats - Current Session, Today's Hustle, Weekly Marathon */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CurrentSessionDisplay
+            screenshots={screenshots}
+            currentSession={currentSession}
+          />
+          
           <TimeDisplay
             title="Today's Hustle"
             clientHours={todayStats.clientHours}
             commandHours={todayStats.commandHours}
             icon={<Coffee className="w-5 h-5" />}
-            message={todayStats.totalHours > 6 ? "Overachiever alert! 🏆" : "Keep it going! 💪"}
+            message=""
           />
           
           <TimeDisplay
@@ -156,24 +173,36 @@ export function Dashboard() {
             clientHours={weekStats.clientHours}
             commandHours={weekStats.commandHours}
             icon={<Zap className="w-5 h-5" />}
-            message={weekStats.totalHours > 30 ? "Productivity champion! 🎉" : "Steady progress! 📈"}
+            message=""
           />
         </div>
 
-        {/* Info Cards Row - Current Session, Analytics, Leaderboard */}
+        {/* Info Cards Row - Activity, Analytics, Leaderboard */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           
-          {/* Current Session */}
+          {/* Activity */}
           <div className="glass-card p-4">
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <Activity className="w-5 h-5 text-primary" />
-              Current Session
+              Activity
             </h3>
-            <SessionInfo 
-              session={currentSession}
-              mode={mode}
-              onNotesChange={(notes) => console.log('Notes updated:', notes)}
-            />
+            <div 
+              className="p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+              onClick={() => setShowActivityModal(true)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-gray-500" />
+                  <span className="font-medium text-lg">
+                    {currentActivity || 'Select Activity'}
+                  </span>
+                </div>
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Click to change your current activity
+              </p>
+            </div>
           </div>
 
           {/* Analytics */}
@@ -233,6 +262,20 @@ export function Dashboard() {
           mode={pendingMode || mode}
         />
       )}
+
+      {/* Activity Modal */}
+      <ActivityModal
+        isOpen={showActivityModal}
+        onClose={() => {
+          // Only allow closing if there's an activity set
+          if (currentActivity) {
+            setShowActivityModal(false);
+          }
+        }}
+        currentActivity={currentActivity}
+        onActivityChange={handleActivitySelected}
+        recentActivities={recentActivities}
+      />
     </div>
   );
 }

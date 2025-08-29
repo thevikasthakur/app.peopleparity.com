@@ -262,25 +262,51 @@ export class MetricsCollector {
     const scrollsPerMin = mouseMetrics.totalScrolls / minutesPassed;
     const mouseDistancePerMin = mouseMetrics.distancePixels / minutesPassed;
     
-    // Score components (0-10 scale each) - Based on PeopleParity algorithm
+    // Score components (0-10 scale each) - Updated thresholds for higher scores
     const components = {
-      // Key hits: 0-60 per minute maps to 0-10 (25% weight)
-      keyHits: Math.min(10, (keyHitsPerMin / 60) * 10),
+      // Key hits: Progressive scoring to allow max 9.0 from keyboard alone
+      // 0-30: linear (0-5), 31-60: slower growth (5-7), 61-100: diminishing (7-8.5), 100+: caps at 9.0
+      keyHits: keyHitsPerMin <= 30 
+        ? (keyHitsPerMin / 30) * 5
+        : keyHitsPerMin <= 60
+        ? 5 + ((keyHitsPerMin - 30) / 30) * 2
+        : keyHitsPerMin <= 100
+        ? 7 + ((keyHitsPerMin - 60) / 40) * 1.5
+        : Math.min(9, 8.5 + ((keyHitsPerMin - 100) / 100) * 0.5),
       
-      // Key diversity: 0-15 unique keys per minute maps to 0-10 (45% weight - MOST IMPORTANT)
-      keyDiversity: Math.min(10, (uniqueKeysPerMin / 15) * 10),
+      // Key diversity: Progressive scoring for unique keys
+      // 0-10: linear (0-5), 11-20: slower (5-7), 21-30: diminishing (7-8.5), 30+: caps at 9.0
+      keyDiversity: uniqueKeysPerMin <= 10
+        ? (uniqueKeysPerMin / 10) * 5
+        : uniqueKeysPerMin <= 20
+        ? 5 + ((uniqueKeysPerMin - 10) / 10) * 2
+        : uniqueKeysPerMin <= 30
+        ? 7 + ((uniqueKeysPerMin - 20) / 10) * 1.5
+        : Math.min(9, 8.5 + ((uniqueKeysPerMin - 30) / 20) * 0.5),
       
-      // Mouse clicks: 0-20 per minute maps to 0-10 (10% weight)
-      mouseClicks: Math.min(10, (clicksPerMin / 20) * 10),
+      // Mouse clicks: Progressive scoring to help achieve 7.5 with mouse alone
+      // 0-15: linear (0-5), 16-30: slower (5-6.5), 31-50: diminishing (6.5-7.5)
+      mouseClicks: clicksPerMin <= 15
+        ? (clicksPerMin / 15) * 5
+        : clicksPerMin <= 30
+        ? 5 + ((clicksPerMin - 15) / 15) * 1.5
+        : Math.min(7.5, 6.5 + ((clicksPerMin - 30) / 20) * 1),
       
-      // Mouse scrolls: 0-10 per minute maps to 0-10 (10% weight)
-      mouseScrolls: Math.min(10, (scrollsPerMin / 10) * 10),
+      // Mouse scrolls: Progressive scoring
+      // 0-8: linear (0-5), 9-15: slower (5-6.5), 16+: caps at 7.5
+      mouseScrolls: scrollsPerMin <= 8
+        ? (scrollsPerMin / 8) * 5
+        : scrollsPerMin <= 15
+        ? 5 + ((scrollsPerMin - 8) / 7) * 1.5
+        : Math.min(7.5, 6.5 + ((scrollsPerMin - 15) / 10) * 1),
       
-      // Mouse movement: 0-3000 pixels per minute maps to 0-10 (10% weight)
-      mouseMovement: Math.min(10, (mouseDistancePerMin / 3000) * 10),
-      
-      // NO CONSISTENCY BONUS - removed as per user request
-      // Previously had 20 points for consistency, now purely activity-based
+      // Mouse movement: Progressive scoring based on distance
+      // 0-2000: linear (0-5), 2001-4000: slower (5-6.5), 4001+: caps at 7.5
+      mouseMovement: mouseDistancePerMin <= 2000
+        ? (mouseDistancePerMin / 2000) * 5
+        : mouseDistancePerMin <= 4000
+        ? 5 + ((mouseDistancePerMin - 2000) / 2000) * 1.5
+        : Math.min(7.5, 6.5 + ((mouseDistancePerMin - 4000) / 2000) * 1),
     };
     
     // Calculate penalties for suspicious behavior

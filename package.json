@@ -11,7 +11,10 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "start": "./start-all.sh",
+    "api": "cd apps/api && npm run dev",
+    "desktop": "cd apps/desktop && npm run dev"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -24,3 +27,4 @@
     "bcryptjs": "^3.0.2"
   }
 }
+

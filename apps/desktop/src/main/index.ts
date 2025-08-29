@@ -145,7 +145,7 @@ function setupIpcHandlers() {
   });
   
   // Session handlers
-  ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
+  ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
     return activityTracker.startSession(mode, projectId, task);
   });
   
@@ -161,7 +161,7 @@ function setupIpcHandlers() {
     return databaseService.getCurrentActivity();
   });
   
-  ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
+  ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
     // Stop current session and start new one
     await activityTracker.stopSession();
     return activityTracker.startSession(mode, projectId, task);

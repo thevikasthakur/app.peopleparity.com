@@ -1,7 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ActivityModal } from './ActivityModal';
+
+interface SyncStatus {
+  status: 'synced' | 'partial' | 'pending' | 'failed' | 'queued';
+  uploadPercentage?: number;
+  screenshot: {
+    synced: boolean;
+    attempts: number;
+    lastError?: string;
+  };
+  activityPeriods: {
+    total: number;
+    synced: number;
+    queued: number;
+    maxAttempts: number;
+    details?: Array<{
+      id: string;
+      periodStart: number;
+      periodEnd: number;
+      synced: boolean;
+      queued: boolean;
+      attempts: number;
+      status: string;
+    }>;
+  };
+  queuePosition: number;
+  nextRetryTime?: Date | null;
+  lastAttemptAt?: Date | null;
+}
 
 interface Screenshot {
   id: string;
@@ -11,6 +40,8 @@ interface Screenshot {
   notes?: string;
   mode: 'client' | 'command';
   activityScore: number;
+  activityName?: string;
+  task?: string;
   activityPeriodId?: string;
   activityPeriodIds?: string[];
   relatedPeriods?: {
@@ -20,6 +51,7 @@ interface Screenshot {
     activityScore: number;
     metricsBreakdown?: any;
   }[];
+  syncStatus?: SyncStatus;
 }
 
 interface DetailedMetrics {
@@ -94,6 +126,131 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
+// Get sync status styling and info
+function getSyncStatusInfo(syncStatus?: SyncStatus) {
+  if (!syncStatus) {
+    return {
+      icon: CloudOff,
+      color: 'text-gray-400',
+      bgColor: 'bg-gray-100',
+      borderColor: 'border-gray-300',
+      label: 'Unknown',
+      description: 'Sync status unknown',
+      showProgress: false,
+      opacity: 'opacity-50'
+    };
+  }
+
+  const { status, screenshot, activityPeriods, queuePosition, nextRetryTime, uploadPercentage } = syncStatus;
+  
+  switch (status) {
+    case 'synced':
+      return {
+        icon: CheckCircle,
+        color: 'text-green-600',
+        bgColor: 'bg-green-50',
+        borderColor: 'border-green-300',
+        label: 'Synced',
+        description: `Fully synced (${activityPeriods.synced}/${activityPeriods.total} periods)`,
+        showProgress: false,
+        opacity: 'opacity-100'
+      };
+    
+    case 'partial':
+      return {
+        icon: RefreshCw,
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-50',
+        borderColor: 'border-yellow-300',
+        label: uploadPercentage ? `Uploading ${uploadPercentage}%` : 'Partial',
+        description: `${activityPeriods.synced}/${activityPeriods.total} periods synced`,
+        showProgress: true,
+        progress: uploadPercentage || 0,
+        opacity: 'opacity-90'
+      };
+    
+    case 'queued':
+      return {
+        icon: Upload,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50',
+        borderColor: 'border-blue-300',
+        label: `Queue #${queuePosition + 1}`,
+        description: `Waiting in queue (${screenshot.attempts} attempts)`,
+        showProgress: false,
+        opacity: 'opacity-75'
+      };
+    
+    case 'pending':
+      return {
+        icon: Clock,
+        color: 'text-gray-500',
+        bgColor: 'bg-gray-50',
+        borderColor: 'border-gray-300',
+        label: 'Pending',
+        description: 'Waiting to sync',
+        showProgress: false,
+        opacity: 'opacity-60'
+      };
+    
+    case 'failed':
+      return {
+        icon: AlertTriangle,
+        color: 'text-red-600',
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-300',
+        label: 'Failed',
+        description: `Failed after ${screenshot.attempts} attempts`,
+        error: screenshot.lastError,
+        opacity: 'opacity-50'
+      };
+    
+    default:
+      return {
+        icon: CloudOff,
+        color: 'text-gray-400',
+        bgColor: 'bg-gray-100',
+        borderColor: 'border-gray-300',
+        label: 'Unknown',
+        description: 'Unknown sync status',
+        showProgress: false,
+        opacity: 'opacity-50'
+      };
+  }
+}
+
+// Format time for display
+function formatTimeAgo(date: Date | null | undefined): string {
+  if (!date) return '';
+  
+  const now = new Date();
+  const diff = now.getTime() - new Date(date).getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return `${seconds}s ago`;
+}
+
+function formatTimeUntil(date: Date | null | undefined): string {
+  if (!date) return '';
+  
+  const now = new Date();
+  const diff = new Date(date).getTime() - now.getTime();
+  
+  if (diff <= 0) return 'now';
+  
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) return `in ${hours}h`;
+  if (minutes > 0) return `in ${minutes}m`;
+  return `in ${seconds}s`;
+}
+
 interface ScreenshotGridProps {
   screenshots: Screenshot[];
   onScreenshotClick: (id: string) => void;
@@ -107,7 +264,38 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [detailedMetrics, setDetailedMetrics] = useState<DetailedMetrics[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
+  const [showEditActivityModal, setShowEditActivityModal] = useState(false);
+  const [currentEditActivity, setCurrentEditActivity] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleActivityChange = async (activity: string) => {
+    if (selectedIds.size > 0 && activity.trim()) {
+      console.log('Updating activity for screenshots:', Array.from(selectedIds), 'to:', activity);
+      
+      // TODO: Call API to update activity names for selected screenshots
+      // For now, just update locally
+      try {
+        // Update activity name in database for each selected screenshot
+        const updatePromises = Array.from(selectedIds).map(async (screenshotId) => {
+          // This would call the IPC handler to update the activity
+          // await window.electronAPI.screenshots.updateActivity(screenshotId, activity);
+        });
+        
+        await Promise.all(updatePromises);
+        
+        // Clear selection after successful update
+        setSelectedIds(new Set());
+        onSelectionChange([]);
+        setShowEditActivityModal(false);
+        setCurrentEditActivity('');
+        
+        // Optionally refresh the screenshots to show updated activity names
+        // This would be handled by the parent component
+      } catch (error) {
+        console.error('Failed to update activity:', error);
+      }
+    }
+  };
 
   const toggleSelection = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -216,15 +404,55 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
 
   return (
     <div className="space-y-4">
-      {Object.entries(hourGroups).map(([hour, hourScreenshots]) => (
-        <div key={hour} className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Clock className="w-4 h-4" />
-            <span className="font-medium">{hour}</span>
-            <span className="text-gray-400">({hourScreenshots.filter(s => s !== null).length} captures)</span>
-          </div>
-          
-          <div className="grid grid-cols-6 gap-2">
+      {Object.entries(hourGroups).map(([hour, hourScreenshots]) => {
+        // Calculate average activity score for the hour
+        const validScreenshots = hourScreenshots.filter(s => s !== null) as Screenshot[];
+        const hourScore = validScreenshots.length > 0 
+          ? validScreenshots.reduce((sum, s) => sum + percentageToTenScale(s.activityScore), 0) / validScreenshots.length
+          : 0;
+        const hourLevel = getActivityLevel(hourScore);
+
+        // Group consecutive screenshots by activity name
+        const activityGroups: { activity: string; count: number; startIdx: number }[] = [];
+        let currentActivity = '';
+        let currentCount = 0;
+        let currentStartIdx = 0;
+
+        hourScreenshots.forEach((screenshot, idx) => {
+          const activity = screenshot ? (screenshot.activityName || screenshot.task || '(no activity name)') : '';
+          if (activity !== currentActivity) {
+            if (currentCount > 0) {
+              activityGroups.push({ 
+                activity: currentActivity, 
+                count: currentCount, 
+                startIdx: currentStartIdx 
+              });
+            }
+            currentActivity = activity;
+            currentCount = screenshot ? 1 : 0;
+            currentStartIdx = idx;
+          } else if (screenshot) {
+            currentCount++;
+          }
+        });
+        
+        if (currentCount > 0) {
+          activityGroups.push({ 
+            activity: currentActivity, 
+            count: currentCount, 
+            startIdx: currentStartIdx 
+          });
+        }
+
+        return (
+          <div key={hour} className="space-y-2">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Clock className="w-4 h-4" />
+              <span className="font-medium">{hour}</span>
+              <span className="text-gray-400">({validScreenshots.length} captures)</span>
+            </div>
+            
+            <div className="grid grid-cols-6 gap-2">
             {hourScreenshots.map((screenshot, index) => {
               // Add time label for each slot
               const slotStartMinute = index * 10;
@@ -262,6 +490,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                       ? 'ring-2 ring-indigo-100' 
                       : 'ring-2 ring-emerald-100'
                     }
+                    ${screenshot.syncStatus ? getSyncStatusInfo(screenshot.syncStatus).opacity : ''}
                   `}
                   onClick={() => {
                     setModalScreenshot(screenshot);
@@ -320,52 +549,114 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     })()}
                   </div>
                   
-                  {/* Mode Badge */}
+                  {/* Mode Badge - Command Only */}
                   <div className="absolute bottom-2 left-2">
-                    <div className={`
-                      px-2 py-1 rounded text-xs font-medium backdrop-blur
-                      ${screenshot.mode === 'client' 
-                        ? 'bg-indigo-500/80 text-white' 
-                        : 'bg-emerald-500/80 text-white'
-                      }
-                    `}>
-                      {screenshot.mode === 'client' ? 'CLIENT' : 'CMD'}
+                    <div className="px-2 py-1 rounded text-xs font-medium backdrop-blur bg-emerald-500/80 text-white">
+                      CMD
                     </div>
                   </div>
                   
-                  {/* Hover Actions */}
-                  {isHovered && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center gap-2"
-                    >
-                      <button
-                        className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          console.log('Transfer mode');
-                        }}
+                  {/* Sync Status Indicator */}
+                  {screenshot.syncStatus && (() => {
+                    const statusInfo = getSyncStatusInfo(screenshot.syncStatus);
+                    const Icon = statusInfo.icon;
+                    return (
+                      <div 
+                        className="absolute bottom-2 right-2 group"
                       >
-                        <ArrowRightLeft className="w-4 h-4" />
-                      </button>
-                      <button
-                        className="p-2 bg-white rounded-lg hover:bg-gray-100 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          console.log('Delete');
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
-                    </motion.div>
-                  )}
+                        {/* Status Badge */}
+                        <div className={`
+                          px-2 py-1 rounded-full text-xs font-medium backdrop-blur
+                          flex items-center gap-1 ${statusInfo.bgColor} ${statusInfo.color}
+                          border ${statusInfo.borderColor}
+                        `}>
+                          <Icon className="w-3 h-3" />
+                          <span>{statusInfo.label}</span>
+                        </div>
+                        
+                        {/* Tooltip on Hover */}
+                        {hoveredId === screenshot.id && (
+                          <div className="absolute bottom-full right-0 mb-2 z-50">
+                            <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs">
+                              <div className="font-semibold mb-1">{statusInfo.label}</div>
+                              <div className="opacity-90">{statusInfo.description}</div>
+                              {screenshot.syncStatus.nextRetryTime && (
+                                <div className="mt-1 opacity-75">
+                                  Retry: {formatTimeUntil(screenshot.syncStatus.nextRetryTime)}
+                                </div>
+                              )}
+                              {screenshot.syncStatus.lastAttemptAt && (
+                                <div className="opacity-75">
+                                  Last: {formatTimeAgo(screenshot.syncStatus.lastAttemptAt)}
+                                </div>
+                              )}
+                              {statusInfo.error && (
+                                <div className="mt-1 text-red-300 text-xs">
+                                  {statusInfo.error}
+                                </div>
+                              )}
+                              {statusInfo.showProgress && statusInfo.progress && (
+                                <div className="mt-2">
+                                  <div className="bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                                    <div 
+                                      className="bg-yellow-400 h-full transition-all"
+                                      style={{ width: `${statusInfo.progress}%` }}
+                                    />
+                                  </div>
+                                  <div className="mt-1 text-[10px] opacity-75">
+                                    {Math.round(statusInfo.progress)}% synced
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {/* Arrow */}
+                            <div className="absolute -bottom-1 right-4 w-2 h-2 bg-gray-900 transform rotate-45" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  
+                  {/* Hover Actions - Removed to fix selection issue */}
                 </motion.div>
               );
             })}
           </div>
+          
+          {/* Activity Ribbons */}
+          {activityGroups.length > 0 && (
+            <div className="relative h-6 bg-gray-100 rounded overflow-hidden flex">
+              {activityGroups.map((group, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-center text-[11px] font-medium text-white px-1 border-r border-white/30"
+                  style={{
+                    width: `${(group.count / 6) * 100}%`,
+                    marginLeft: idx === 0 ? `${(group.startIdx / 6) * 100}%` : 0,
+                    backgroundColor: hourLevel.color + 'DD'
+                  }}
+                  title={group.activity}
+                >
+                  <span className="text-center">
+                    {group.activity}
+                  </span>
+                </div>
+              ))}
+              {/* Hour Score on Right */}
+              <div 
+                className="absolute right-0 top-0 h-full px-2 flex items-center text-[10px] font-bold text-white"
+                style={{ 
+                  backgroundColor: hourLevel.color,
+                  minWidth: '45px'
+                }}
+              >
+                {hourScore.toFixed(1)}
+              </div>
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
       
       {/* Bulk Actions */}
       {selectedIds.size > 0 && (
@@ -378,13 +669,26 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
             {selectedIds.size} selected
           </span>
           <div className="h-6 w-px bg-gray-300" />
-          <button className="px-3 py-1 text-sm rounded bg-indigo-500 text-white hover:bg-indigo-600">
-            Transfer to Client
+          <button 
+            className="px-3 py-1 text-sm rounded bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
+            onClick={() => {
+              setShowEditActivityModal(true);
+            }}
+          >
+            <Edit2 className="w-3 h-3" />
+            Edit Activity
           </button>
-          <button className="px-3 py-1 text-sm rounded bg-emerald-500 text-white hover:bg-emerald-600">
-            Transfer to Command
-          </button>
-          <button className="px-3 py-1 text-sm rounded bg-red-500 text-white hover:bg-red-600">
+          <button 
+            className="px-3 py-1 text-sm rounded bg-red-500 text-white hover:bg-red-600"
+            onClick={() => {
+              if (confirm(`Are you sure you want to delete ${selectedIds.size} screenshot(s)? This action cannot be undone.`)) {
+                console.log('Delete screenshots:', Array.from(selectedIds));
+                // TODO: Implement soft delete
+                setSelectedIds(new Set());
+                onSelectionChange([]);
+              }
+            }}
+          >
             Delete
           </button>
           <button
@@ -428,6 +732,28 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   `}>
                     {modalScreenshot.mode === 'client' ? 'CLIENT' : 'COMMAND'}
                   </span>
+                  
+                  {/* Sync Status in Modal */}
+                  {modalScreenshot.syncStatus && (() => {
+                    const statusInfo = getSyncStatusInfo(modalScreenshot.syncStatus);
+                    const Icon = statusInfo.icon;
+                    return (
+                      <div className={`
+                        px-3 py-1 rounded-full text-xs font-medium
+                        flex items-center gap-1.5 ${statusInfo.bgColor} ${statusInfo.color}
+                        border ${statusInfo.borderColor}
+                      `}>
+                        <Icon className="w-3.5 h-3.5" />
+                        <span>{statusInfo.label}</span>
+                        {statusInfo.showProgress && statusInfo.progress && (
+                          <span className="ml-1 opacity-75">
+                            ({Math.round(statusInfo.progress)}%)
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  
                   <span className="text-sm text-gray-500">
                     {new Date(modalScreenshot.timestamp).toLocaleString()}
                   </span>
@@ -508,15 +834,9 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                           })()}
                         </div>
                       </div>
-                      <div className="flex justify-between">
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">Time</label>
-                          <p className="text-sm font-medium mt-1">{new Date(modalScreenshot.timestamp).toLocaleTimeString()}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">Mode</label>
-                          <p className="text-sm font-medium mt-1">{modalScreenshot.mode === 'client' ? 'Client' : 'Command'}</p>
-                        </div>
+                      <div>
+                        <label className="text-xs text-gray-500 uppercase tracking-wider">Time</label>
+                        <p className="text-sm font-medium mt-1">{new Date(modalScreenshot.timestamp).toLocaleTimeString()}</p>
                       </div>
                       {modalScreenshot.notes && (
                         <div>
@@ -526,6 +846,111 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                       )}
                     </div>
                   </div>
+                  
+                  {/* Sync Status Section */}
+                  {modalScreenshot.syncStatus && (
+                    <div className="p-4 border-b bg-gray-50">
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Cloud className="w-4 h-4" />
+                        Sync Status
+                      </h3>
+                      {(() => {
+                        const statusInfo = getSyncStatusInfo(modalScreenshot.syncStatus);
+                        const Icon = statusInfo.icon;
+                        const { screenshot, activityPeriods, queuePosition, nextRetryTime, lastAttemptAt } = modalScreenshot.syncStatus;
+                        
+                        return (
+                          <div className="space-y-3">
+                            {/* Main Status */}
+                            <div className="flex items-center gap-3">
+                              <Icon className={`w-5 h-5 ${statusInfo.color}`} />
+                              <div className="flex-1">
+                                <div className="font-medium">{statusInfo.label}</div>
+                                <div className="text-xs text-gray-600">{statusInfo.description}</div>
+                              </div>
+                            </div>
+                            
+                            {/* Sync Progress */}
+                            {statusInfo.showProgress && statusInfo.progress && (
+                              <div>
+                                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                                  <span>Sync Progress</span>
+                                  <span>{Math.round(statusInfo.progress)}%</span>
+                                </div>
+                                <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
+                                  <div 
+                                    className="bg-yellow-500 h-full transition-all"
+                                    style={{ width: `${statusInfo.progress}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <span className="text-gray-500">Screenshot:</span>
+                                <span className={`ml-2 font-medium ${
+                                  screenshot.synced ? 'text-green-600' : 'text-gray-600'
+                                }`}>
+                                  {screenshot.synced ? 'Synced' : 'Pending'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Activity Periods:</span>
+                                <span className="ml-2 font-medium">
+                                  {activityPeriods.synced}/{activityPeriods.total}
+                                </span>
+                              </div>
+                              {screenshot.attempts > 0 && (
+                                <div>
+                                  <span className="text-gray-500">Attempts:</span>
+                                  <span className="ml-2 font-medium">
+                                    {screenshot.attempts}/{activityPeriods.maxAttempts}
+                                  </span>
+                                </div>
+                              )}
+                              {queuePosition > 0 && (
+                                <div>
+                                  <span className="text-gray-500">Queue Position:</span>
+                                  <span className="ml-2 font-medium">#{queuePosition + 1}</span>
+                                </div>
+                              )}
+                              {nextRetryTime && (
+                                <div>
+                                  <span className="text-gray-500">Next Retry:</span>
+                                  <span className="ml-2 font-medium">
+                                    {formatTimeUntil(nextRetryTime)}
+                                  </span>
+                                </div>
+                              )}
+                              {lastAttemptAt && (
+                                <div>
+                                  <span className="text-gray-500">Last Attempt:</span>
+                                  <span className="ml-2 font-medium">
+                                    {formatTimeAgo(lastAttemptAt)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Error Message */}
+                            {screenshot.lastError && (
+                              <div className="bg-red-50 text-red-700 text-xs rounded-lg p-2 border border-red-200">
+                                <div className="flex items-start gap-2">
+                                  <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
+                                  <div>
+                                    <div className="font-medium mb-1">Sync Error</div>
+                                    <div className="opacity-90">{screenshot.lastError}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                     
                   {/* Per-Minute Activity Breakdown */}
                   <div className="p-4">
@@ -538,11 +963,37 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                       </div>
                     ) : detailedMetrics.length > 0 ? (
                       <div className="space-y-2">
-                        {detailedMetrics.map((metrics, index) => (
+                        {detailedMetrics.map((metrics, index) => {
+                          // Get sync status for this period if available
+                          const periodDetail = modalScreenshot?.syncStatus?.activityPeriods?.details?.[index];
+                          const periodSyncStatus = periodDetail?.status || 'unknown';
+                          const getSyncIcon = () => {
+                            switch (periodSyncStatus) {
+                              case 'synced': return <CheckCircle className="w-3 h-3 text-green-500" />;
+                              case 'queued': return <Upload className="w-3 h-3 text-blue-500" />;
+                              case 'failed': return <AlertTriangle className="w-3 h-3 text-red-500" />;
+                              case 'pending': return <Clock className="w-3 h-3 text-gray-400" />;
+                              default: return null;
+                            }
+                          };
+                          
+                          // Format period end time as hh:mm
+                          const formatTime = (timestamp: number) => {
+                            const date = new Date(timestamp);
+                            return date.toLocaleTimeString('en-US', { 
+                              hour: '2-digit', 
+                              minute: '2-digit',
+                              hour12: false 
+                            });
+                          };
+                          const periodEndTime = periodDetail?.periodEnd ? formatTime(periodDetail.periodEnd) : `Minute ${index + 1}`;
+                          
+                          return (
                           <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">Minute {index + 1}</span>
+                                <span className="text-sm font-medium">{periodEndTime}</span>
+                                {getSyncIcon()}
                                 <button
                                   onClick={() => {
                                     const newExpanded = new Set(expandedMinutes);
@@ -554,7 +1005,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                     setExpandedMinutes(newExpanded);
                                   }}
                                   className="p-1 hover:bg-gray-200 rounded transition-colors"
-                                  title="Show details"
                                 >
                                   <Info className="w-4 h-4 text-gray-500" />
                                 </button>
@@ -603,7 +1053,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                     <span className="font-medium">{metrics.keyboard.uniqueKeys}</span>
                                   </div>
                                   <div className="flex justify-between">
-                                    <span className="text-gray-600">Keys/min:</span>
+                                    <span className="text-gray-600">Productive Keys:</span>
                                     <span className="font-medium">{metrics.keyboard.keysPerMinute.toFixed(1)}</span>
                                   </div>
                                   {metrics.keyboard.typingRhythm && (
@@ -753,7 +1203,8 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                               )}
                             </AnimatePresence>
                           </div>
-                        ))}
+                        );
+                        })}
                       </div>
                     ) : (
                       <p className="text-sm text-gray-500">No activity data available</p>
@@ -762,9 +1213,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   
                   {/* Action Buttons */}
                   <div className="p-4 border-t mt-auto">
-                    <button className="w-full px-3 py-2 text-sm rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors mb-2">
-                      Transfer to {modalScreenshot.mode === 'client' ? 'Command' : 'Client'} Hours
-                    </button>
                     <button className="w-full px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors">
                       Delete Screenshot
                     </button>
@@ -776,6 +1224,18 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
         </AnimatePresence>,
         document.getElementById('modal-root')!
       )}
+
+      {/* Activity Edit Modal */}
+      <ActivityModal
+        isOpen={showEditActivityModal}
+        onClose={() => {
+          setShowEditActivityModal(false);
+          setCurrentEditActivity('');
+        }}
+        currentActivity={currentEditActivity}
+        onActivityChange={handleActivityChange}
+        recentActivities={[]}
+      />
     </div>
   );
 }
