@@ -789,6 +789,7 @@ export class LocalDatabase {
   
   // Screenshot operations
   saveScreenshot(data: {
+    id?: string;  // Optional ID to use instead of generating new one
     userId: string;
     sessionId: string;
     localPath: string;
@@ -834,7 +835,7 @@ export class LocalDatabase {
     const notes = session?.task || null;
     
     const screenshot = {
-      id: crypto.randomUUID(),
+      id: data.id || crypto.randomUUID(),  // Use provided ID or generate new one
       userId: data.userId,
       sessionId: data.sessionId,
       localPath: data.localPath,
@@ -1000,18 +1001,22 @@ export class LocalDatabase {
     // Determine overall sync status
     let status: 'synced' | 'partial' | 'pending' | 'failed' | 'queued';
     const allPeriodsSynced = periodsSyncQuery?.syncedPeriods === periodsSyncQuery?.totalPeriods;
+    const hasFailedItems = screenshotSyncQuery?.attempts >= 5 || periodsSyncQuery?.maxAttempts >= 5;
     
     if (screenshotUploaded && allPeriodsSynced) {
       status = 'synced';
-    } else if (screenshotSyncQuery?.attempts >= 5) {
+    } else if (hasFailedItems) {
       status = 'failed';
-    } else if (syncedItems > 0) {
-      // Show partial with percentage
+    } else if (syncedItems > 0 && syncedItems < totalItems) {
+      // Show partial with percentage only if actively syncing
       status = 'partial';
-    } else if (screenshotSyncQuery?.queueId) {
+    } else if (screenshotSyncQuery?.queueId || periodsSyncQuery?.queuedPeriods > 0) {
       status = 'queued';
-    } else {
+    } else if (syncedItems === 0) {
       status = 'pending';
+    } else {
+      // All items synced but not detected above - mark as synced
+      status = 'synced';
     }
     
     return {
@@ -1193,17 +1198,30 @@ export class LocalDatabase {
     
     if (queueItem) {
       // Update isSynced flag for the entity
+      let updateResult;
       switch (queueItem.entityType) {
         case 'activity_period':
-          this.db.prepare('UPDATE activity_periods SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          updateResult = this.db.prepare('UPDATE activity_periods SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          console.log(`Marked activity_period ${queueItem.entityId} as synced (${updateResult.changes} rows updated)`);
           break;
         case 'screenshot':
-          this.db.prepare('UPDATE screenshots SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          updateResult = this.db.prepare('UPDATE screenshots SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          console.log(`Marked screenshot ${queueItem.entityId} as synced (${updateResult.changes} rows updated)`);
           break;
         case 'session':
-          this.db.prepare('UPDATE sessions SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          updateResult = this.db.prepare('UPDATE sessions SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          console.log(`Marked session ${queueItem.entityId} as synced (${updateResult.changes} rows updated)`);
           break;
+        case 'command_activity':
+        case 'client_activity':
+          // These don't have isSynced flags in their tables
+          console.log(`Skipping isSynced update for ${queueItem.entityType}`);
+          break;
+        default:
+          console.warn(`Unknown entity type in markSynced: ${queueItem.entityType}`);
       }
+    } else {
+      console.warn(`Queue item ${queueId} not found when trying to mark as synced`);
     }
     
     // Remove from sync queue

@@ -301,6 +301,7 @@ export class DatabaseService {
 
   // Screenshot management
   async saveScreenshot(data: {
+    id?: string;  // Optional ID to use instead of generating new one
     localPath: string;
     thumbnailPath: string;
     capturedAt: Date;
@@ -334,6 +335,7 @@ export class DatabaseService {
     const mode = session?.mode || 'command_hours';
     
     return this.localDb.saveScreenshot({
+      id: data.id,  // Pass through the ID if provided
       userId: this.getCurrentUserId(),
       sessionId: sessionId,
       localPath: data.localPath,

@@ -133,6 +133,7 @@ export class ActivityTrackerV2 extends EventEmitter {
         
         if (windowData.screenshot) {
           const dbScreenshot = await this.db.saveScreenshot({
+            id: windowData.screenshot.id,  // Pass through the original ID
             sessionId: windowData.screenshot.sessionId,
             localPath: windowData.screenshot.localPath,
             thumbnailPath: windowData.screenshot.thumbnailPath || '',
@@ -605,6 +606,7 @@ export class ActivityTrackerV2 extends EventEmitter {
       
       // Save screenshot to database (don't pass TEMP sessionId)
       const savedScreenshot = await this.db.saveScreenshot({
+        id: screenshotData.id,  // Pass through the original ID
         sessionId: screenshotData.sessionId.startsWith('TEMP-') ? undefined : screenshotData.sessionId,
         localPath: screenshotData.localPath,
         thumbnailPath: screenshotData.thumbnailPath || '',

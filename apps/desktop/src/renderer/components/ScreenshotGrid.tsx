@@ -157,12 +157,25 @@ function getSyncStatusInfo(syncStatus?: SyncStatus) {
       };
     
     case 'partial':
+      // If upload percentage is 100%, it's actually synced
+      if (uploadPercentage >= 100) {
+        return {
+          icon: CheckCircle,
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-300',
+          label: 'Synced',
+          description: `Fully synced (${activityPeriods.synced}/${activityPeriods.total} periods)`,
+          showProgress: false,
+          opacity: 'opacity-100'
+        };
+      }
       return {
         icon: RefreshCw,
         color: 'text-yellow-600',
         bgColor: 'bg-yellow-50',
         borderColor: 'border-yellow-300',
-        label: uploadPercentage ? `Uploading ${uploadPercentage}%` : 'Partial',
+        label: `Uploading ${Math.round(uploadPercentage)}%`,
         description: `${activityPeriods.synced}/${activityPeriods.total} periods synced`,
         showProgress: true,
         progress: uploadPercentage || 0,
@@ -474,6 +487,8 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
 
               const isSelected = selectedIds.has(screenshot.id);
               const isHovered = hoveredId === screenshot.id;
+              const syncStatusInfo = getSyncStatusInfo(screenshot.syncStatus);
+              const isNotFullySynced = screenshot.syncStatus?.status !== 'synced';
               
               return (
                 <motion.div
@@ -490,7 +505,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                       ? 'ring-2 ring-indigo-100' 
                       : 'ring-2 ring-emerald-100'
                     }
-                    ${screenshot.syncStatus ? getSyncStatusInfo(screenshot.syncStatus).opacity : ''}
                   `}
                   onClick={() => {
                     setModalScreenshot(screenshot);
@@ -510,10 +524,15 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     }}
                   />
                   
+                  {/* Gray overlay for non-synced screenshots */}
+                  {isNotFullySynced && (
+                    <div className="absolute inset-0 bg-gray-600/20 backdrop-blur-[0.5px] pointer-events-none" />
+                  )}
+                  
                   {/* Selection Checkbox */}
                   <button
                     className={`
-                      absolute top-2 left-2 w-6 h-6 rounded-full
+                      absolute top-2 left-2 w-6 h-6 rounded-full z-10
                       flex items-center justify-center transition-all
                       ${isSelected 
                         ? 'bg-primary text-white' 
@@ -560,10 +579,9 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   {screenshot.syncStatus && (() => {
                     const statusInfo = getSyncStatusInfo(screenshot.syncStatus);
                     const Icon = statusInfo.icon;
+                    
                     return (
-                      <div 
-                        className="absolute bottom-2 right-2 group"
-                      >
+                      <div className="absolute bottom-2 right-2">
                         {/* Status Badge */}
                         <div className={`
                           px-2 py-1 rounded-full text-xs font-medium backdrop-blur
@@ -573,46 +591,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                           <Icon className="w-3 h-3" />
                           <span>{statusInfo.label}</span>
                         </div>
-                        
-                        {/* Tooltip on Hover */}
-                        {hoveredId === screenshot.id && (
-                          <div className="absolute bottom-full right-0 mb-2 z-50">
-                            <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs">
-                              <div className="font-semibold mb-1">{statusInfo.label}</div>
-                              <div className="opacity-90">{statusInfo.description}</div>
-                              {screenshot.syncStatus.nextRetryTime && (
-                                <div className="mt-1 opacity-75">
-                                  Retry: {formatTimeUntil(screenshot.syncStatus.nextRetryTime)}
-                                </div>
-                              )}
-                              {screenshot.syncStatus.lastAttemptAt && (
-                                <div className="opacity-75">
-                                  Last: {formatTimeAgo(screenshot.syncStatus.lastAttemptAt)}
-                                </div>
-                              )}
-                              {statusInfo.error && (
-                                <div className="mt-1 text-red-300 text-xs">
-                                  {statusInfo.error}
-                                </div>
-                              )}
-                              {statusInfo.showProgress && statusInfo.progress && (
-                                <div className="mt-2">
-                                  <div className="bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                                    <div 
-                                      className="bg-yellow-400 h-full transition-all"
-                                      style={{ width: `${statusInfo.progress}%` }}
-                                    />
-                                  </div>
-                                  <div className="mt-1 text-[10px] opacity-75">
-                                    {Math.round(statusInfo.progress)}% synced
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            {/* Arrow */}
-                            <div className="absolute -bottom-1 right-4 w-2 h-2 bg-gray-900 transform rotate-45" />
-                          </div>
-                        )}
                       </div>
                     );
                   })()}

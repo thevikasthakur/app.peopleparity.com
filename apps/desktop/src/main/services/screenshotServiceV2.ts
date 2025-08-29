@@ -16,6 +16,7 @@ export class ScreenshotServiceV2 {
   private screenshotDir: string;
   private captureTimers: Map<number, NodeJS.Timeout> = new Map();
   private activityTracker: ActivityTrackerV2 | null = null;
+  private lastScreenshotWindow: number = -1; // Track the last window we took a screenshot in
   
   constructor(private db: DatabaseService) {
     this.screenshotDir = path.join(app.getPath('userData'), 'screenshots');
@@ -73,18 +74,27 @@ export class ScreenshotServiceV2 {
     
     // Always schedule for the NEXT window to avoid rapid-fire screenshots
     // Generate a random time within the next 10-minute window
-    const nextWindowStart = windowEndMinute;
-    const randomMinuteInNextWindow = Math.random() * 10; // 0-10 minutes spread
+    const nextWindowStart = windowEndMinute % 60; // Handle hour boundary
+    const randomOffsetMinutes = Math.random() * 10; // 0-10 minutes spread
     
+    // Calculate the target time
     let captureTime = new Date(now);
-    captureTime.setMinutes(nextWindowStart + randomMinuteInNextWindow);
-    captureTime.setSeconds(Math.random() * 60);
+    
+    // If next window is in the next hour
+    if (windowEndMinute >= 60) {
+      captureTime.setHours(captureTime.getHours() + 1);
+    }
+    
+    // Set the minutes (now guaranteed to be < 60)
+    const targetMinute = nextWindowStart + randomOffsetMinutes;
+    captureTime.setMinutes(Math.floor(targetMinute));
+    captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
     captureTime.setMilliseconds(0);
     
-    // Handle hour rollover
-    if (captureTime.getMinutes() >= 60) {
+    // Make sure we're scheduling for the future
+    // If somehow we calculated a time in the past, add an hour
+    if (captureTime.getTime() <= now.getTime()) {
       captureTime.setHours(captureTime.getHours() + 1);
-      captureTime.setMinutes(captureTime.getMinutes() % 60);
     }
     
     const delay = captureTime.getTime() - now.getTime();
@@ -151,6 +161,19 @@ export class ScreenshotServiceV2 {
   private async captureScreenshot(windowIndex: number) {
     if (!this.isCapturing) {
       console.log('⚠️ Screenshot service not capturing');
+      return;
+    }
+    
+    // Check if we've already taken a screenshot in this window
+    const now = new Date();
+    const currentWindow = Math.floor(now.getMinutes() / 10);
+    const currentHour = now.getHours();
+    const windowId = currentHour * 6 + currentWindow; // Unique ID for each 10-min window in a day
+    
+    if (this.lastScreenshotWindow === windowId) {
+      console.log(`⚠️ Screenshot already taken for window ${currentHour}:${currentWindow}0-${currentHour}:${currentWindow+1}0, skipping`);
+      // Schedule next screenshot for next window
+      this.scheduleNextScreenshot();
       return;
     }
     
@@ -226,6 +249,9 @@ export class ScreenshotServiceV2 {
       if (this.activityTracker) {
         await this.activityTracker.storeScreenshot(screenshotData);
         console.log(`✅ Screenshot processed by activity tracker`);
+        
+        // Mark this window as having a screenshot
+        this.lastScreenshotWindow = windowId;
       } else {
         console.warn('⚠️ ActivityTracker not set, cannot store screenshot');
       }
