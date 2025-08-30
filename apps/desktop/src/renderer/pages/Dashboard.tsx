@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { TimeDisplay } from '../components/TimeDisplay';
 import { CurrentSessionDisplay } from '../components/CurrentSessionDisplay';
 import { ActivitySelector } from '../components/ActivitySelector';
@@ -10,7 +11,7 @@ import { TaskSelector } from '../components/TaskSelector';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown } from 'lucide-react';
+import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock } from 'lucide-react';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",
@@ -24,6 +25,7 @@ const sarcasticMessages = [
 
 export function Dashboard() {
   const { mode } = useTheme();
+  const queryClient = useQueryClient();
   const { 
     currentSession, 
     todayStats, 
@@ -48,6 +50,8 @@ export function Dashboard() {
     const saved = localStorage.getItem('recentActivities');
     return saved ? JSON.parse(saved) : [];
   });
+  const [showAnalyticsTooltip, setShowAnalyticsTooltip] = useState(false);
+  const [showLeaderboardTooltip, setShowLeaderboardTooltip] = useState(false);
 
   useEffect(() => {
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
@@ -223,26 +227,58 @@ export function Dashboard() {
           </div>
 
           {/* Analytics */}
-          <div className="glass-card p-4">
+          <div 
+            className="glass-card p-4 relative cursor-not-allowed"
+            onMouseEnter={() => setShowAnalyticsTooltip(true)}
+            onMouseLeave={() => setShowAnalyticsTooltip(false)}
+          >
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <Zap className="w-5 h-5 text-primary" />
               Your Vibes Today
+              <Lock className="w-4 h-4 text-gray-400 ml-auto" />
             </h3>
-            <Analytics 
-              focusMinutes={todayStats.analytics.focusMinutes}
-              handsOnMinutes={todayStats.analytics.handsOnMinutes}
-              researchMinutes={todayStats.analytics.researchMinutes}
-              aiMinutes={todayStats.analytics.aiMinutes}
-            />
+            <div className="relative">
+              <div className="blur-sm pointer-events-none select-none">
+                <Analytics 
+                  focusMinutes={todayStats.analytics.focusMinutes}
+                  handsOnMinutes={todayStats.analytics.handsOnMinutes}
+                  researchMinutes={todayStats.analytics.researchMinutes}
+                  aiMinutes={todayStats.analytics.aiMinutes}
+                />
+              </div>
+              {showAnalyticsTooltip && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm shadow-xl z-10 max-w-[200px] text-center">
+                    This feature will be unlocked after we have sufficient data about your work patterns
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Leaderboard */}
-          <div className="glass-card p-4">
+          <div 
+            className="glass-card p-4 relative cursor-not-allowed"
+            onMouseEnter={() => setShowLeaderboardTooltip(true)}
+            onMouseLeave={() => setShowLeaderboardTooltip(false)}
+          >
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <Trophy className="w-5 h-5 text-primary" />
               Hall of Fame
+              <Lock className="w-4 h-4 text-gray-400 ml-auto" />
             </h3>
-            <Leaderboard />
+            <div className="relative">
+              <div className="blur-sm pointer-events-none select-none">
+                <Leaderboard />
+              </div>
+              {showLeaderboardTooltip && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm shadow-xl z-10 max-w-[200px] text-center">
+                    This feature will be unlocked after we have sufficient data about team performance
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -262,6 +298,11 @@ export function Dashboard() {
             screenshots={screenshots}
             onScreenshotClick={(id) => console.log('Screenshot clicked:', id)}
             onSelectionChange={(ids) => console.log('Selection changed:', ids)}
+            onRefresh={async () => {
+              // Invalidate the screenshots query to refetch the data
+              await queryClient.invalidateQueries({ queryKey: ['screenshots'] });
+              console.log('Screenshots refreshed');
+            }}
           />
         </div>
         </div>

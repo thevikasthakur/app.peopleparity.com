@@ -610,8 +610,7 @@ export class DatabaseService {
   }
 
   async updateScreenshotNotes(ids: string[], notes: string) {
-    // This would need to be implemented in LocalDatabase
-    console.log('Updating screenshot notes:', ids, notes);
+    return this.localDb.updateScreenshotNotes(ids, notes);
   }
   
   updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
@@ -624,8 +623,8 @@ export class DatabaseService {
   }
 
   async deleteScreenshots(ids: string[]) {
-    // This would need to be implemented in LocalDatabase
-    console.log('Deleting screenshots:', ids);
+    console.log('DatabaseService: Deleting screenshots:', ids);
+    return this.localDb.deleteScreenshots(ids);
   }
 
   async getActivityPeriodDetails(periodId: string) {

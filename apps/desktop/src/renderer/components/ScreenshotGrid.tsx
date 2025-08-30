@@ -270,9 +270,10 @@ interface ScreenshotGridProps {
   screenshots: Screenshot[];
   onScreenshotClick: (id: string) => void;
   onSelectionChange: (ids: string[]) => void;
+  onRefresh?: () => void;
 }
 
-export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChange }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChange, onRefresh }: ScreenshotGridProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [modalScreenshot, setModalScreenshot] = useState<Screenshot | null>(null);
@@ -281,33 +282,71 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [currentEditActivity, setCurrentEditActivity] = useState('');
+  const [recentActivities, setRecentActivities] = useState<string[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Load recent activities when modal opens
+  useEffect(() => {
+    if (showEditActivityModal) {
+      loadRecentActivities();
+      // Set the initial activity text from selected screenshots
+      if (selectedIds.size > 0) {
+        const firstSelectedId = Array.from(selectedIds)[0];
+        const firstSelected = screenshots.find(s => s.id === firstSelectedId);
+        if (firstSelected && firstSelected.notes) {
+          setCurrentEditActivity(firstSelected.notes);
+        }
+      }
+    }
+  }, [showEditActivityModal, selectedIds, screenshots]);
+
+  const loadRecentActivities = async () => {
+    try {
+      const recent = await window.electronAPI.notes.getRecent();
+      if (recent && Array.isArray(recent)) {
+        // Filter out duplicates and empty strings
+        const uniqueActivities = [...new Set(recent.filter(a => a && a.trim()))];
+        setRecentActivities(uniqueActivities);
+      }
+    } catch (error) {
+      console.error('Failed to load recent activities:', error);
+      setRecentActivities([]);
+    }
+  };
 
   const handleActivityChange = async (activity: string) => {
     if (selectedIds.size > 0 && activity.trim()) {
       console.log('Updating activity for screenshots:', Array.from(selectedIds), 'to:', activity);
       
-      // TODO: Call API to update activity names for selected screenshots
-      // For now, just update locally
       try {
-        // Update activity name in database for each selected screenshot
-        const updatePromises = Array.from(selectedIds).map(async (screenshotId) => {
-          // This would call the IPC handler to update the activity
-          // await window.electronAPI.screenshots.updateActivity(screenshotId, activity);
-        });
+        // Update activity notes for selected screenshots
+        const result = await window.electronAPI.screenshots.updateNotes(
+          Array.from(selectedIds),
+          activity
+        );
+        console.log('Update notes result:', result);
         
-        await Promise.all(updatePromises);
+        // Don't call notes.save here as it updates the session task
+        // Just add to recent activities list for the modal
+        if (!recentActivities.includes(activity)) {
+          setRecentActivities([activity, ...recentActivities].slice(0, 10));
+        }
         
-        // Clear selection after successful update
+        // Clear selection and close modal
         setSelectedIds(new Set());
         onSelectionChange([]);
         setShowEditActivityModal(false);
         setCurrentEditActivity('');
         
-        // Optionally refresh the screenshots to show updated activity names
-        // This would be handled by the parent component
+        // Trigger refresh to reload screenshots with updated notes
+        if (onRefresh) {
+          console.log('Triggering screenshots refresh...');
+          await onRefresh();
+          console.log('Screenshots refresh completed');
+        }
       } catch (error) {
         console.error('Failed to update activity:', error);
+        alert('Failed to update activity. Please try again.');
       }
     }
   };
@@ -636,12 +675,12 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                 return (
                   <div
                     key={idx}
-                    className="absolute h-full flex items-center justify-center text-[11px] font-medium text-white px-1"
+                    className="absolute h-full flex items-center justify-center text-[11px] font-medium text-white px-1 rounded-sm"
                     style={{
                       left: `${leftPosition}%`,
-                      width: `${width}%`,
+                      width: `calc(${width}% - 3px)`,
                       backgroundColor: hourLevel.color + 'DD',
-                      borderRight: '1px solid rgba(255, 255, 255, 0.3)'
+                      marginRight: '3px'
                     }}
                     title={group.activity}
                   >
@@ -689,12 +728,40 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
           </button>
           <button 
             className="px-3 py-1 text-sm rounded bg-red-500 text-white hover:bg-red-600"
-            onClick={() => {
+            onClick={async () => {
+              const screenshotIdsToDelete = Array.from(selectedIds);
+              console.log('[UI] Delete button clicked for screenshots:', screenshotIdsToDelete);
+              
               if (confirm(`Are you sure you want to delete ${selectedIds.size} screenshot(s)? This action cannot be undone.`)) {
-                console.log('Delete screenshots:', Array.from(selectedIds));
-                // TODO: Implement soft delete
-                setSelectedIds(new Set());
-                onSelectionChange([]);
+                console.log('[UI] User confirmed deletion');
+                try {
+                  console.log('[UI] Calling electronAPI.screenshots.delete with IDs:', screenshotIdsToDelete);
+                  const result = await window.electronAPI.screenshots.delete(screenshotIdsToDelete);
+                  console.log('[UI] Delete API call returned:', result);
+                  
+                  if (result && result.success) {
+                    console.log(`[UI] Successfully deleted ${result.deletedCount} screenshots`);
+                    
+                    // Clear selection
+                    setSelectedIds(new Set());
+                    onSelectionChange([]);
+                    
+                    // Refresh the screenshots to remove deleted ones
+                    if (onRefresh) {
+                      console.log('[UI] Starting UI refresh after deletion...');
+                      await onRefresh();
+                      console.log('[UI] UI refresh completed');
+                    }
+                  } else {
+                    console.error('[UI] Delete operation failed:', result);
+                    alert(`Failed to delete screenshots: ${result?.error || 'Unknown error'}`);
+                  }
+                } catch (error) {
+                  console.error('[UI] Exception during delete operation:', error);
+                  alert(`Failed to delete screenshots: ${error.message || 'Unknown error'}`);
+                }
+              } else {
+                console.log('[UI] User cancelled deletion');
               }
             }}
           >
@@ -1235,7 +1302,29 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   
                   {/* Action Buttons */}
                   <div className="p-4 border-t mt-auto">
-                    <button className="w-full px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors">
+                    <button 
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+                      onClick={async () => {
+                        if (modalScreenshot && confirm('Are you sure you want to delete this screenshot? This action cannot be undone.')) {
+                          try {
+                            const result = await window.electronAPI.screenshots.delete([modalScreenshot.id]);
+                            console.log('Delete single screenshot result:', result);
+                            
+                            // Close modal
+                            setModalScreenshot(null);
+                            
+                            // Refresh the screenshots
+                            if (onRefresh) {
+                              console.log('Refreshing screenshots after single deletion...');
+                              await onRefresh();
+                            }
+                          } catch (error) {
+                            console.error('Failed to delete screenshot:', error);
+                            alert('Failed to delete screenshot. Please try again.');
+                          }
+                        }
+                      }}
+                    >
                       Delete Screenshot
                     </button>
                   </div>
@@ -1256,7 +1345,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
         }}
         currentActivity={currentEditActivity}
         onActivityChange={handleActivityChange}
-        recentActivities={[]}
+        recentActivities={recentActivities}
       />
     </div>
   );

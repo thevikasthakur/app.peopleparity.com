@@ -186,7 +186,15 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('screenshots:delete', async (_, screenshotIds: string[]) => {
-    return databaseService.deleteScreenshots(screenshotIds);
+    console.log('[IPC] screenshots:delete handler called with IDs:', screenshotIds);
+    try {
+      const result = await databaseService.deleteScreenshots(screenshotIds);
+      console.log('[IPC] Delete operation result:', result);
+      return result;
+    } catch (error) {
+      console.error('[IPC] Error in delete handler:', error);
+      return { success: false, error: error.message };
+    }
   });
   
   // Activity handlers

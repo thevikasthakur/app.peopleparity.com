@@ -1058,6 +1058,152 @@ export class LocalDatabase {
     stmt.run(url, thumbnailUrl, screenshotId);
     console.log(`Updated screenshot ${screenshotId} with S3 URLs`);
   }
+
+  updateScreenshotNotes(screenshotIds: string[], notes: string) {
+    console.log(`[updateScreenshotNotes] Called with ${screenshotIds.length} IDs and notes: "${notes}"`);
+    console.log(`[updateScreenshotNotes] Screenshot IDs:`, screenshotIds);
+    
+    // First check if screenshots exist
+    const checkStmt = this.db.prepare('SELECT id, notes, task FROM screenshots WHERE id = ?');
+    console.log(`[updateScreenshotNotes] Checking existing screenshots...`);
+    for (const id of screenshotIds) {
+      const existing = checkStmt.get(id) as any;
+      if (existing) {
+        console.log(`[updateScreenshotNotes] Screenshot ${id} found - current notes: "${existing.notes}", task: "${existing.task}"`);
+      } else {
+        console.log(`[updateScreenshotNotes] WARNING: Screenshot ${id} NOT FOUND in database!`);
+      }
+    }
+    
+    const stmt = this.db.prepare(`
+      UPDATE screenshots 
+      SET notes = ?, isSynced = 0
+      WHERE id = ?
+    `);
+    
+    let updatedCount = 0;
+    const updateTransaction = this.db.transaction((ids: string[]) => {
+      for (const id of ids) {
+        const result = stmt.run(notes, id);
+        console.log(`[updateScreenshotNotes] Update result for ${id}: changes=${result.changes}`);
+        if (result.changes > 0) {
+          updatedCount++;
+          // Add to sync queue for updating in cloud
+          this.addToSyncQueue('screenshot', id, 'update', { notes });
+        }
+      }
+    });
+    
+    updateTransaction(screenshotIds);
+    console.log(`[updateScreenshotNotes] Transaction completed. Updated ${updatedCount}/${screenshotIds.length} screenshots`);
+    
+    // Verify the update
+    console.log(`[updateScreenshotNotes] Verifying updates...`);
+    const verifyStmt = this.db.prepare('SELECT id, notes, task FROM screenshots WHERE id = ?');
+    for (const id of screenshotIds) {
+      const row = verifyStmt.get(id) as any;
+      if (row) {
+        console.log(`[updateScreenshotNotes] After update - Screenshot ${id}: notes="${row.notes}", task="${row.task}"`);
+      } else {
+        console.log(`[updateScreenshotNotes] ERROR: Screenshot ${id} not found after update!`);
+      }
+    }
+    
+    console.log(`[updateScreenshotNotes] Returning success with updatedCount=${updatedCount}`);
+    return { success: true, updatedCount };
+  }
+
+  deleteScreenshots(screenshotIds: string[]) {
+    console.log(`[deleteScreenshots] Called with ${screenshotIds.length} IDs:`, screenshotIds);
+    console.log(`[deleteScreenshots] Screenshot IDs to delete:`, screenshotIds);
+    
+    // First check what we're deleting and collect related data
+    const checkStmt = this.db.prepare('SELECT id, sessionId, localPath, thumbnailPath, isSynced FROM screenshots WHERE id = ?');
+    const getPeriodsStmt = this.db.prepare('SELECT id FROM activity_periods WHERE screenshotId = ?');
+    const filesToDelete: string[] = [];
+    const periodsToUpdate: string[] = [];
+    
+    for (const id of screenshotIds) {
+      const screenshot = checkStmt.get(id) as any;
+      if (screenshot) {
+        console.log(`[deleteScreenshots] Found screenshot ${id} in session ${screenshot.sessionId}, synced: ${screenshot.isSynced}`);
+        if (screenshot.localPath) filesToDelete.push(screenshot.localPath);
+        if (screenshot.thumbnailPath) filesToDelete.push(screenshot.thumbnailPath);
+        
+        // Find activity periods that reference this screenshot
+        const periods = getPeriodsStmt.all(id) as any[];
+        for (const period of periods) {
+          periodsToUpdate.push(period.id);
+        }
+      } else {
+        console.log(`[deleteScreenshots] WARNING: Screenshot ${id} not found`);
+      }
+    }
+    
+    console.log(`[deleteScreenshots] Found ${periodsToUpdate.length} activity periods to update`);
+    
+    // Start transaction for all database operations
+    let deletedCount = 0;
+    const deleteTransaction = this.db.transaction((ids: string[]) => {
+      // First, update activity periods to remove screenshot reference
+      const updatePeriodStmt = this.db.prepare('UPDATE activity_periods SET screenshotId = NULL WHERE screenshotId = ?');
+      for (const id of ids) {
+        updatePeriodStmt.run(id);
+      }
+      
+      // Delete screenshots from database
+      const deleteStmt = this.db.prepare('DELETE FROM screenshots WHERE id = ?');
+      for (const id of ids) {
+        const result = deleteStmt.run(id);
+        if (result.changes > 0) {
+          deletedCount++;
+          console.log(`[deleteScreenshots] Deleted screenshot ${id} from database`);
+        } else {
+          console.log(`[deleteScreenshots] No changes when deleting ${id} - might not exist`);
+        }
+      }
+      
+      // Remove from sync queue (both for screenshot and any related entities)
+      const deleteSyncQueueStmt = this.db.prepare('DELETE FROM sync_queue WHERE entityId = ? AND entityType = ?');
+      for (const id of ids) {
+        deleteSyncQueueStmt.run(id, 'screenshot');
+        // Also mark screenshot for deletion in cloud if it was synced
+        const screenshot = checkStmt.get(id) as any;
+        if (screenshot && screenshot.isSynced) {
+          // Add a delete operation to sync queue
+          this.addToSyncQueue('screenshot', id, 'delete', { deleted: true });
+        }
+      }
+    });
+    
+    try {
+      deleteTransaction(screenshotIds);
+      console.log(`[deleteScreenshots] Database transaction completed. Deleted ${deletedCount} screenshots`);
+    } catch (error) {
+      console.error(`[deleteScreenshots] Database transaction failed:`, error);
+      return { success: false, error: error.message };
+    }
+    
+    // Delete files from disk (outside transaction)
+    const fs = require('fs');
+    let filesDeleted = 0;
+    for (const filePath of filesToDelete) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          filesDeleted++;
+          console.log(`[deleteScreenshots] Deleted file: ${filePath}`);
+        } else {
+          console.log(`[deleteScreenshots] File not found: ${filePath}`);
+        }
+      } catch (error) {
+        console.error(`[deleteScreenshots] Failed to delete file ${filePath}:`, error);
+      }
+    }
+    
+    console.log(`[deleteScreenshots] Operation complete. Deleted ${deletedCount} screenshots from database and ${filesDeleted} files from disk`);
+    return { success: true, deletedCount, filesDeleted };
+  }
   
   // Analytics operations
   getTodayStats(userId: string) {
