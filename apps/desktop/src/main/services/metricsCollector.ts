@@ -361,13 +361,23 @@ export class MetricsCollector {
     let bonusDescription = 'No bonus';
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
     
-    if (totalMouseActivity > 15 && totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+    // Apply graduated bonuses based on activity level
+    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
       if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Maximum bonus for very active mouse use (30%)
-        bonusDescription = 'High mouse activity (30% bonus)';
-      } else {
-        mouseBonus = 25; // Bonus for high activity (25%)
-        bonusDescription = 'Mouse activity (25% bonus)';
+        mouseBonus = 30; // Very high activity
+        bonusDescription = 'Very high mouse activity (30% bonus)';
+      } else if (totalMouseActivity > 15) {
+        mouseBonus = 25; // High activity
+        bonusDescription = 'High mouse activity (25% bonus)';
+      } else if (totalMouseActivity > 10) {
+        mouseBonus = 20; // Good activity
+        bonusDescription = 'Good mouse activity (20% bonus)';
+      } else if (totalMouseActivity > 5) {
+        mouseBonus = 15; // Moderate activity
+        bonusDescription = 'Moderate mouse activity (15% bonus)';
+      } else if (totalMouseActivity > 2) {
+        mouseBonus = 10; // Light activity
+        bonusDescription = 'Light mouse activity (10% bonus)';
       }
     }
     
@@ -752,13 +762,23 @@ export class MetricsCollector {
     let bonusDescription = 'No bonus';
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
     
-    if (totalMouseActivity > 15 && totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+    // Apply graduated bonuses based on activity level
+    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
       if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Maximum bonus for very active mouse use (30%)
-        bonusDescription = 'High mouse activity (30% bonus)';
-      } else {
-        mouseBonus = 25; // Bonus for high activity (25%)
-        bonusDescription = 'Mouse activity (25% bonus)';
+        mouseBonus = 30; // Very high activity
+        bonusDescription = 'Very high mouse activity (30% bonus)';
+      } else if (totalMouseActivity > 15) {
+        mouseBonus = 25; // High activity
+        bonusDescription = 'High mouse activity (25% bonus)';
+      } else if (totalMouseActivity > 10) {
+        mouseBonus = 20; // Good activity
+        bonusDescription = 'Good mouse activity (20% bonus)';
+      } else if (totalMouseActivity > 5) {
+        mouseBonus = 15; // Moderate activity
+        bonusDescription = 'Moderate mouse activity (15% bonus)';
+      } else if (totalMouseActivity > 2) {
+        mouseBonus = 10; // Light activity
+        bonusDescription = 'Light mouse activity (10% bonus)';
       }
     }
     

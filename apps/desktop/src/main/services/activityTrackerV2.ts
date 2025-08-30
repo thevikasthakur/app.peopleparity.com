@@ -656,23 +656,27 @@ export class ActivityTrackerV2 extends EventEmitter {
     baseScore = Math.min(100, baseScore);
     
     // Mouse activity bonus (0-30 points) - Added ON TOP of base score
-    // Award bonus points for sustained HIGH mouse activity without being suspicious
+    // Award graduated bonus points for different levels of mouse activity
     let mouseBonus = 0;
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
     
-    if (totalMouseActivity > 15 && totalMouseActivity < 50) { // High activity but not suspicious
+    // Apply graduated bonuses based on activity level (avoid suspicious levels > 50)
+    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
       if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Maximum bonus for very active mouse use (30%)
-      } else {
-        mouseBonus = 25; // Bonus for high activity (25%)
+        mouseBonus = 30; // Very high activity (30% bonus)
+      } else if (totalMouseActivity > 15) {
+        mouseBonus = 25; // High activity (25% bonus)
+      } else if (totalMouseActivity > 10) {
+        mouseBonus = 20; // Good activity (20% bonus)
+      } else if (totalMouseActivity > 5) {
+        mouseBonus = 15; // Moderate activity (15% bonus)
+      } else if (totalMouseActivity > 2) {
+        mouseBonus = 10; // Light activity (10% bonus)
       }
       
-      // Apply mouse bonus only if there's meaningful mouse activity
-      if (clicksPerMin > 0 || mouseDistancePerMin > 500) {
-        // Add bonus on top of base score, but cap total at 100
-        const finalScore = Math.min(100, baseScore + mouseBonus);
-        return Math.round(finalScore);
-      }
+      // Add bonus on top of base score, but cap total at 100
+      const finalScore = Math.min(100, baseScore + mouseBonus);
+      return Math.round(finalScore);
     }
     
     return Math.round(baseScore);

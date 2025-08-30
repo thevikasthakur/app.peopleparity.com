@@ -532,8 +532,14 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   <img
                     src={getSafeUrl(screenshot.thumbnailUrl)}
                     alt={`Screenshot at ${new Date(screenshot.timestamp).toLocaleTimeString()}`}
-                    className={`w-full h-full object-cover ${
-                      percentageToTenScale(screenshot.activityScore) < 2.5 ? 'opacity-50' : ''
+                    className={`w-full h-full object-cover transition-opacity duration-200 ${
+                      hoveredId === screenshot.id 
+                        ? 'opacity-100' 
+                        : percentageToTenScale(screenshot.activityScore) < 2.5 
+                          ? 'opacity-20' // Inactive: 80% transparent (20% opacity)
+                          : percentageToTenScale(screenshot.activityScore) < 4.0
+                            ? 'opacity-75' // Critical: 25% transparent (75% opacity)
+                            : 'opacity-100' // Others: fully opaque
                     }`}
                     loading="lazy"
                     onError={(e) => {
