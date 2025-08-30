@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screenshots: {
     getToday: () => 
       ipcRenderer.invoke('screenshots:get-today'),
+    getByDate: (date: Date) =>
+      ipcRenderer.invoke('screenshots:get-by-date', date.toISOString()),
     updateNotes: (ids: string[], notes: string) => 
       ipcRenderer.invoke('screenshots:update-notes', ids, notes),
     transferMode: (ids: string[], mode: string) => 

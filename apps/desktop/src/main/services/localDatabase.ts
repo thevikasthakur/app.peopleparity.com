@@ -877,6 +877,54 @@ export class LocalDatabase {
     return screenshot;
   }
   
+  getScreenshotsByDate(userId: string, date: Date): Screenshot[] {
+    const dateStart = new Date(date);
+    dateStart.setHours(0, 0, 0, 0);
+    
+    const dateEnd = new Date(date);
+    dateEnd.setHours(23, 59, 59, 999);
+    
+    console.log('getScreenshotsByDate - userId:', userId);
+    console.log('getScreenshotsByDate - dateStart:', dateStart.toISOString(), 'timestamp:', dateStart.getTime());
+    console.log('getScreenshotsByDate - dateEnd:', dateEnd.toISOString(), 'timestamp:', dateEnd.getTime());
+    
+    const stmt = this.db.prepare(`
+      SELECT s.*
+      FROM screenshots s
+      WHERE s.userId = ? AND s.capturedAt >= ? AND s.capturedAt <= ? AND s.isDeleted = 0
+      ORDER BY s.capturedAt ASC
+    `);
+    
+    const screenshots = stmt.all(userId, dateStart.getTime(), dateEnd.getTime()) as any[];
+    
+    console.log('getScreenshotsByDate - found', screenshots.length, 'screenshots for user', userId, 'on date', dateStart.toDateString());
+    
+    // For each screenshot, get its associated activity periods and calculate aggregated score
+    return screenshots.map((s: any) => {
+      // Get activity periods for this screenshot
+      const periods = this.getActivityPeriodsForScreenshot(s.id);
+      
+      // Calculate aggregated score from associated periods
+      const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
+      const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
+      
+      // Extract period IDs for fetching detailed metrics
+      const periodIds = periods.map((p: any) => p.id);
+      
+      // Get sync status for screenshot and its periods
+      const syncStatus = this.getScreenshotSyncStatus(s.id, periodIds);
+      
+      return {
+        ...s,
+        activityScore: aggregatedScore,
+        aggregatedScore: aggregatedScore, // For backward compatibility
+        relatedPeriods: periods,
+        activityPeriodIds: periodIds, // Add period IDs for metrics fetching
+        syncStatus // Add sync status information
+      };
+    });
+  }
+
   getTodayScreenshots(userId: string): Screenshot[] {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);

@@ -11,7 +11,7 @@ import { TaskSelector } from '../components/TaskSelector';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock } from 'lucide-react';
+import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",
@@ -52,10 +52,58 @@ export function Dashboard() {
   });
   const [showAnalyticsTooltip, setShowAnalyticsTooltip] = useState(false);
   const [showLeaderboardTooltip, setShowLeaderboardTooltip] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [customScreenshots, setCustomScreenshots] = useState<any[]>([]);
+  const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false);
 
   useEffect(() => {
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
   }, []);
+
+  // Load screenshots for selected date when it changes
+  useEffect(() => {
+    const isToday = selectedDate.toDateString() === new Date().toDateString();
+    if (!isToday) {
+      loadScreenshotsForDate(selectedDate);
+    }
+  }, [selectedDate]);
+
+  const loadScreenshotsForDate = async (date: Date) => {
+    setIsLoadingScreenshots(true);
+    try {
+      const data = await window.electronAPI.screenshots.getByDate(date);
+      setCustomScreenshots(data);
+    } catch (error) {
+      console.error('Failed to load screenshots for date:', error);
+      setCustomScreenshots([]);
+    } finally {
+      setIsLoadingScreenshots(false);
+    }
+  };
+
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+  };
+
+  const handlePreviousDay = () => {
+    const newDate = new Date(selectedDate);
+    newDate.setDate(newDate.getDate() - 1);
+    setSelectedDate(newDate);
+  };
+
+  const handleNextDay = () => {
+    const newDate = new Date(selectedDate);
+    newDate.setDate(newDate.getDate() + 1);
+    // Don't allow future dates
+    if (newDate <= new Date()) {
+      setSelectedDate(newDate);
+    }
+  };
+
+  const isToday = selectedDate.toDateString() === new Date().toDateString();
+  const displayScreenshots = isToday ? screenshots : customScreenshots;
 
   // Client mode disabled - always use command mode
 
@@ -287,23 +335,93 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Activity className="w-5 h-5 text-primary" />
-              Today's Snapshots
+              {isToday ? "Today's" : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} Snapshots
             </h2>
-            <span className="text-sm text-muted">
-              {screenshots.length} moments captured
-            </span>
+            
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted">
+                {isLoadingScreenshots ? 'Loading...' : `${displayScreenshots.length} moments captured`}
+              </span>
+              
+              {/* Date Selector */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePreviousDay}
+                  className="p-1 hover:bg-gray-100 rounded transition-colors"
+                  title="Previous day"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                
+                <button
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors relative"
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span className="text-sm font-medium">
+                    {isToday ? 'Today' : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                  
+                  {/* Simple Date Picker Dropdown */}
+                  {showDatePicker && (
+                    <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
+                      <input
+                        type="date"
+                        value={selectedDate.toISOString().split('T')[0]}
+                        max={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => handleDateChange(new Date(e.target.value))}
+                        className="px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  )}
+                </button>
+                
+                <button
+                  onClick={handleNextDay}
+                  className={`p-1 hover:bg-gray-100 rounded transition-colors ${
+                    selectedDate.toDateString() === new Date().toDateString() 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : ''
+                  }`}
+                  disabled={selectedDate.toDateString() === new Date().toDateString()}
+                  title="Next day"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                
+                {!isToday && (
+                  <button
+                    onClick={() => setSelectedDate(new Date())}
+                    className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Today
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           
-          <ScreenshotGrid 
-            screenshots={screenshots}
-            onScreenshotClick={(id) => console.log('Screenshot clicked:', id)}
-            onSelectionChange={(ids) => console.log('Selection changed:', ids)}
-            onRefresh={async () => {
-              // Invalidate the screenshots query to refetch the data
-              await queryClient.invalidateQueries({ queryKey: ['screenshots'] });
-              console.log('Screenshots refreshed');
-            }}
-          />
+          {isLoadingScreenshots ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-gray-500">Loading screenshots...</div>
+            </div>
+          ) : (
+            <ScreenshotGrid 
+              screenshots={displayScreenshots}
+              onScreenshotClick={(id) => console.log('Screenshot clicked:', id)}
+              onSelectionChange={(ids) => console.log('Selection changed:', ids)}
+              onRefresh={async () => {
+                if (isToday) {
+                  // Invalidate the screenshots query to refetch the data
+                  await queryClient.invalidateQueries({ queryKey: ['screenshots'] });
+                } else {
+                  // Reload screenshots for the selected date
+                  await loadScreenshotsForDate(selectedDate);
+                }
+                console.log('Screenshots refreshed');
+              }}
+            />
+          )}
         </div>
         </div>
       </div>

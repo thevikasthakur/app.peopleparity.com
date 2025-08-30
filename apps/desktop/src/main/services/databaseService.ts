@@ -462,6 +462,77 @@ export class DatabaseService {
     return this.localDb.getWeekStats(userId);
   }
 
+  async getScreenshotsByDate(date: Date) {
+    console.log('\n=== getScreenshotsByDate called ===', date);
+    
+    // Try to get current user ID, but handle case where no user is logged in
+    let userId: string;
+    try {
+      userId = this.getCurrentUserId();
+    } catch (error) {
+      console.log('No user logged in, returning empty screenshots array');
+      return [];
+    }
+    
+    const screenshots = this.localDb.getScreenshotsByDate(userId, date);
+    console.log('Raw screenshots from DB for date:', date.toDateString(), screenshots.length);
+    
+    try {
+      const mappedScreenshots = screenshots.map(s => {
+        try {
+          // Never use file:// protocol - use S3 URLs or empty string
+          let thumbnailUrl = '';
+          let fullUrl = '';
+          
+          if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
+            thumbnailUrl = s.thumbnailUrl;
+          } else if (s.url && s.url.startsWith('http')) {
+            thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
+          }
+          
+          if (s.url && s.url.startsWith('http')) {
+            fullUrl = s.url;
+          }
+          
+          // Get activity score from related periods
+          let activityScore = (s as any).activityScore || 0;
+          
+          // Get related period IDs from the already loaded data
+          let activityPeriodIds = [];
+          if ((s as any).relatedPeriods && Array.isArray((s as any).relatedPeriods)) {
+            activityPeriodIds = (s as any).relatedPeriods.map((p: any) => p.id);
+          }
+          
+          // Get sync status if available
+          const syncStatus = (s as any).syncStatus || null;
+          
+          const result = {
+            id: s.id,
+            thumbnailUrl: thumbnailUrl || '', // Empty string if no valid URL
+            fullUrl: fullUrl || '', // Empty string if no valid URL
+            timestamp: new Date(s.capturedAt),
+            notes: s.notes || '',
+            mode: s.mode === 'client_hours' ? 'client' as const : 'command' as const,
+            activityScore: activityScore,
+            activityPeriodIds: activityPeriodIds,
+            syncStatus: syncStatus
+          };
+          
+          return result;
+        } catch (mapError) {
+          console.error('Error mapping screenshot:', s.id, mapError);
+          throw mapError;
+        }
+      });
+      
+      console.log(`Successfully mapped ${mappedScreenshots.length} screenshots for date ${date.toDateString()}`);
+      return mappedScreenshots;
+    } catch (error) {
+      console.error('Error in screenshot mapping:', error);
+      throw error;
+    }
+  }
+
   async getTodayScreenshots() {
     console.log('\n=== getTodayScreenshots called ===');
     // Skip API for now to debug the local database issue

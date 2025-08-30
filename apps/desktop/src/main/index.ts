@@ -177,6 +177,10 @@ function setupIpcHandlers() {
     return databaseService.getTodayScreenshots();
   });
   
+  ipcMain.handle('screenshots:get-by-date', async (_, date: string) => {
+    return databaseService.getScreenshotsByDate(new Date(date));
+  });
+  
   ipcMain.handle('screenshots:update-notes', async (_, screenshotIds: string[], notes: string) => {
     return databaseService.updateScreenshotNotes(screenshotIds, notes);
   });

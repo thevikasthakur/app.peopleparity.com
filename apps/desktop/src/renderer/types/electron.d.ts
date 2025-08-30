@@ -16,6 +16,7 @@ export interface ElectronAPI {
   };
   screenshots: {
     getToday: () => Promise<any[]>;
+    getByDate: (date: Date) => Promise<any[]>;
     updateNotes: (ids: string[], notes: string) => Promise<any>;
     transferMode: (ids: string[], mode: string) => Promise<void>;
     delete: (ids: string[]) => Promise<{ success: boolean; deletedCount?: number; filesDeleted?: number; error?: string }>;

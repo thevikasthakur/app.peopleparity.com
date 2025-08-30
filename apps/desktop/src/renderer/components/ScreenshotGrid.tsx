@@ -706,13 +706,17 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
         );
       })}
       
-      {/* Bulk Actions */}
-      {selectedIds.size > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 glass-card px-6 py-3 flex items-center gap-4 shadow-2xl"
-        >
+      {/* Bulk Actions - Rendered via Portal for proper z-index */}
+      {selectedIds.size > 0 && ReactDOM.createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="selection-toolbar"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 px-6 py-3 flex items-center gap-4 shadow-2xl z-[100] backdrop-blur-md bg-white/95 border border-gray-200 rounded-xl"
+            style={{ position: 'fixed', zIndex: 100 }}
+          >
           <span className="text-sm font-medium">
             {selectedIds.size} selected
           </span>
@@ -776,7 +780,9 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
           >
             <X className="w-4 h-4" />
           </button>
-        </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
       )}
       
       {/* Screenshot Modal - Rendered via Portal */}
