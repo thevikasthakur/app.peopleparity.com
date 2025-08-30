@@ -40,6 +40,11 @@ export function useTracker() {
     queryKey: ['screenshots'],
     queryFn: async () => {
       const data = await window.electronAPI.screenshots.getToday();
+      console.log('Raw screenshot data from API:', data?.slice(0, 5)?.map((s: any) => ({
+        id: s.id,
+        activityScore: s.activityScore,
+        timestamp: s.timestamp
+      })));
       return data;
     },
     refetchInterval: 60000,

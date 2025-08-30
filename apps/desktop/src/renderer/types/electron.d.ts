@@ -16,9 +16,10 @@ export interface ElectronAPI {
   };
   screenshots: {
     getToday: () => Promise<any[]>;
-    updateNotes: (ids: string[], notes: string) => Promise<void>;
+    getByDate: (date: Date) => Promise<any[]>;
+    updateNotes: (ids: string[], notes: string) => Promise<any>;
     transferMode: (ids: string[], mode: string) => Promise<void>;
-    delete: (ids: string[]) => Promise<void>;
+    delete: (ids: string[]) => Promise<{ success: boolean; deletedCount?: number; filesDeleted?: number; error?: string }>;
   };
   on: (channel: string, callback: (...args: any[]) => void) => void;
   off: (channel: string, callback: (...args: any[]) => void) => void;

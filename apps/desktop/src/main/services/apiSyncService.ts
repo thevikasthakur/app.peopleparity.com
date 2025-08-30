@@ -27,10 +27,17 @@ export class ApiSyncService {
     private db: DatabaseService,
     private store: Store
   ) {
+    // Use IPv4 explicitly to avoid IPv6 connection issues
+    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
+    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
+    
     this.api = axios.create({
-      baseURL: process.env.API_URL || 'http://localhost:3001/api',
+      baseURL: apiUrlFixed,
       timeout: 10000,
-    });
+      // Force IPv4
+      httpAgent: new (require('http').Agent)({ family: 4 }),
+      httpsAgent: new (require('https').Agent)({ family: 4 })
+    } as any);
 
     this.setupInterceptors();
   }
@@ -315,10 +322,13 @@ export class ApiSyncService {
     if (!token || token === 'offline-token') return;
 
     try {
-      console.log('Syncing data with server...');
+      // Get unsynced items from local database - increase batch size to handle backlog
+      const unsyncedItems = this.db.getUnsyncedItems(200);
       
-      // Get unsynced items from local database
-      const unsyncedItems = this.db.getUnsyncedItems();
+      // Only log if there are items to sync
+      if (unsyncedItems.length > 0) {
+        console.log(`Syncing ${unsyncedItems.length} items with server...`);
+      }
       
       // Group items by type to ensure correct sync order
       const sessions = unsyncedItems.filter(item => item.entityType === 'session');
@@ -346,9 +356,29 @@ export class ApiSyncService {
         }
       }
       
-      // Then sync activity periods, but only if their session is synced
+      // Sync screenshots before activity periods (since periods now reference screenshots)
+      console.log(`Found ${screenshots.length} screenshots to sync`);
+      for (const item of screenshots) {
+        try {
+          console.log(`Syncing screenshot ${item.entityId}, attempts: ${item.attempts || 0}`);
+          await this.syncItem(item);
+          this.db.markSynced(item.id);
+          console.log(`Screenshot ${item.entityId} synced successfully`);
+        } catch (error: any) {
+          console.error(`Failed to sync screenshot ${item.entityId}:`, error.message);
+          console.error(`Error details:`, error.response?.data || error);
+          this.db.incrementSyncAttempts(item.id);
+        }
+      }
+      
+      // Then sync activity periods, but only if their session and screenshot are synced
       for (const item of activityPeriods) {
         const data = JSON.parse(item.data);
+        
+        // Skip items that have failed too many times
+        if (item.attempts >= 2) {
+          continue; // Skip after 2 attempts to avoid flooding
+        }
         
         // Check if the session exists (either just synced or previously synced)
         if (data.sessionId) {
@@ -358,13 +388,42 @@ export class ApiSyncService {
               // Verify session exists on server
               const response = await this.api.get(`/sessions/${data.sessionId}`);
               if (!response.data) {
-                console.log(`Session ${data.sessionId} doesn't exist on server yet, skipping activity period`);
+                // Only log first attempt
+                if (item.attempts === 0) {
+                  console.log(`Session ${data.sessionId} doesn't exist on server, will retry later`);
+                }
+                this.db.incrementSyncAttempts(item.id); // Increment attempts for non-existent sessions
                 continue;
               }
             } catch (error) {
-              console.log(`Cannot verify session ${data.sessionId}, skipping activity period`);
+              // Only log first attempt
+              if (item.attempts === 0) {
+                console.log(`Cannot verify session ${data.sessionId}, will retry later`);
+              }
+              this.db.incrementSyncAttempts(item.id);
               continue;
             }
+          }
+        }
+        
+        // Check if screenshot exists (if period has a screenshot reference)
+        if (data.screenshotId) {
+          try {
+            // Verify screenshot exists on server
+            const response = await this.api.get(`/screenshots/${data.screenshotId}`);
+            if (!response.data) {
+              if (item.attempts === 0) {
+                console.log(`Screenshot ${data.screenshotId} doesn't exist on server, will retry later`);
+              }
+              this.db.incrementSyncAttempts(item.id);
+              continue;
+            }
+          } catch (error) {
+            if (item.attempts === 0) {
+              console.log(`Cannot verify screenshot ${data.screenshotId}, will retry later`);
+            }
+            this.db.incrementSyncAttempts(item.id);
+            continue;
           }
         }
         
@@ -376,60 +435,14 @@ export class ApiSyncService {
           
           // If it's a foreign key error, don't increment attempts (will retry)
           if (error.message?.includes('foreign key constraint')) {
-            console.log(`Will retry activity period ${item.entityId} later (session not ready)`);
+            console.log(`Will retry activity period ${item.entityId} later (dependencies not ready)`);
           } else {
             this.db.incrementSyncAttempts(item.id);
           }
         }
       }
       
-      // Track successfully synced activity periods
-      const syncedPeriodIds = new Set<string>();
-      
-      // Collect already synced periods for reference
-      for (const item of activityPeriods) {
-        const data = JSON.parse(item.data);
-        if (data.id) {
-          syncedPeriodIds.add(data.id);
-        }
-      }
-      
-      // Sync screenshots only if their activity period is synced
-      for (const item of screenshots) {
-        const data = JSON.parse(item.data);
-        
-        // Check if the activity period exists (either just synced or previously synced)
-        if (data.activityPeriodId) {
-          // If period wasn't in this batch, verify it exists on server
-          if (!syncedPeriodIds.has(data.activityPeriodId)) {
-            try {
-              // Verify activity period exists on server
-              const response = await this.api.get(`/activity-periods/${data.activityPeriodId}`);
-              if (!response.data) {
-                console.log(`Activity period ${data.activityPeriodId} doesn't exist on server yet, skipping screenshot`);
-                continue;
-              }
-            } catch (error) {
-              console.log(`Activity period ${data.activityPeriodId} not found on server, skipping screenshot`);
-              continue;
-            }
-          }
-        }
-        
-        try {
-          await this.syncItem(item);
-          this.db.markSynced(item.id);
-        } catch (error: any) {
-          console.error(`Failed to sync screenshot ${item.id}:`, error.message);
-          
-          // If it's a foreign key error, don't increment attempts (will retry)
-          if (error.message?.includes('foreign key constraint')) {
-            console.log(`Will retry screenshot ${item.id} later (activity period not ready)`);
-          } else {
-            this.db.incrementSyncAttempts(item.id);
-          }
-        }
-      }
+      // Note: Screenshots are now synced before activity periods
       
       // Finally sync other items
       for (const item of others) {
@@ -443,9 +456,18 @@ export class ApiSyncService {
       }
       
       console.log('Sync completed successfully');
-    } catch (error) {
-      console.error('Sync failed:', error);
-      this.handleOffline();
+    } catch (error: any) {
+      // Only log ECONNREFUSED once per offline period
+      if (error.code === 'ECONNREFUSED') {
+        if (this.isOnline) {
+          console.log('API server is not available, switching to offline mode');
+          this.handleOffline();
+        }
+        // Don't log repeated connection errors while offline
+      } else {
+        console.error('Sync failed:', error);
+        this.handleOffline();
+      }
     }
   }
 
@@ -468,24 +490,45 @@ export class ApiSyncService {
             }
             console.log('Session synced successfully with ID:', sessionResponse.data.session.id);
           } else if (item.operation === 'update') {
-            await this.api.patch(`/sessions/${item.entityId}`, {
-              endTime: new Date(data.endTime).toISOString()
-            });
+            const updateData: any = {};
+            if (data.endTime) {
+              updateData.endTime = new Date(data.endTime).toISOString();
+            }
+            if (data.task !== undefined) {
+              updateData.task = data.task;
+            }
+            await this.api.patch(`/sessions/${item.entityId}`, updateData);
+            console.log(`Session ${item.entityId} updated with:`, updateData);
           }
           break;
           
         case 'activity_period':
-          console.log('Syncing activity period:', item.entityId, 'for session:', data.sessionId);
+          console.log('Syncing activity period:', item.entityId, 'for session:', data.sessionId, 'screenshot:', data.screenshotId);
+          
+          // Parse metricsBreakdown if it's a string
+          let metricsBreakdown = null;
+          if (data.metricsBreakdown) {
+            try {
+              metricsBreakdown = typeof data.metricsBreakdown === 'string' 
+                ? JSON.parse(data.metricsBreakdown) 
+                : data.metricsBreakdown;
+            } catch (e) {
+              console.warn('Failed to parse metricsBreakdown:', e);
+            }
+          }
+          
           const activityResponse = await this.api.post('/activity-periods', {
             id: item.entityId, // Use the local activity period ID
             ...data,
             periodStart: new Date(data.periodStart).toISOString(),
-            periodEnd: new Date(data.periodEnd).toISOString()
+            periodEnd: new Date(data.periodEnd).toISOString(),
+            screenshotId: data.screenshotId, // Include screenshot FK
+            metricsBreakdown // Include detailed metrics
           });
           
           if (!activityResponse.data.success) {
             console.error('Activity period sync failed:', activityResponse.data);
-            if (activityResponse.data.error === 'Session does not exist') {
+            if (activityResponse.data.error === 'Session does not exist' || activityResponse.data.error === 'Screenshot does not exist') {
               throw new Error(`foreign key constraint: ${activityResponse.data.message}`);
             }
             throw new Error(activityResponse.data.message || 'Activity period creation failed');
@@ -509,20 +552,11 @@ export class ApiSyncService {
             filename: path.basename(data.localPath),
             contentType: 'image/jpeg'
           });
+          formData.append('id', item.entityId); // Include screenshot ID for reference
           formData.append('capturedAt', new Date(data.capturedAt).toISOString());
           formData.append('sessionId', data.sessionId); // Direct session relationship
           formData.append('mode', data.mode || 'command_hours');
           formData.append('userId', data.userId);
-          
-          // Add aggregated score if available
-          if (data.aggregatedScore !== undefined) {
-            formData.append('aggregatedScore', data.aggregatedScore.toString());
-          }
-          
-          // Add activity period IDs if available (for 1-minute period aggregation)
-          if (data.activityPeriodIds && data.activityPeriodIds.length > 0) {
-            formData.append('activityPeriodIds', JSON.stringify(data.activityPeriodIds));
-          }
           
           // Add notes (copied from session task)
           if (data.notes) {

@@ -7,29 +7,49 @@ import Store from 'electron-store';
 
 export class DatabaseService {
   private static instance: DatabaseService;
-  private localDb: LocalDatabase;
+  public localDb: LocalDatabase; // Made public for access from ScreenshotService
   private activityTracker: any = null; // Will be set by index.ts
   private api: AxiosInstance | null = null;
   private store: Store;
+  private currentActivity: string = 'Working'; // Store current activity
 
   constructor() {
     this.localDb = new LocalDatabase();
     this.store = new Store();
     this.initializeApiClient();
+    
+    // Initialize current activity from the most recent note if available
+    try {
+      const user = this.localDb.getCurrentUser();
+      if (user) {
+        const recentNotes = this.localDb.getRecentNotes(user.id, 1);
+        if (recentNotes && recentNotes.length > 0) {
+          this.currentActivity = recentNotes[0];
+          console.log(`DatabaseService: Initialized current activity to: "${this.currentActivity}"`);
+        }
+      }
+    } catch (error) {
+      console.log('DatabaseService: Could not initialize current activity from recent notes');
+    }
   }
   
   private initializeApiClient() {
-    const token = this.store.get('auth.token') as string;
-    const apiUrl = process.env.API_URL || 'http://localhost:3001';
+    const token = this.store.get('authToken') as string; // Changed from 'auth.token' to 'authToken'
+    // Use IPv4 explicitly to avoid IPv6 connection issues
+    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
+    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
     
     if (token) {
       this.api = axios.create({
-        baseURL: apiUrl,
+        baseURL: apiUrlFixed,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
-      });
+        },
+        // Force IPv4
+        httpAgent: new (require('http').Agent)({ family: 4 }),
+        httpsAgent: new (require('https').Agent)({ family: 4 })
+      } as any);
       
       // Add response interceptor to handle auth errors
       this.api.interceptors.response.use(
@@ -42,6 +62,10 @@ export class DatabaseService {
           return Promise.reject(error);
         }
       );
+      
+      console.log('API client initialized successfully');
+    } else {
+      console.log('No auth token found, API client not initialized');
     }
   }
 
@@ -73,7 +97,24 @@ export class DatabaseService {
   }
 
   getCurrentUserId(): string {
-    const user = this.localDb.getCurrentUser();
+    let user = this.localDb.getCurrentUser();
+    
+    // If no user exists and we're in development mode, create a default user
+    if (!user && process.env.NODE_ENV === 'development') {
+      console.log('No user found, creating default development user');
+      const defaultUser = {
+        id: 'b09149e6-6ba6-498d-ae3b-f35a1e11f7f5', // Use the user ID we found in screenshots
+        email: 'dev@example.com',
+        name: 'Developer',
+        organizationId: 'dev-org',
+        organizationName: 'Development',
+        role: 'developer' as const,
+        lastSync: Date.now()
+      };
+      this.setCurrentUser(defaultUser);
+      user = defaultUser;
+    }
+    
     if (!user) {
       throw new Error('No user logged in');
     }
@@ -136,18 +177,25 @@ export class DatabaseService {
       return null;
     }
   }
+  
+  getSession(sessionId: string) {
+    return this.localDb.getSession(sessionId);
+  }
 
   // Activity period management
   async createActivityPeriod(data: any) {
     const periodData = {
+      id: data.id, // Pass through the ID if provided
       sessionId: data.sessionId,
-      userId: this.getCurrentUserId(),
+      userId: data.userId || this.getCurrentUserId(),
+      screenshotId: data.screenshotId || null, // Include screenshotId
       periodStart: data.startTime || data.periodStart,
       periodEnd: data.endTime || data.periodEnd,
       mode: data.mode,
       activityScore: data.activityScore || 0,
       isValid: data.isValid !== undefined ? data.isValid : true,
-      classification: data.classification
+      classification: data.classification,
+      metricsBreakdown: data.metricsBreakdown // Include detailed metrics
     };
     
     const period = this.localDb.createActivityPeriod(periodData);
@@ -268,25 +316,52 @@ export class DatabaseService {
 
   // Screenshot management
   async saveScreenshot(data: {
+    id?: string;  // Optional ID to use instead of generating new one
     localPath: string;
     thumbnailPath: string;
     capturedAt: Date;
     activityScore?: number;
     relatedPeriodIds?: string[];
     sessionId?: string;
+    notes?: string;  // Add notes parameter
   }) {
-    const session = this.localDb.getActiveSession(this.getCurrentUserId());
-    if (!session) return;
+    let session = this.localDb.getActiveSession(this.getCurrentUserId());
+    let sessionId = data.sessionId || session?.id;
     
-    this.localDb.saveScreenshot({
+    // If no session exists, create an idle session
+    if (!sessionId) {
+      const idleSessionData = {
+        mode: 'command_hours' as const,
+        projectId: undefined,
+        task: 'Idle - No active tracking',
+        startTime: new Date()
+      };
+      
+      const newSession = await this.createSession(idleSessionData);
+      sessionId = newSession.id;
+      console.log(`Created idle session ${sessionId} for screenshot storage`);
+      
+      // Restore the idle session in activity tracker so activity periods are created
+      if (this.activityTracker) {
+        this.activityTracker.restoreSession(sessionId, 'command_hours', undefined);
+        console.log(`Restored idle session ${sessionId} in activity tracker`);
+      }
+    }
+    
+    const mode = session?.mode || 'command_hours';
+    
+    // Use provided notes, or fall back to session task
+    const notes = data.notes || session?.task || 'Idle';
+    
+    return this.localDb.saveScreenshot({
+      id: data.id,  // Pass through the ID if provided
       userId: this.getCurrentUserId(),
-      sessionId: data.sessionId || session.id,
+      sessionId: sessionId,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
-      mode: session.mode,
-      aggregatedScore: data.activityScore,
-      relatedPeriodIds: data.relatedPeriodIds
+      mode: mode,
+      task: notes  // Use the determined notes value
     });
   }
 
@@ -387,80 +462,177 @@ export class DatabaseService {
     return this.localDb.getWeekStats(userId);
   }
 
-  async getTodayScreenshots() {
-    // Always try to fetch from cloud API first (primary source)
+  async getScreenshotsByDate(date: Date) {
+    console.log('\n=== getScreenshotsByDate called ===', date);
+    
+    // Try to get current user ID, but handle case where no user is logged in
+    let userId: string;
     try {
-      const apiScreenshots = await this.fetchScreenshotsFromAPI();
-      if (apiScreenshots && apiScreenshots.length > 0) {
-        console.log('Using screenshots from cloud database');
-        return apiScreenshots;
-      }
+      userId = this.getCurrentUserId();
     } catch (error) {
-      console.log('Failed to fetch from cloud, falling back to local cache:', error);
+      console.log('No user logged in, returning empty screenshots array');
+      return [];
     }
+    
+    const screenshots = this.localDb.getScreenshotsByDate(userId, date);
+    console.log('Raw screenshots from DB for date:', date.toDateString(), screenshots.length);
+    
+    try {
+      const mappedScreenshots = screenshots.map(s => {
+        try {
+          // Never use file:// protocol - use S3 URLs or empty string
+          let thumbnailUrl = '';
+          let fullUrl = '';
+          
+          if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
+            thumbnailUrl = s.thumbnailUrl;
+          } else if (s.url && s.url.startsWith('http')) {
+            thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
+          }
+          
+          if (s.url && s.url.startsWith('http')) {
+            fullUrl = s.url;
+          }
+          
+          // Get activity score from related periods
+          let activityScore = (s as any).activityScore || 0;
+          
+          // Get related period IDs from the already loaded data
+          let activityPeriodIds = [];
+          if ((s as any).relatedPeriods && Array.isArray((s as any).relatedPeriods)) {
+            activityPeriodIds = (s as any).relatedPeriods.map((p: any) => p.id);
+          }
+          
+          // Get sync status if available
+          const syncStatus = (s as any).syncStatus || null;
+          
+          const result = {
+            id: s.id,
+            thumbnailUrl: thumbnailUrl || '', // Empty string if no valid URL
+            fullUrl: fullUrl || '', // Empty string if no valid URL
+            timestamp: new Date(s.capturedAt),
+            notes: s.notes || '',
+            mode: s.mode === 'client_hours' ? 'client' as const : 'command' as const,
+            activityScore: activityScore,
+            activityPeriodIds: activityPeriodIds,
+            syncStatus: syncStatus
+          };
+          
+          return result;
+        } catch (mapError) {
+          console.error('Error mapping screenshot:', s.id, mapError);
+          throw mapError;
+        }
+      });
+      
+      console.log(`Successfully mapped ${mappedScreenshots.length} screenshots for date ${date.toDateString()}`);
+      return mappedScreenshots;
+    } catch (error) {
+      console.error('Error in screenshot mapping:', error);
+      throw error;
+    }
+  }
+
+  async getTodayScreenshots() {
+    console.log('\n=== getTodayScreenshots called ===');
+    // Skip API for now to debug the local database issue
+    // // Always try to fetch from cloud API first (primary source)
+    // try {
+    //   const apiScreenshots = await this.fetchScreenshotsFromAPI();
+    //   if (apiScreenshots && apiScreenshots.length > 0) {
+    //     console.log('Using screenshots from cloud database');
+    //     return apiScreenshots;
+    //   }
+    // } catch (error) {
+    //   console.log('Failed to fetch from cloud, falling back to local cache:', error);
+    // }
     
     // Fallback to local database only if API fails (offline mode)
     console.log('Using local database as fallback');
-    const screenshots = this.localDb.getTodayScreenshots(this.getCurrentUserId());
+    
+    // Try to get current user ID, but handle case where no user is logged in
+    let userId: string;
+    try {
+      userId = this.getCurrentUserId();
+    } catch (error) {
+      console.log('No user logged in, returning empty screenshots array');
+      return [];
+    }
+    
+    const screenshots = this.localDb.getTodayScreenshots(userId);
     
     console.log('Raw screenshots from DB:', screenshots.map(s => ({
       id: s.id,
-      s3Url: s.s3Url,
+      url: s.url,
       thumbnailUrl: s.thumbnailUrl,
       thumbnailPath: s.thumbnailPath,
-      localPath: s.localPath
+      localPath: s.localPath,
+      activityScore: (s as any).activityScore,
+      relatedPeriods: (s as any).relatedPeriods?.length || 0
     })));
     
-    return screenshots.map(s => {
-      // Never use file:// protocol - use S3 URLs or empty string
-      let thumbnailUrl = '';
-      let fullUrl = '';
-      
-      if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
-        thumbnailUrl = s.thumbnailUrl;
-      } else if (s.s3Url && s.s3Url.startsWith('http')) {
-        thumbnailUrl = s.s3Url.replace('_full.jpg', '_thumb.jpg');
-      }
-      
-      if (s.s3Url && s.s3Url.startsWith('http')) {
-        fullUrl = s.s3Url;
-      }
-      
-      // If we still don't have valid URLs, don't include file:// paths
-      if (!thumbnailUrl && s.thumbnailPath) {
-        console.log('Warning: Screenshot', s.id, 'has no S3 URL, only local path:', s.thumbnailPath);
-      }
-      
-      // Get activity score from the aggregated score
-      let activityScore = s.aggregatedScore || 0;
-      
-      // Parse activity period IDs if stored as JSON string
-      let activityPeriodIds = [];
-      if (s.activityPeriodIds) {
+    try {
+      const mappedScreenshots = screenshots.map(s => {
         try {
-          activityPeriodIds = JSON.parse(s.activityPeriodIds);
-        } catch (e) {
-          // If not JSON, might be a single ID for backward compatibility
-          activityPeriodIds = [s.activityPeriodIds];
+          // Never use file:// protocol - use S3 URLs or empty string
+          let thumbnailUrl = '';
+          let fullUrl = '';
+          
+          if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
+            thumbnailUrl = s.thumbnailUrl;
+          } else if (s.url && s.url.startsWith('http')) {
+            thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
+          }
+          
+          if (s.url && s.url.startsWith('http')) {
+            fullUrl = s.url;
+          }
+          
+          // If we still don't have valid URLs, don't include file:// paths
+          if (!thumbnailUrl && s.thumbnailPath) {
+            console.log('Warning: Screenshot', s.id, 'has no URL, only local path:', s.thumbnailPath);
+          }
+          
+          // Get activity score from related periods (calculated in getTodayScreenshots)
+          let activityScore = (s as any).activityScore || 0;
+          
+          // Get related period IDs from the already loaded data
+          let activityPeriodIds = [];
+          if ((s as any).relatedPeriods && Array.isArray((s as any).relatedPeriods)) {
+            activityPeriodIds = (s as any).relatedPeriods.map((p: any) => p.id);
+          }
+          
+          // Get sync status if available
+          const syncStatus = (s as any).syncStatus || null;
+          
+          console.log(`Screenshot ${s.id} has activity score: ${activityScore}`);
+          
+          const result = {
+            id: s.id,
+            thumbnailUrl: thumbnailUrl || '',  // Empty string if no valid URL
+            fullUrl: fullUrl || '',  // Empty string if no valid URL
+            timestamp: new Date(s.capturedAt),
+            notes: s.notes || '',
+            mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
+            activityScore: activityScore,  // Calculated from related periods
+            activityPeriodIds: activityPeriodIds,  // Array of period IDs from related periods
+            syncStatus: syncStatus  // Add sync status information
+          };
+          
+          console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
+          return result;
+        } catch (mapError) {
+          console.error('Error mapping screenshot:', s.id, mapError);
+          throw mapError;
         }
-      }
+      });
       
-      console.log(`Screenshot ${s.id} has aggregated score: ${activityScore}`);
-      
-      const result = {
-        id: s.id,
-        thumbnailUrl: thumbnailUrl || '',  // Empty string if no valid URL
-        fullUrl: fullUrl || '',  // Empty string if no valid URL
-        timestamp: new Date(s.capturedAt),
-        notes: s.notes || '',
-        mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
-        activityScore: activityScore,  // Aggregated score from multiple periods
-        activityPeriodIds: activityPeriodIds  // Array of period IDs
-      };
-      
-      console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
-      return result;
-    });
+      console.log(`Successfully mapped ${mappedScreenshots.length} screenshots`);
+      return mappedScreenshots;
+    } catch (error) {
+      console.error('Error in screenshot mapping:', error);
+      throw error;
+    }
   }
   
   private async fetchScreenshotsFromAPI(): Promise<any[]> {
@@ -484,7 +656,8 @@ export class DatabaseService {
           startDate: todayStart.toISOString(),
           endDate: todayEnd.toISOString(),
           includeActivityPeriod: true
-        }
+        },
+        timeout: 5000 // 5 second timeout
       });
       
       console.log(`API returned ${response.data.length} screenshots`);
@@ -492,8 +665,8 @@ export class DatabaseService {
       // Transform API response to match our format
       return response.data.map((s: any) => ({
         id: s.id,
-        thumbnailUrl: s.thumbnailUrl || s.s3Url?.replace('_full.jpg', '_thumb.jpg') || '',
-        fullUrl: s.s3Url || '',
+        thumbnailUrl: s.thumbnailUrl || s.url?.replace('_full.jpg', '_thumb.jpg') || '',
+        fullUrl: s.url || '',
         timestamp: new Date(s.capturedAt),
         notes: s.notes || '',
         mode: s.mode === 'client_hours' ? 'client' : 'command',
@@ -508,12 +681,11 @@ export class DatabaseService {
   }
 
   async updateScreenshotNotes(ids: string[], notes: string) {
-    // This would need to be implemented in LocalDatabase
-    console.log('Updating screenshot notes:', ids, notes);
+    return this.localDb.updateScreenshotNotes(ids, notes);
   }
   
-  updateScreenshotUrls(screenshotId: string, s3Url: string, thumbnailUrl: string) {
-    this.localDb.updateScreenshotUrls(screenshotId, s3Url, thumbnailUrl);
+  updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
+    this.localDb.updateScreenshotUrls(screenshotId, url, thumbnailUrl);
   }
 
   async transferScreenshotMode(ids: string[], mode: 'client_hours' | 'command_hours') {
@@ -522,20 +694,36 @@ export class DatabaseService {
   }
 
   async deleteScreenshots(ids: string[]) {
-    // This would need to be implemented in LocalDatabase
-    console.log('Deleting screenshots:', ids);
+    console.log('DatabaseService: Deleting screenshots:', ids);
+    return this.localDb.deleteScreenshots(ids);
   }
 
   async getActivityPeriodDetails(periodId: string) {
-    // This would need to be implemented in LocalDatabase
+    const period = this.localDb.getActivityPeriodWithMetrics(periodId);
+    if (!period) {
+      return null;
+    }
+    
     return {
-      id: periodId,
-      activities: [
-        { type: 'keypress', count: 523 },
-        { type: 'mouseclick', count: 89 },
-        { type: 'scroll', count: 34 }
-      ]
+      id: period.id,
+      periodStart: new Date(period.periodStart),
+      periodEnd: new Date(period.periodEnd),
+      activityScore: period.activityScore,
+      metricsBreakdown: period.metricsBreakdown,
+      classification: period.classification
     };
+  }
+  
+  async getActivityPeriodsWithMetrics(periodIds: string[]) {
+    const periods = this.localDb.getActivityPeriodsWithMetrics(periodIds);
+    return periods.map(period => ({
+      id: period.id,
+      periodStart: new Date(period.periodStart),
+      periodEnd: new Date(period.periodEnd),
+      activityScore: period.activityScore,
+      metricsBreakdown: period.metricsBreakdown,
+      classification: period.classification
+    }));
   }
 
   // Notes management
@@ -544,7 +732,20 @@ export class DatabaseService {
   }
 
   async saveNote(noteText: string) {
-    this.localDb.saveRecentNote(this.getCurrentUserId(), noteText);
+    console.log(`DatabaseService: saveNote called with: "${noteText}"`);
+    const userId = this.getCurrentUserId();
+    console.log(`DatabaseService: Current user ID: ${userId}`);
+    
+    // Store the current activity for screenshot service to use
+    this.currentActivity = noteText;
+    console.log(`DatabaseService: Updated current activity to: "${noteText}"`);
+    
+    this.localDb.saveRecentNote(userId, noteText);
+    console.log(`DatabaseService: saveNote completed`);
+  }
+  
+  getCurrentActivityNote(): string {
+    return this.currentActivity;
   }
 
   // Leaderboard

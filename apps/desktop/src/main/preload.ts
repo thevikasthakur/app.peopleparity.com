@@ -28,12 +28,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screenshots: {
     getToday: () => 
       ipcRenderer.invoke('screenshots:get-today'),
+    getByDate: (date: Date) =>
+      ipcRenderer.invoke('screenshots:get-by-date', date.toISOString()),
     updateNotes: (ids: string[], notes: string) => 
       ipcRenderer.invoke('screenshots:update-notes', ids, notes),
     transferMode: (ids: string[], mode: string) => 
       ipcRenderer.invoke('screenshots:transfer-mode', ids, mode),
     delete: (ids: string[]) => 
       ipcRenderer.invoke('screenshots:delete', ids),
+  },
+  activity: {
+    getPeriodDetails: (periodId: string) =>
+      ipcRenderer.invoke('activity:get-period-details', periodId),
+    getPeriodsWithMetrics: (periodIds: string[]) =>
+      ipcRenderer.invoke('activity:get-periods-with-metrics', periodIds),
+  },
+  notes: {
+    save: (noteText: string) =>
+      ipcRenderer.invoke('notes:save', noteText),
+    getRecent: () =>
+      ipcRenderer.invoke('notes:get-recent'),
   },
   debug: {
     clearSyncQueue: () => 

@@ -16,8 +16,7 @@ export function TimeDisplay({ title, clientHours, commandHours, icon, message }:
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   };
 
-  const totalHours = clientHours + commandHours;
-  const clientPercentage = totalHours > 0 ? (clientHours / totalHours) * 100 : 0;
+  const totalHours = commandHours; // Only count command hours
 
   return (
     <div className="glass-card p-6 hover:shadow-2xl transition-all">
@@ -33,32 +32,16 @@ export function TimeDisplay({ title, clientHours, commandHours, icon, message }:
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-indigo-600 font-medium">Client Hours</span>
-            <span className="font-mono">{formatTime(clientHours)}</span>
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500"
-              style={{ width: `${clientPercentage}%` }}
-            />
-          </div>
+      <div className="mt-2">
+        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+            style={{ width: '100%' }}
+          />
         </div>
-
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-emerald-600 font-medium">Command Hours</span>
-            <span className="font-mono">{formatTime(commandHours)}</span>
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
-              style={{ width: `${100 - clientPercentage}%` }}
-            />
-          </div>
-        </div>
+        <p className="text-xs text-gray-500 mt-2 text-center">
+          Based on productive screenshots
+        </p>
       </div>
 
       {message && (

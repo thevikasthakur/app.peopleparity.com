@@ -35,6 +35,7 @@ interface ActivityPeriod {
   id: string;
   sessionId: string;
   userId: string;
+  screenshotId?: string | null;
   periodStart: number;
   periodEnd: number;
   mode: 'client_hours' | 'command_hours';
@@ -50,13 +51,11 @@ interface Screenshot {
   id: string;
   userId: string;
   sessionId: string;
-  activityPeriodIds?: string; // JSON string array
   localPath: string;
   thumbnailPath?: string;
-  s3Url?: string;
+  url?: string;  // S3 URL after upload
   thumbnailUrl?: string;
   capturedAt: number;
-  aggregatedScore: number;
   mode: 'client_hours' | 'command_hours';
   notes?: string;
   isDeleted: number;
@@ -90,33 +89,29 @@ export class LocalDatabase {
   }
   
   private runMigrations() {
-    // Migrate screenshots table to new schema
     try {
-      // Check if the screenshots table exists
-      const tableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshots'").get();
+      // Migration 1: Update screenshots table to remove activityPeriodIds and aggregatedScore, rename s3Url to url
+      const screenshotsTableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshots'").get();
       
-      if (tableInfo) {
-        // Table exists, check columns
+      if (screenshotsTableInfo) {
         const columns = this.db.prepare("PRAGMA table_info(screenshots)").all() as any[];
         const columnNames = columns.map(col => col.name);
         
-        // Check if we need to migrate to new schema (has old activityPeriodId column)
-        if (columnNames.includes('activityPeriodId') || !columnNames.includes('sessionId')) {
+        // Check if we need to migrate (has old columns or s3Url)
+        if (columnNames.includes('activityPeriodIds') || columnNames.includes('aggregatedScore') || columnNames.includes('s3Url')) {
           console.log('Migrating screenshots table to new schema...');
           
-          // Create new table with correct schema
+          // Create new table without the removed columns
           this.db.exec(`
             CREATE TABLE IF NOT EXISTS screenshots_new (
               id TEXT PRIMARY KEY,
               userId TEXT NOT NULL,
               sessionId TEXT NOT NULL,
-              activityPeriodIds TEXT,
               localPath TEXT NOT NULL,
               thumbnailPath TEXT,
-              s3Url TEXT,
+              url TEXT,
               thumbnailUrl TEXT,
               capturedAt INTEGER NOT NULL,
-              aggregatedScore INTEGER DEFAULT 0,
               mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
               notes TEXT,
               isDeleted INTEGER DEFAULT 0,
@@ -126,35 +121,37 @@ export class LocalDatabase {
             )
           `);
           
-          // Copy data from old table to new table
+          // Copy data from old table to new table (handle both url and s3Url columns)
+          // Check which columns exist in the old table
+          const hasUrl = columnNames.includes('url');
+          const hasS3Url = columnNames.includes('s3Url');
+          
+          let urlExpression = 'NULL';
+          if (hasUrl && hasS3Url) {
+            urlExpression = 'COALESCE(url, s3Url)';
+          } else if (hasUrl) {
+            urlExpression = 'url';
+          } else if (hasS3Url) {
+            urlExpression = 's3Url';
+          }
+          
+          let thumbnailExpression = 'thumbnailUrl';
+          if (hasUrl && hasS3Url) {
+            thumbnailExpression = `COALESCE(thumbnailUrl, ${urlExpression})`;
+          }
+          
           this.db.exec(`
             INSERT INTO screenshots_new (
-              id, userId, sessionId, activityPeriodIds, localPath, thumbnailPath,
-              s3Url, thumbnailUrl, capturedAt, aggregatedScore, mode, notes,
+              id, userId, sessionId, localPath, thumbnailPath,
+              url, thumbnailUrl, capturedAt, mode, notes,
               isDeleted, isSynced, createdAt
             )
             SELECT 
-              id, 
-              userId,
-              COALESCE(sessionId, (
-                SELECT s.id FROM sessions s 
-                WHERE s.userId = screenshots.userId 
-                AND s.startTime <= screenshots.capturedAt 
-                AND (s.endTime IS NULL OR s.endTime >= screenshots.capturedAt)
-                LIMIT 1
-              ), 'default-session'),
-              activityPeriodIds,
-              localPath,
-              thumbnailPath,
-              s3Url,
-              COALESCE(thumbnailUrl, s3Url),
-              capturedAt,
-              COALESCE(aggregatedScore, 0),
-              mode,
-              notes,
-              isDeleted,
-              isSynced,
-              createdAt
+              id, userId, sessionId, localPath, thumbnailPath,
+              ${urlExpression},
+              ${thumbnailExpression},
+              capturedAt, mode, notes,
+              isDeleted, isSynced, createdAt
             FROM screenshots
           `);
           
@@ -164,13 +161,44 @@ export class LocalDatabase {
           
           console.log('Screenshots table migration completed');
         }
+      }
+      
+      // Migration 2: Add screenshotId column to activity_periods table
+      const activityPeriodsTableInfo = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='activity_periods'").get();
+      
+      if (activityPeriodsTableInfo) {
+        const columns = this.db.prepare("PRAGMA table_info(activity_periods)").all() as any[];
+        const columnNames = columns.map(col => col.name);
         
-        // Drop screenshot_periods table if it exists (no longer needed)
-        const screenshotPeriodsTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshot_periods'").get();
-        if (screenshotPeriodsTable) {
-          console.log('Dropping unnecessary screenshot_periods table...');
-          this.db.exec('DROP TABLE IF EXISTS screenshot_periods');
+        // Check if screenshotId column exists
+        if (!columnNames.includes('screenshotId')) {
+          console.log('Adding screenshotId column to activity_periods table...');
+          
+          // Add the column (SQLite doesn't support adding FK constraint to existing column)
+          this.db.exec(`
+            ALTER TABLE activity_periods ADD COLUMN screenshotId TEXT
+          `);
+          
+          console.log('Activity periods table migration completed');
         }
+        
+        // Migration 3: Add metricsBreakdown column for detailed metrics
+        if (!columnNames.includes('metricsBreakdown')) {
+          console.log('Adding metricsBreakdown column to activity_periods table...');
+          
+          this.db.exec(`
+            ALTER TABLE activity_periods ADD COLUMN metricsBreakdown TEXT
+          `);
+          
+          console.log('Metrics breakdown column added successfully');
+        }
+      }
+      
+      // Drop screenshot_periods table if it exists (no longer needed)
+      const screenshotPeriodsTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='screenshot_periods'").get();
+      if (screenshotPeriodsTable) {
+        console.log('Dropping unnecessary screenshot_periods table...');
+        this.db.exec('DROP TABLE IF EXISTS screenshot_periods');
       }
     } catch (error) {
       console.error('Migration error:', error);
@@ -230,6 +258,7 @@ export class LocalDatabase {
         id TEXT PRIMARY KEY,
         sessionId TEXT NOT NULL,
         userId TEXT NOT NULL,
+        screenshotId TEXT,  -- FK to associate with screenshot
         periodStart INTEGER NOT NULL,
         periodEnd INTEGER NOT NULL,
         mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
@@ -239,7 +268,8 @@ export class LocalDatabase {
         classification TEXT,
         isSynced INTEGER DEFAULT 0,
         createdAt INTEGER NOT NULL,
-        FOREIGN KEY (sessionId) REFERENCES sessions(id)
+        FOREIGN KEY (sessionId) REFERENCES sessions(id),
+        FOREIGN KEY (screenshotId) REFERENCES screenshots(id)
       )
     `);
     
@@ -249,12 +279,10 @@ export class LocalDatabase {
         id TEXT PRIMARY KEY,
         userId TEXT NOT NULL,
         sessionId TEXT NOT NULL,
-        activityPeriodIds TEXT,  -- JSON array of the 10 activity period IDs
         localPath TEXT NOT NULL,
         thumbnailPath TEXT,
         s3Url TEXT,
         capturedAt INTEGER NOT NULL,
-        aggregatedScore INTEGER DEFAULT 0,  -- Average score from 10 periods
         mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
         notes TEXT,  -- Will contain session task
         isDeleted INTEGER DEFAULT 0,
@@ -352,7 +380,6 @@ export class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_screenshots_session ON screenshots(sessionId);
       CREATE INDEX IF NOT EXISTS idx_screenshots_user_time ON screenshots(userId, capturedAt);
       CREATE INDEX IF NOT EXISTS idx_screenshots_sync ON screenshots(isSynced);
-      CREATE INDEX IF NOT EXISTS idx_screenshots_aggregated_score ON screenshots(aggregatedScore);
       CREATE INDEX IF NOT EXISTS idx_sync_queue_attempts ON sync_queue(attempts);
     `);
     
@@ -482,7 +509,14 @@ export class LocalDatabase {
     }
   }
   
-  getActiveSession(userId: string): Session | null {
+  getActiveSession(userId?: string): Session | null {
+    // If no userId provided, get for current user
+    if (!userId) {
+      const currentUser = this.getCurrentUser();
+      if (!currentUser) return null;
+      userId = currentUser.id;
+    }
+    
     const stmt = this.db.prepare(`
       SELECT * FROM sessions 
       WHERE userId = ? AND isActive = 1 
@@ -490,6 +524,14 @@ export class LocalDatabase {
       LIMIT 1
     `);
     return stmt.get(userId) as Session | null;
+  }
+  
+  getSession(sessionId: string): Session | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM sessions 
+      WHERE id = ?
+    `);
+    return stmt.get(sessionId) as Session | null;
   }
   
   // Activity period operations
@@ -513,6 +555,53 @@ export class LocalDatabase {
     
     return stmt.get(periodId);
   }
+  
+  getActivityPeriodWithMetrics(periodId: string): any {
+    const period = this.db.prepare(`
+      SELECT * FROM activity_periods 
+      WHERE id = ?
+    `).get(periodId) as any;
+    
+    if (!period) return null;
+    
+    // Parse the metricsBreakdown JSON if it exists
+    if (period.metricsBreakdown) {
+      try {
+        period.metricsBreakdown = JSON.parse(period.metricsBreakdown);
+      } catch (e) {
+        console.error('Failed to parse metricsBreakdown:', e);
+        period.metricsBreakdown = null;
+      }
+    }
+    
+    return period;
+  }
+  
+  getActivityPeriodsWithMetrics(periodIds: string[]): any[] {
+    if (!periodIds || periodIds.length === 0) return [];
+    
+    const placeholders = periodIds.map(() => '?').join(',');
+    const stmt = this.db.prepare(`
+      SELECT * FROM activity_periods 
+      WHERE id IN (${placeholders})
+      ORDER BY periodStart ASC
+    `);
+    
+    const periods = stmt.all(...periodIds) as any[];
+    
+    // Parse metricsBreakdown for each period
+    return periods.map((period: any) => {
+      if (period.metricsBreakdown) {
+        try {
+          period.metricsBreakdown = JSON.parse(period.metricsBreakdown);
+        } catch (e) {
+          console.error('Failed to parse metricsBreakdown:', e);
+          period.metricsBreakdown = null;
+        }
+      }
+      return period;
+    });
+  }
 
   getRecentActivityPeriods(sessionId: string, limit: number = 10): any[] {
     const stmt = this.db.prepare(`
@@ -524,6 +613,26 @@ export class LocalDatabase {
     `);
     
     return stmt.all(sessionId, limit) || [];
+  }
+  
+  getActivityPeriodsForScreenshot(screenshotId: string): any[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM activity_periods 
+      WHERE screenshotId = ?
+      ORDER BY periodStart ASC
+    `);
+    
+    return stmt.all(screenshotId) || [];
+  }
+  
+  updateActivityPeriodScreenshot(periodId: string, screenshotId: string) {
+    const stmt = this.db.prepare(`
+      UPDATE activity_periods 
+      SET screenshotId = ?, isSynced = 0
+      WHERE id = ?
+    `);
+    
+    stmt.run(screenshotId, periodId);
   }
   
   getActivityPeriodsForTimeRange(sessionId: string, windowStart: Date, windowEnd: Date): any[] {
@@ -596,12 +705,14 @@ export class LocalDatabase {
     id?: string;
     sessionId: string;
     userId: string;
+    screenshotId?: string | null;
     periodStart: Date;
     periodEnd: Date;
     mode: 'client_hours' | 'command_hours';
     activityScore: number;
     isValid: boolean;
     classification?: string;
+    metricsBreakdown?: any; // Detailed metrics from MetricsCollector
   }): ActivityPeriod {
     // Normalize timestamps to start of second to avoid millisecond mismatches
     const normalizedStart = new Date(data.periodStart);
@@ -645,6 +756,7 @@ export class LocalDatabase {
       id: data.id || crypto.randomUUID(),
       sessionId: data.sessionId,
       userId: data.userId,
+      screenshotId: data.screenshotId || null,
       periodStart: normalizedStart.getTime(),
       periodEnd: normalizedEnd.getTime(),
       mode: data.mode,
@@ -652,17 +764,18 @@ export class LocalDatabase {
       activityScore: data.activityScore,
       isValid: data.isValid ? 1 : 0,
       classification: data.classification || null,
+      metricsBreakdown: data.metricsBreakdown ? JSON.stringify(data.metricsBreakdown) : null,
       isSynced: 0,
       createdAt: Date.now()
     };
     
     const stmt = this.db.prepare(`
       INSERT INTO activity_periods (
-        id, sessionId, userId, periodStart, periodEnd, mode, 
-        notes, activityScore, isValid, classification, isSynced, createdAt
+        id, sessionId, userId, screenshotId, periodStart, periodEnd, mode, 
+        notes, activityScore, isValid, classification, metricsBreakdown, isSynced, createdAt
       ) VALUES (
-        @id, @sessionId, @userId, @periodStart, @periodEnd, @mode,
-        @notes, @activityScore, @isValid, @classification, @isSynced, @createdAt
+        @id, @sessionId, @userId, @screenshotId, @periodStart, @periodEnd, @mode,
+        @notes, @activityScore, @isValid, @classification, @metricsBreakdown, @isSynced, @createdAt
       )
     `);
     
@@ -676,30 +789,59 @@ export class LocalDatabase {
   
   // Screenshot operations
   saveScreenshot(data: {
+    id?: string;  // Optional ID to use instead of generating new one
     userId: string;
     sessionId: string;
     localPath: string;
     thumbnailPath?: string;
     capturedAt: Date;
     mode: 'client_hours' | 'command_hours';
-    aggregatedScore?: number;
-    relatedPeriodIds?: string[];
     task?: string;  // From session
   }) {
+    // Check if a screenshot with the same localPath already exists
+    const existingScreenshot = this.db.prepare(`
+      SELECT * FROM screenshots WHERE localPath = ?
+    `).get(data.localPath) as any;
+    
+    if (existingScreenshot) {
+      console.log(`Screenshot already exists with id ${existingScreenshot.id}, not saving duplicate`);
+      
+      // Check if it's already in sync queue
+      const existingInQueue = this.db.prepare(`
+        SELECT id FROM sync_queue 
+        WHERE entityType = 'screenshot' AND entityId = ? AND attempts < 5
+      `).get(existingScreenshot.id) as any;
+      
+      if (!existingInQueue) {
+        // Add the existing screenshot to sync queue if not already there
+        this.addToSyncQueue('screenshot', existingScreenshot.id, 'upload', {
+          localPath: existingScreenshot.localPath,
+          capturedAt: existingScreenshot.capturedAt,
+          mode: existingScreenshot.mode,
+          userId: existingScreenshot.userId,
+          sessionId: existingScreenshot.sessionId,
+          notes: existingScreenshot.notes
+        });
+        console.log(`Added existing screenshot ${existingScreenshot.id} to sync queue`);
+      } else {
+        console.log(`Screenshot ${existingScreenshot.id} already in sync queue`);
+      }
+      
+      return existingScreenshot;
+    }
+    
     // Get session task for notes field
     const session = this.db.prepare('SELECT task FROM sessions WHERE id = ?').get(data.sessionId) as any;
     const notes = session?.task || null;
     
     const screenshot = {
-      id: crypto.randomUUID(),
+      id: data.id || crypto.randomUUID(),  // Use provided ID or generate new one
       userId: data.userId,
       sessionId: data.sessionId,
-      activityPeriodIds: data.relatedPeriodIds ? JSON.stringify(data.relatedPeriodIds) : null,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath || null,
-      s3Url: null,
+      url: null,
       capturedAt: data.capturedAt.getTime(),
-      aggregatedScore: data.aggregatedScore || 0,
       mode: data.mode,
       notes: notes,  // Copy from session task
       isDeleted: 0,
@@ -709,125 +851,562 @@ export class LocalDatabase {
     
     const stmt = this.db.prepare(`
       INSERT INTO screenshots (
-        id, userId, sessionId, activityPeriodIds, localPath, thumbnailPath, s3Url,
-        capturedAt, aggregatedScore, mode, notes, isDeleted, isSynced, createdAt
+        id, userId, sessionId, localPath, thumbnailPath, url,
+        capturedAt, mode, notes, isDeleted, isSynced, createdAt
       ) VALUES (
-        @id, @userId, @sessionId, @activityPeriodIds, @localPath, @thumbnailPath, @s3Url,
-        @capturedAt, @aggregatedScore, @mode, @notes, @isDeleted, @isSynced, @createdAt
+        @id, @userId, @sessionId, @localPath, @thumbnailPath, @url,
+        @capturedAt, @mode, @notes, @isDeleted, @isSynced, @createdAt
       )
     `);
     
     stmt.run(screenshot);
     
-    console.log(`Saved screenshot ${screenshot.id} with ${data.relatedPeriodIds?.length || 0} activity periods`);
+    console.log(`Saved new screenshot ${screenshot.id}`);
     
     // Add to sync queue for S3 upload with all new fields
     this.addToSyncQueue('screenshot', screenshot.id, 'upload', {
       localPath: screenshot.localPath,
       capturedAt: screenshot.capturedAt,
-      aggregatedScore: screenshot.aggregatedScore,
-      activityPeriodIds: data.relatedPeriodIds || [],
       mode: screenshot.mode,
       userId: screenshot.userId,
       sessionId: screenshot.sessionId,
       notes: screenshot.notes
     });
+    console.log(`Added screenshot ${screenshot.id} to sync queue`);
     
     return screenshot;
   }
   
+  getScreenshotsByDate(userId: string, date: Date): Screenshot[] {
+    const dateStart = new Date(date);
+    dateStart.setHours(0, 0, 0, 0);
+    
+    const dateEnd = new Date(date);
+    dateEnd.setHours(23, 59, 59, 999);
+    
+    console.log('getScreenshotsByDate - userId:', userId);
+    console.log('getScreenshotsByDate - dateStart:', dateStart.toISOString(), 'timestamp:', dateStart.getTime());
+    console.log('getScreenshotsByDate - dateEnd:', dateEnd.toISOString(), 'timestamp:', dateEnd.getTime());
+    
+    const stmt = this.db.prepare(`
+      SELECT s.*
+      FROM screenshots s
+      WHERE s.userId = ? AND s.capturedAt >= ? AND s.capturedAt <= ? AND s.isDeleted = 0
+      ORDER BY s.capturedAt ASC
+    `);
+    
+    const screenshots = stmt.all(userId, dateStart.getTime(), dateEnd.getTime()) as any[];
+    
+    console.log('getScreenshotsByDate - found', screenshots.length, 'screenshots for user', userId, 'on date', dateStart.toDateString());
+    
+    // For each screenshot, get its associated activity periods and calculate aggregated score
+    return screenshots.map((s: any) => {
+      // Get activity periods for this screenshot
+      const periods = this.getActivityPeriodsForScreenshot(s.id);
+      
+      // Calculate aggregated score from associated periods
+      const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
+      const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
+      
+      // Extract period IDs for fetching detailed metrics
+      const periodIds = periods.map((p: any) => p.id);
+      
+      // Get sync status for screenshot and its periods
+      const syncStatus = this.getScreenshotSyncStatus(s.id, periodIds);
+      
+      return {
+        ...s,
+        activityScore: aggregatedScore,
+        aggregatedScore: aggregatedScore, // For backward compatibility
+        relatedPeriods: periods,
+        activityPeriodIds: periodIds, // Add period IDs for metrics fetching
+        syncStatus // Add sync status information
+      };
+    });
+  }
+
   getTodayScreenshots(userId: string): Screenshot[] {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     
+    console.log('getTodayScreenshots - userId:', userId);
+    console.log('getTodayScreenshots - todayStart:', todayStart.toISOString(), 'timestamp:', todayStart.getTime());
+    
     const stmt = this.db.prepare(`
-      SELECT 
-        s.*,
-        s.aggregatedScore as activityScore
+      SELECT s.*
       FROM screenshots s
       WHERE s.userId = ? AND s.capturedAt >= ? AND s.isDeleted = 0
       ORDER BY s.capturedAt ASC
     `);
     
     const screenshots = stmt.all(userId, todayStart.getTime()) as any[];
+    console.log('getTodayScreenshots - found', screenshots.length, 'screenshots for user', userId);
     
-    // Parse the activity period IDs from JSON if stored
+    // For each screenshot, get its associated activity periods and calculate aggregated score
     return screenshots.map((s: any) => {
-      let relatedPeriods = [];
-      if (s.activityPeriodIds) {
-        try {
-          const periodIds = JSON.parse(s.activityPeriodIds);
-          // Could optionally fetch the actual period data here if needed
-          relatedPeriods = periodIds;
-        } catch (e) {
-          console.error('Failed to parse activityPeriodIds:', e);
-        }
-      }
+      // Get activity periods for this screenshot
+      const periods = this.getActivityPeriodsForScreenshot(s.id);
+      
+      // Calculate aggregated score from associated periods
+      const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
+      const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
+      
+      // Extract period IDs for fetching detailed metrics
+      const periodIds = periods.map((p: any) => p.id);
+      
+      // Get sync status for screenshot and its periods
+      const syncStatus = this.getScreenshotSyncStatus(s.id, periodIds);
       
       return {
         ...s,
-        activityScore: s.activityScore || s.aggregatedScore || 0,
-        relatedPeriods: relatedPeriods
+        activityScore: aggregatedScore,
+        aggregatedScore: aggregatedScore, // For backward compatibility
+        relatedPeriods: periods,
+        activityPeriodIds: periodIds, // Add period IDs for metrics fetching
+        syncStatus // Add sync status information
       };
     });
   }
   
-  updateScreenshotUrls(screenshotId: string, s3Url: string, thumbnailUrl: string) {
-    // First, check if we need to add thumbnailUrl column (for existing DBs)
-    try {
-      this.db.exec(`ALTER TABLE screenshots ADD COLUMN thumbnailUrl TEXT`);
-    } catch (e) {
-      // Column already exists, ignore error
+  getScreenshotSyncStatus(screenshotId: string, periodIds: string[]) {
+    // Check screenshot sync status
+    const screenshotSyncQuery = this.db.prepare(`
+      SELECT 
+        s.isSynced as screenshotSynced,
+        s.url,
+        sq.id as queueId,
+        sq.attempts,
+        sq.createdAt as queuedAt,
+        sq.lastAttempt as lastAttemptAt,
+        sq.data
+      FROM screenshots s
+      LEFT JOIN sync_queue sq ON sq.entityId = s.id AND sq.entityType = 'screenshot'
+      WHERE s.id = ?
+    `).get(screenshotId) as any;
+    
+    // Check activity periods sync status
+    let periodsSyncQuery: any = { totalPeriods: 0, syncedPeriods: 0, queuedPeriods: 0, maxAttempts: 0 };
+    
+    if (periodIds.length > 0) {
+      periodsSyncQuery = this.db.prepare(`
+        SELECT 
+          COUNT(*) as totalPeriods,
+          SUM(CASE WHEN isSynced = 1 THEN 1 ELSE 0 END) as syncedPeriods,
+          SUM(CASE WHEN sq.id IS NOT NULL THEN 1 ELSE 0 END) as queuedPeriods,
+          MAX(sq.attempts) as maxAttempts
+        FROM activity_periods ap
+        LEFT JOIN sync_queue sq ON sq.entityId = ap.id AND sq.entityType = 'activity_period'
+        WHERE ap.id IN (${periodIds.map(() => '?').join(',')})
+      `).get(...periodIds) as any;
+    }
+    
+    // Get individual activity period sync status
+    let periodsDetails: any[] = [];
+    if (periodIds.length > 0) {
+      periodsDetails = this.db.prepare(`
+        SELECT 
+          ap.id,
+          ap.periodStart,
+          ap.periodEnd,
+          ap.isSynced,
+          sq.id as queueId,
+          sq.attempts,
+          sq.lastAttempt
+        FROM activity_periods ap
+        LEFT JOIN sync_queue sq ON sq.entityId = ap.id AND sq.entityType = 'activity_period'
+        WHERE ap.id IN (${periodIds.map(() => '?').join(',')})
+        ORDER BY ap.periodStart ASC
+      `).all(...periodIds) as any[];
+    }
+    
+    // Get queue position if in queue
+    let queuePosition = 0;
+    if (screenshotSyncQuery?.queueId) {
+      const positionQuery = this.db.prepare(`
+        SELECT COUNT(*) as position
+        FROM sync_queue
+        WHERE createdAt < (SELECT createdAt FROM sync_queue WHERE id = ?)
+        AND attempts < 5
+      `).get(screenshotSyncQuery.queueId) as any;
+      queuePosition = positionQuery?.position || 0;
+    }
+    
+    // Calculate next retry time based on exponential backoff
+    let nextRetryTime = null;
+    if (screenshotSyncQuery?.attempts > 0 && screenshotSyncQuery?.attempts < 5) {
+      const baseDelay = 5000; // 5 seconds
+      const retryDelay = baseDelay * Math.pow(2, screenshotSyncQuery.attempts - 1);
+      const lastAttempt = new Date(screenshotSyncQuery.lastAttemptAt || screenshotSyncQuery.queuedAt);
+      nextRetryTime = new Date(lastAttempt.getTime() + retryDelay);
+    }
+    
+    // Calculate upload percentage (screenshot = 1 item, each period = 1 item)
+    const totalItems = 1 + periodIds.length; // 1 screenshot + N activity periods
+    const screenshotUploaded = screenshotSyncQuery?.screenshotSynced === 1 || !!screenshotSyncQuery?.url;
+    const syncedItems = (screenshotUploaded ? 1 : 0) + (periodsSyncQuery?.syncedPeriods || 0);
+    const uploadPercentage = (syncedItems / totalItems) * 100;
+    
+    // Determine overall sync status
+    let status: 'synced' | 'partial' | 'pending' | 'failed' | 'queued';
+    const allPeriodsSynced = periodsSyncQuery?.syncedPeriods === periodsSyncQuery?.totalPeriods;
+    const hasFailedItems = screenshotSyncQuery?.attempts >= 5 || periodsSyncQuery?.maxAttempts >= 5;
+    
+    if (screenshotUploaded && allPeriodsSynced) {
+      status = 'synced';
+    } else if (hasFailedItems) {
+      status = 'failed';
+    } else if (syncedItems > 0 && syncedItems < totalItems) {
+      // Show partial with percentage only if actively syncing
+      status = 'partial';
+    } else if (screenshotSyncQuery?.queueId || periodsSyncQuery?.queuedPeriods > 0) {
+      status = 'queued';
+    } else if (syncedItems === 0) {
+      status = 'pending';
+    } else {
+      // All items synced but not detected above - mark as synced
+      status = 'synced';
+    }
+    
+    return {
+      status,
+      uploadPercentage: Math.round(uploadPercentage * 10) / 10, // Round to 1 decimal place
+      screenshot: {
+        synced: screenshotUploaded,
+        attempts: screenshotSyncQuery?.attempts || 0,
+        lastError: undefined  // We don't track errors in the current schema
+      },
+      activityPeriods: {
+        total: periodsSyncQuery?.totalPeriods || 0,
+        synced: periodsSyncQuery?.syncedPeriods || 0,
+        queued: periodsSyncQuery?.queuedPeriods || 0,
+        maxAttempts: periodsSyncQuery?.maxAttempts || 0,
+        details: periodsDetails.map(p => ({
+          id: p.id,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          synced: p.isSynced === 1,
+          queued: !!p.queueId,
+          attempts: p.attempts || 0,
+          status: p.isSynced === 1 ? 'synced' : (p.queueId ? (p.attempts >= 5 ? 'failed' : 'queued') : 'pending')
+        }))
+      },
+      queuePosition,
+      nextRetryTime,
+      lastAttemptAt: screenshotSyncQuery?.lastAttemptAt ? new Date(screenshotSyncQuery.lastAttemptAt) : null
+    };
+  }
+  
+  updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
+    const stmt = this.db.prepare(`
+      UPDATE screenshots 
+      SET url = ?, thumbnailUrl = ?, isSynced = 1
+      WHERE id = ?
+    `);
+    
+    stmt.run(url, thumbnailUrl, screenshotId);
+    console.log(`Updated screenshot ${screenshotId} with S3 URLs`);
+  }
+
+  updateScreenshotNotes(screenshotIds: string[], notes: string) {
+    console.log(`[updateScreenshotNotes] Called with ${screenshotIds.length} IDs and notes: "${notes}"`);
+    console.log(`[updateScreenshotNotes] Screenshot IDs:`, screenshotIds);
+    
+    // First check if screenshots exist
+    const checkStmt = this.db.prepare('SELECT id, notes, task FROM screenshots WHERE id = ?');
+    console.log(`[updateScreenshotNotes] Checking existing screenshots...`);
+    for (const id of screenshotIds) {
+      const existing = checkStmt.get(id) as any;
+      if (existing) {
+        console.log(`[updateScreenshotNotes] Screenshot ${id} found - current notes: "${existing.notes}", task: "${existing.task}"`);
+      } else {
+        console.log(`[updateScreenshotNotes] WARNING: Screenshot ${id} NOT FOUND in database!`);
+      }
     }
     
     const stmt = this.db.prepare(`
       UPDATE screenshots 
-      SET s3Url = ?, thumbnailUrl = ?, isSynced = 1
+      SET notes = ?, isSynced = 0
       WHERE id = ?
     `);
     
-    stmt.run(s3Url, thumbnailUrl, screenshotId);
-    console.log(`Updated screenshot ${screenshotId} with S3 URLs`);
+    let updatedCount = 0;
+    const updateTransaction = this.db.transaction((ids: string[]) => {
+      for (const id of ids) {
+        const result = stmt.run(notes, id);
+        console.log(`[updateScreenshotNotes] Update result for ${id}: changes=${result.changes}`);
+        if (result.changes > 0) {
+          updatedCount++;
+          // Add to sync queue for updating in cloud
+          this.addToSyncQueue('screenshot', id, 'update', { notes });
+        }
+      }
+    });
+    
+    updateTransaction(screenshotIds);
+    console.log(`[updateScreenshotNotes] Transaction completed. Updated ${updatedCount}/${screenshotIds.length} screenshots`);
+    
+    // Verify the update
+    console.log(`[updateScreenshotNotes] Verifying updates...`);
+    const verifyStmt = this.db.prepare('SELECT id, notes, task FROM screenshots WHERE id = ?');
+    for (const id of screenshotIds) {
+      const row = verifyStmt.get(id) as any;
+      if (row) {
+        console.log(`[updateScreenshotNotes] After update - Screenshot ${id}: notes="${row.notes}", task="${row.task}"`);
+      } else {
+        console.log(`[updateScreenshotNotes] ERROR: Screenshot ${id} not found after update!`);
+      }
+    }
+    
+    console.log(`[updateScreenshotNotes] Returning success with updatedCount=${updatedCount}`);
+    return { success: true, updatedCount };
+  }
+
+  deleteScreenshots(screenshotIds: string[]) {
+    console.log(`[deleteScreenshots] Called with ${screenshotIds.length} IDs:`, screenshotIds);
+    console.log(`[deleteScreenshots] Screenshot IDs to delete:`, screenshotIds);
+    
+    // First check what we're deleting and collect related data
+    const checkStmt = this.db.prepare('SELECT id, sessionId, localPath, thumbnailPath, isSynced FROM screenshots WHERE id = ?');
+    const getPeriodsStmt = this.db.prepare('SELECT id FROM activity_periods WHERE screenshotId = ?');
+    const filesToDelete: string[] = [];
+    const periodsToUpdate: string[] = [];
+    
+    for (const id of screenshotIds) {
+      const screenshot = checkStmt.get(id) as any;
+      if (screenshot) {
+        console.log(`[deleteScreenshots] Found screenshot ${id} in session ${screenshot.sessionId}, synced: ${screenshot.isSynced}`);
+        if (screenshot.localPath) filesToDelete.push(screenshot.localPath);
+        if (screenshot.thumbnailPath) filesToDelete.push(screenshot.thumbnailPath);
+        
+        // Find activity periods that reference this screenshot
+        const periods = getPeriodsStmt.all(id) as any[];
+        for (const period of periods) {
+          periodsToUpdate.push(period.id);
+        }
+      } else {
+        console.log(`[deleteScreenshots] WARNING: Screenshot ${id} not found`);
+      }
+    }
+    
+    console.log(`[deleteScreenshots] Found ${periodsToUpdate.length} activity periods to update`);
+    
+    // Start transaction for all database operations
+    let deletedCount = 0;
+    const deleteTransaction = this.db.transaction((ids: string[]) => {
+      // First, update activity periods to remove screenshot reference
+      const updatePeriodStmt = this.db.prepare('UPDATE activity_periods SET screenshotId = NULL WHERE screenshotId = ?');
+      for (const id of ids) {
+        updatePeriodStmt.run(id);
+      }
+      
+      // Delete screenshots from database
+      const deleteStmt = this.db.prepare('DELETE FROM screenshots WHERE id = ?');
+      for (const id of ids) {
+        const result = deleteStmt.run(id);
+        if (result.changes > 0) {
+          deletedCount++;
+          console.log(`[deleteScreenshots] Deleted screenshot ${id} from database`);
+        } else {
+          console.log(`[deleteScreenshots] No changes when deleting ${id} - might not exist`);
+        }
+      }
+      
+      // Remove from sync queue (both for screenshot and any related entities)
+      const deleteSyncQueueStmt = this.db.prepare('DELETE FROM sync_queue WHERE entityId = ? AND entityType = ?');
+      for (const id of ids) {
+        deleteSyncQueueStmt.run(id, 'screenshot');
+        // Also mark screenshot for deletion in cloud if it was synced
+        const screenshot = checkStmt.get(id) as any;
+        if (screenshot && screenshot.isSynced) {
+          // Add a delete operation to sync queue
+          this.addToSyncQueue('screenshot', id, 'delete', { deleted: true });
+        }
+      }
+    });
+    
+    try {
+      deleteTransaction(screenshotIds);
+      console.log(`[deleteScreenshots] Database transaction completed. Deleted ${deletedCount} screenshots`);
+    } catch (error) {
+      console.error(`[deleteScreenshots] Database transaction failed:`, error);
+      return { success: false, error: error.message };
+    }
+    
+    // Delete files from disk (outside transaction)
+    const fs = require('fs');
+    let filesDeleted = 0;
+    for (const filePath of filesToDelete) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          filesDeleted++;
+          console.log(`[deleteScreenshots] Deleted file: ${filePath}`);
+        } else {
+          console.log(`[deleteScreenshots] File not found: ${filePath}`);
+        }
+      } catch (error) {
+        console.error(`[deleteScreenshots] Failed to delete file ${filePath}:`, error);
+      }
+    }
+    
+    console.log(`[deleteScreenshots] Operation complete. Deleted ${deletedCount} screenshots from database and ${filesDeleted} files from disk`);
+    return { success: true, deletedCount, filesDeleted };
   }
   
   // Analytics operations
   getTodayStats(userId: string) {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN mode = 'client_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as clientMinutes,
-        COALESCE(SUM(CASE WHEN mode = 'command_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as commandMinutes
+    // Get all periods for today
+    const periodsStmt = this.db.prepare(`
+      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
       FROM activity_periods
       WHERE userId = ? 
         AND date(periodStart / 1000, 'unixepoch') = date('now')
         AND isValid = 1
+      ORDER BY periodStart ASC
     `);
     
-    const stats = stmt.get(userId) as any;
+    const allPeriods = periodsStmt.all(userId) as any[];
+    
+    // Filter periods that should be counted
+    const countablePeriods = allPeriods.filter(period => {
+      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
+      if (period.activityScore >= 4.0) {
+        return true;
+      }
+      
+      // Check if it's Critical (2.5-4.0)
+      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
+        // Check condition 1: Either neighbor is better (>= 4.0)
+        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
+        
+        // Check previous neighbor
+        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check next neighbor
+        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check condition 2: Average activity for the hour is >= 4.0
+        const periodHourStart = new Date(period.periodStart);
+        periodHourStart.setMinutes(0, 0, 0);
+        const periodHourEnd = new Date(periodHourStart);
+        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
+        
+        const hourPeriods = allPeriods.filter(p => 
+          p.periodStart >= periodHourStart.getTime() && 
+          p.periodStart < periodHourEnd.getTime()
+        );
+        
+        if (hourPeriods.length > 0) {
+          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
+          if (avgScore >= 4.0) {
+            return true;
+          }
+        }
+      }
+      
+      // Don't count Inactive periods (< 2.5)
+      return false;
+    });
+    
+    // Calculate stats from countable periods
+    let clientMinutes = 0;
+    let commandMinutes = 0;
+    
+    countablePeriods.forEach(period => {
+      const minutes = (period.periodEnd - period.periodStart) / 60000;
+      if (period.mode === 'client_hours') {
+        clientMinutes += minutes;
+      } else if (period.mode === 'command_hours') {
+        commandMinutes += minutes;
+      }
+    });
     
     return {
-      clientHours: (stats?.clientMinutes || 0) / 60,
-      commandHours: (stats?.commandMinutes || 0) / 60,
-      totalHours: ((stats?.clientMinutes || 0) + (stats?.commandMinutes || 0)) / 60
+      clientHours: clientMinutes / 60,
+      commandHours: commandMinutes / 60,
+      totalHours: (clientMinutes + commandMinutes) / 60
     };
   }
   
   getWeekStats(userId: string) {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN mode = 'client_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as clientMinutes,
-        COALESCE(SUM(CASE WHEN mode = 'command_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as commandMinutes
+    // Get all periods for the last 7 days
+    const periodsStmt = this.db.prepare(`
+      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
       FROM activity_periods
       WHERE userId = ? 
         AND date(periodStart / 1000, 'unixepoch') >= date('now', '-7 days')
         AND isValid = 1
+      ORDER BY periodStart ASC
     `);
     
-    const stats = stmt.get(userId) as any;
+    const allPeriods = periodsStmt.all(userId) as any[];
+    
+    // Filter periods that should be counted
+    const countablePeriods = allPeriods.filter(period => {
+      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
+      if (period.activityScore >= 4.0) {
+        return true;
+      }
+      
+      // Check if it's Critical (2.5-4.0)
+      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
+        // Check condition 1: Either neighbor is better (>= 4.0)
+        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
+        
+        // Check previous neighbor
+        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check next neighbor
+        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check condition 2: Average activity for the hour is >= 4.0
+        const periodHourStart = new Date(period.periodStart);
+        periodHourStart.setMinutes(0, 0, 0);
+        const periodHourEnd = new Date(periodHourStart);
+        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
+        
+        const hourPeriods = allPeriods.filter(p => 
+          p.periodStart >= periodHourStart.getTime() && 
+          p.periodStart < periodHourEnd.getTime()
+        );
+        
+        if (hourPeriods.length > 0) {
+          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
+          if (avgScore >= 4.0) {
+            return true;
+          }
+        }
+      }
+      
+      // Don't count Inactive periods (< 2.5)
+      return false;
+    });
+    
+    // Calculate stats from countable periods
+    let clientMinutes = 0;
+    let commandMinutes = 0;
+    
+    countablePeriods.forEach(period => {
+      const minutes = (period.periodEnd - period.periodStart) / 60000;
+      if (period.mode === 'client_hours') {
+        clientMinutes += minutes;
+      } else if (period.mode === 'command_hours') {
+        commandMinutes += minutes;
+      }
+    });
     
     return {
-      clientHours: (stats?.clientMinutes || 0) / 60,
-      commandHours: (stats?.commandMinutes || 0) / 60,
-      totalHours: ((stats?.clientMinutes || 0) + (stats?.commandMinutes || 0)) / 60
+      clientHours: clientMinutes / 60,
+      commandHours: commandMinutes / 60,
+      totalHours: (clientMinutes + commandMinutes) / 60
     };
   }
   
@@ -909,7 +1488,14 @@ export class LocalDatabase {
     const stmt = this.db.prepare(`
       SELECT * FROM sync_queue 
       WHERE attempts < 5 
-      ORDER BY createdAt ASC 
+      ORDER BY 
+        CASE 
+          WHEN entityType = 'session' THEN 1
+          WHEN entityType = 'screenshot' THEN 2
+          WHEN entityType = 'activity_period' THEN 3
+          ELSE 4
+        END,
+        createdAt DESC 
       LIMIT ?
     `);
     
@@ -917,6 +1503,38 @@ export class LocalDatabase {
   }
   
   markSynced(queueId: string) {
+    // Get the entity info before deleting from queue
+    const queueItem = this.db.prepare('SELECT entityType, entityId FROM sync_queue WHERE id = ?').get(queueId) as any;
+    
+    if (queueItem) {
+      // Update isSynced flag for the entity
+      let updateResult;
+      switch (queueItem.entityType) {
+        case 'activity_period':
+          updateResult = this.db.prepare('UPDATE activity_periods SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          console.log(`Marked activity_period ${queueItem.entityId} as synced (${updateResult.changes} rows updated)`);
+          break;
+        case 'screenshot':
+          updateResult = this.db.prepare('UPDATE screenshots SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          console.log(`Marked screenshot ${queueItem.entityId} as synced (${updateResult.changes} rows updated)`);
+          break;
+        case 'session':
+          updateResult = this.db.prepare('UPDATE sessions SET isSynced = 1 WHERE id = ?').run(queueItem.entityId);
+          console.log(`Marked session ${queueItem.entityId} as synced (${updateResult.changes} rows updated)`);
+          break;
+        case 'command_activity':
+        case 'client_activity':
+          // These don't have isSynced flags in their tables
+          console.log(`Skipping isSynced update for ${queueItem.entityType}`);
+          break;
+        default:
+          console.warn(`Unknown entity type in markSynced: ${queueItem.entityType}`);
+      }
+    } else {
+      console.warn(`Queue item ${queueId} not found when trying to mark as synced`);
+    }
+    
+    // Remove from sync queue
     this.db.prepare('DELETE FROM sync_queue WHERE id = ?').run(queueId);
   }
   
@@ -930,21 +1548,48 @@ export class LocalDatabase {
   
   // Recent notes operations
   saveRecentNote(userId: string, noteText: string) {
+    console.log(`LocalDatabase: saveRecentNote called with userId: ${userId}, noteText: "${noteText}"`);
+    
     const existing = this.db.prepare(
       'SELECT * FROM recent_notes WHERE userId = ? AND noteText = ?'
     ).get(userId, noteText) as any;
     
     if (existing) {
+      console.log(`LocalDatabase: Note already exists, updating use count`);
       this.db.prepare(
         'UPDATE recent_notes SET useCount = useCount + 1, lastUsedAt = ? WHERE id = ?'
       ).run(Date.now(), existing.id);
     } else {
+      console.log(`LocalDatabase: Creating new note entry`);
       const stmt = this.db.prepare(`
         INSERT INTO recent_notes (id, userId, noteText, lastUsedAt, useCount, createdAt)
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       
       stmt.run(crypto.randomUUID(), userId, noteText, Date.now(), 1, Date.now());
+    }
+    
+    // Also update the active session's task field with the new note
+    console.log(`LocalDatabase: Looking for active session for user: ${userId}`);
+    const activeSession = this.getActiveSession(userId);
+    if (activeSession) {
+      console.log(`LocalDatabase: Found active session: ${activeSession.id} with current task: "${activeSession.task}"`);
+      const updateStmt = this.db.prepare('UPDATE sessions SET task = ? WHERE id = ?');
+      const result = updateStmt.run(noteText, activeSession.id);
+      console.log(`LocalDatabase: UPDATE result - changes: ${result.changes}, lastInsertRowid: ${result.lastInsertRowid}`);
+      console.log(`LocalDatabase: Updated active session ${activeSession.id} task from "${activeSession.task}" to: "${noteText}"`);
+      
+      // Add to sync queue if session is already synced
+      const isSynced = this.db.prepare('SELECT isSynced FROM sessions WHERE id = ?').get(activeSession.id) as any;
+      if (isSynced && isSynced.isSynced === 1) {
+        // Add update operation to sync queue
+        this.addToSyncQueue('session', activeSession.id, 'update', {
+          task: noteText
+        });
+        console.log(`LocalDatabase: Added session task update to sync queue`);
+      }
+    } else {
+      console.log(`LocalDatabase: No active session found for user: ${userId}`);
     }
   }
   
