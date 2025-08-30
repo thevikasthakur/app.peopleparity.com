@@ -124,7 +124,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   } else if (score >= 2.5) {
     return { name: 'Critical', color: '#B71C1C', bgColor: 'bg-red-800', textColor: 'text-red-900' }; // Dark Red
   } else {
-    return { name: 'Inactive', color: '#555555', bgColor: 'bg-gray-700', textColor: 'text-gray-800' }; // Dark Gray
+    return { name: 'Inactive', color: '#9CA3AF', bgColor: 'bg-gray-300', textColor: 'text-gray-500' }; // Light Gray (disabled look)
   }
 }
 
@@ -532,7 +532,9 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   <img
                     src={getSafeUrl(screenshot.thumbnailUrl)}
                     alt={`Screenshot at ${new Date(screenshot.timestamp).toLocaleTimeString()}`}
-                    className="w-full h-full object-cover"
+                    className={`w-full h-full object-cover ${
+                      percentageToTenScale(screenshot.activityScore) < 2.5 ? 'opacity-50' : ''
+                    }`}
                     loading="lazy"
                     onError={(e) => {
                       // Fallback to a placeholder image if S3 URL fails
@@ -1055,7 +1057,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">Productive Keys:</span>
-                                    <span className="font-medium">{metrics.keyboard.keysPerMinute.toFixed(1)}</span>
+                                    <span className="font-medium">{metrics.keyboard.productiveKeystrokes}</span>
                                   </div>
                                   {metrics.keyboard.typingRhythm && (
                                     <div className="mt-1 pt-1 border-t">
@@ -1171,11 +1173,24 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                       ))}
                                     </div>
                                   )}
+                                  {metrics.scoreCalculation.bonus?.mouseActivityBonus > 0 && (
+                                    <div className="mt-1 pt-1 border-t">
+                                      <div className="flex justify-between">
+                                        <span className="text-green-600 font-medium">Bonus:</span>
+                                        <span className="text-green-600 font-medium">
+                                          +{(metrics.scoreCalculation.bonus.mouseActivityBonus / 10).toFixed(1)}
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] text-green-500">
+                                        {metrics.scoreCalculation.bonus.description}
+                                      </div>
+                                    </div>
+                                  )}
                                   <div className="mt-1 pt-1 border-t">
                                     <div className="flex justify-between">
-                                      <span className="text-gray-600">Raw Score:</span>
+                                      <span className="text-gray-600">Base Score:</span>
                                       <span className="font-medium">
-                                        {percentageToTenScale(metrics.scoreCalculation.rawScore).toFixed(1)}
+                                        {percentageToTenScale((metrics.scoreCalculation.rawScore || 0) - (metrics.scoreCalculation.bonus?.mouseActivityBonus || 0)).toFixed(1)}
                                       </span>
                                     </div>
                                     <div className="flex justify-between font-bold">

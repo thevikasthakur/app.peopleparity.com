@@ -1061,42 +1061,158 @@ export class LocalDatabase {
   
   // Analytics operations
   getTodayStats(userId: string) {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN mode = 'client_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as clientMinutes,
-        COALESCE(SUM(CASE WHEN mode = 'command_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as commandMinutes
+    // Get all periods for today
+    const periodsStmt = this.db.prepare(`
+      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
       FROM activity_periods
       WHERE userId = ? 
         AND date(periodStart / 1000, 'unixepoch') = date('now')
         AND isValid = 1
+      ORDER BY periodStart ASC
     `);
     
-    const stats = stmt.get(userId) as any;
+    const allPeriods = periodsStmt.all(userId) as any[];
+    
+    // Filter periods that should be counted
+    const countablePeriods = allPeriods.filter(period => {
+      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
+      if (period.activityScore >= 4.0) {
+        return true;
+      }
+      
+      // Check if it's Critical (2.5-4.0)
+      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
+        // Check condition 1: Either neighbor is better (>= 4.0)
+        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
+        
+        // Check previous neighbor
+        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check next neighbor
+        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check condition 2: Average activity for the hour is >= 4.0
+        const periodHourStart = new Date(period.periodStart);
+        periodHourStart.setMinutes(0, 0, 0);
+        const periodHourEnd = new Date(periodHourStart);
+        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
+        
+        const hourPeriods = allPeriods.filter(p => 
+          p.periodStart >= periodHourStart.getTime() && 
+          p.periodStart < periodHourEnd.getTime()
+        );
+        
+        if (hourPeriods.length > 0) {
+          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
+          if (avgScore >= 4.0) {
+            return true;
+          }
+        }
+      }
+      
+      // Don't count Inactive periods (< 2.5)
+      return false;
+    });
+    
+    // Calculate stats from countable periods
+    let clientMinutes = 0;
+    let commandMinutes = 0;
+    
+    countablePeriods.forEach(period => {
+      const minutes = (period.periodEnd - period.periodStart) / 60000;
+      if (period.mode === 'client_hours') {
+        clientMinutes += minutes;
+      } else if (period.mode === 'command_hours') {
+        commandMinutes += minutes;
+      }
+    });
     
     return {
-      clientHours: (stats?.clientMinutes || 0) / 60,
-      commandHours: (stats?.commandMinutes || 0) / 60,
-      totalHours: ((stats?.clientMinutes || 0) + (stats?.commandMinutes || 0)) / 60
+      clientHours: clientMinutes / 60,
+      commandHours: commandMinutes / 60,
+      totalHours: (clientMinutes + commandMinutes) / 60
     };
   }
   
   getWeekStats(userId: string) {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN mode = 'client_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as clientMinutes,
-        COALESCE(SUM(CASE WHEN mode = 'command_hours' THEN (periodEnd - periodStart) / 60000 ELSE 0 END), 0) as commandMinutes
+    // Get all periods for the last 7 days
+    const periodsStmt = this.db.prepare(`
+      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
       FROM activity_periods
       WHERE userId = ? 
         AND date(periodStart / 1000, 'unixepoch') >= date('now', '-7 days')
         AND isValid = 1
+      ORDER BY periodStart ASC
     `);
     
-    const stats = stmt.get(userId) as any;
+    const allPeriods = periodsStmt.all(userId) as any[];
+    
+    // Filter periods that should be counted
+    const countablePeriods = allPeriods.filter(period => {
+      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
+      if (period.activityScore >= 4.0) {
+        return true;
+      }
+      
+      // Check if it's Critical (2.5-4.0)
+      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
+        // Check condition 1: Either neighbor is better (>= 4.0)
+        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
+        
+        // Check previous neighbor
+        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check next neighbor
+        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
+          return true;
+        }
+        
+        // Check condition 2: Average activity for the hour is >= 4.0
+        const periodHourStart = new Date(period.periodStart);
+        periodHourStart.setMinutes(0, 0, 0);
+        const periodHourEnd = new Date(periodHourStart);
+        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
+        
+        const hourPeriods = allPeriods.filter(p => 
+          p.periodStart >= periodHourStart.getTime() && 
+          p.periodStart < periodHourEnd.getTime()
+        );
+        
+        if (hourPeriods.length > 0) {
+          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
+          if (avgScore >= 4.0) {
+            return true;
+          }
+        }
+      }
+      
+      // Don't count Inactive periods (< 2.5)
+      return false;
+    });
+    
+    // Calculate stats from countable periods
+    let clientMinutes = 0;
+    let commandMinutes = 0;
+    
+    countablePeriods.forEach(period => {
+      const minutes = (period.periodEnd - period.periodStart) / 60000;
+      if (period.mode === 'client_hours') {
+        clientMinutes += minutes;
+      } else if (period.mode === 'command_hours') {
+        commandMinutes += minutes;
+      }
+    });
     
     return {
-      clientHours: (stats?.clientMinutes || 0) / 60,
-      commandHours: (stats?.commandMinutes || 0) / 60,
-      totalHours: ((stats?.clientMinutes || 0) + (stats?.commandMinutes || 0)) / 60
+      clientHours: clientMinutes / 60,
+      commandHours: commandMinutes / 60,
+      totalHours: (clientMinutes + commandMinutes) / 60
     };
   }
   

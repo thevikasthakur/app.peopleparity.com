@@ -249,6 +249,10 @@ export class MetricsCollector {
     timeMetrics: any
   ): {
     components: any;
+    bonus: {
+      mouseActivityBonus: number;
+      description: string;
+    };
     penalties: any;
     formula: string;
     rawScore: number;
@@ -349,9 +353,27 @@ export class MetricsCollector {
     // Apply penalties
     const totalPenalties = penalties.botPenalty + penalties.idlePenalty + penalties.suspiciousActivityPenalty;
     
-    // Scale to 0-100 and apply penalties
-    const rawScore = weightedScore * 10;
-    const finalScore = Math.max(0, Math.min(100, rawScore - totalPenalties));
+    // Scale to 0-100 and apply penalties for base score
+    const baseScore = Math.max(0, Math.min(100, (weightedScore * 10) - totalPenalties));
+    
+    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
+    let mouseBonus = 0;
+    let bonusDescription = 'No bonus';
+    const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    
+    if (totalMouseActivity > 15 && totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+      if (totalMouseActivity > 20) {
+        mouseBonus = 30; // Maximum bonus for very active mouse use (30%)
+        bonusDescription = 'High mouse activity (30% bonus)';
+      } else {
+        mouseBonus = 25; // Bonus for high activity (25%)
+        bonusDescription = 'Mouse activity (25% bonus)';
+      }
+    }
+    
+    // Add bonus on top of base score, but cap total at 100
+    const rawScore = baseScore + mouseBonus;
+    const finalScore = Math.min(100, rawScore);
     
     // Debug logging for transparency
     console.log('PeopleParity Scoring:', {
@@ -372,13 +394,21 @@ export class MetricsCollector {
       weights: '25% + 45% + 10% + 10% + 10%',
       weighted: weightedScore.toFixed(1),
       penalties: totalPenalties.toFixed(1),
+      baseScore: baseScore.toFixed(0),
+      mouseBonus: mouseBonus > 0 ? `+${mouseBonus}` : '0',
       final: finalScore.toFixed(0)
     });
     
-    const formula = `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}]`;
+    const formula = mouseBonus > 0 
+      ? `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}] + mouseBonus[${mouseBonus}]`
+      : `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}]`;
     
     return {
       components,
+      bonus: {
+        mouseActivityBonus: mouseBonus,
+        description: bonusDescription
+      },
       penalties,
       formula,
       rawScore: Math.round(rawScore),
@@ -644,6 +674,10 @@ export class MetricsCollector {
     periodDuration: number
   ): {
     components: any;
+    bonus: {
+      mouseActivityBonus: number;
+      description: string;
+    };
     penalties: any;
     formula: string;
     rawScore: number;
@@ -710,14 +744,38 @@ export class MetricsCollector {
     // Apply penalties
     const totalPenalties = Object.values(penalties).reduce((sum, p) => sum + p, 0);
     
-    // Scale to 0-100 and apply penalties
-    const rawScore = weightedScore * 10;
-    const finalScore = Math.max(0, Math.min(100, rawScore - (totalPenalties * 10)));
+    // Scale to 0-100 and apply penalties for base score
+    const baseScore = Math.max(0, Math.min(100, (weightedScore * 10) - (totalPenalties * 10)));
+    
+    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
+    let mouseBonus = 0;
+    let bonusDescription = 'No bonus';
+    const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    
+    if (totalMouseActivity > 15 && totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+      if (totalMouseActivity > 20) {
+        mouseBonus = 30; // Maximum bonus for very active mouse use (30%)
+        bonusDescription = 'High mouse activity (30% bonus)';
+      } else {
+        mouseBonus = 25; // Bonus for high activity (25%)
+        bonusDescription = 'Mouse activity (25% bonus)';
+      }
+    }
+    
+    // Add bonus on top of base score, but cap total at 100
+    const rawScore = baseScore + mouseBonus;
+    const finalScore = Math.min(100, rawScore);
 
-    const formula = `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)})`;
+    const formula = mouseBonus > 0
+      ? `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)}) + mouseBonus(${mouseBonus})`
+      : `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)})`;
 
     return {
       components,
+      bonus: {
+        mouseActivityBonus: mouseBonus,
+        description: bonusDescription
+      },
       penalties,
       formula,
       rawScore: Math.round(rawScore),

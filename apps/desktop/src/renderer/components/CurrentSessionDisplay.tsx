@@ -15,49 +15,79 @@ export function CurrentSessionDisplay({ screenshots, currentSession }: CurrentSe
       return;
     }
 
-    // Count time based on non-critical screenshots (score > 4.0)
-    const sessionStart = new Date(currentSession.startTime);
-    const now = new Date();
-    
-    // Filter screenshots from current session that are non-critical (score > 4.0 out of 10)
-    const nonCriticalScreenshots = screenshots.filter(s => {
-      const screenshotTime = new Date(s.timestamp);
-      // Convert percentage to 10-scale
-      const scoreOutOf10 = Math.round(s.activityScore) / 10;
-      return screenshotTime >= sessionStart && scoreOutOf10 > 4.0;
-    });
-
-    // Each non-critical screenshot contributes 10 minutes
-    const totalMinutes = nonCriticalScreenshots.length * 10;
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-
-    const formattedTime = [
-      hours.toString().padStart(2, '0'),
-      minutes.toString().padStart(2, '0')
-    ].join(':');
-
-    setElapsedTime(formattedTime);
-
-    const interval = setInterval(() => {
-      // Recalculate on interval to keep it updated
-      const updatedNonCriticalScreenshots = screenshots.filter(s => {
-        const screenshotTime = new Date(s.timestamp);
+    const calculateElapsedTime = () => {
+      const sessionStart = new Date(currentSession.startTime);
+      
+      // Sort screenshots by timestamp for neighbor checking
+      const sessionScreenshots = screenshots
+        .filter(s => new Date(s.timestamp) >= sessionStart)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      
+      // Filter screenshots that should be counted
+      const countableScreenshots = sessionScreenshots.filter((s, index) => {
         const scoreOutOf10 = Math.round(s.activityScore) / 10;
-        return screenshotTime >= sessionStart && scoreOutOf10 > 4.0;
+        
+        // Count if score >= 4.0 (Poor, Fair, Good)
+        if (scoreOutOf10 >= 4.0) {
+          return true;
+        }
+        
+        // Check if it's Critical (2.5-4.0)
+        if (scoreOutOf10 >= 2.5 && scoreOutOf10 < 4.0) {
+          // Check condition 1: Either neighbor is better (>= 4.0)
+          // Check previous neighbor
+          if (index > 0) {
+            const prevScore = Math.round(sessionScreenshots[index - 1].activityScore) / 10;
+            if (prevScore >= 4.0) return true;
+          }
+          
+          // Check next neighbor
+          if (index < sessionScreenshots.length - 1) {
+            const nextScore = Math.round(sessionScreenshots[index + 1].activityScore) / 10;
+            if (nextScore >= 4.0) return true;
+          }
+          
+          // Check condition 2: Average activity for the hour is >= 4.0
+          const screenshotTime = new Date(s.timestamp);
+          const hourStart = new Date(screenshotTime);
+          hourStart.setMinutes(0, 0, 0);
+          const hourEnd = new Date(hourStart);
+          hourEnd.setHours(hourEnd.getHours() + 1);
+          
+          const hourScreenshots = sessionScreenshots.filter(hs => {
+            const hsTime = new Date(hs.timestamp);
+            return hsTime >= hourStart && hsTime < hourEnd;
+          });
+          
+          if (hourScreenshots.length > 0) {
+            const avgScore = hourScreenshots.reduce((sum, hs) => 
+              sum + (Math.round(hs.activityScore) / 10), 0) / hourScreenshots.length;
+            if (avgScore >= 4.0) return true;
+          }
+        }
+        
+        // Don't count Inactive periods (< 2.5)
+        return false;
       });
-      
-      const updatedTotalMinutes = updatedNonCriticalScreenshots.length * 10;
-      const updatedHours = Math.floor(updatedTotalMinutes / 60);
-      const updatedMinutes = updatedTotalMinutes % 60;
-      
-      const updatedTime = [
-        updatedHours.toString().padStart(2, '0'),
-        updatedMinutes.toString().padStart(2, '0')
+
+      // Each countable screenshot contributes 10 minutes
+      const totalMinutes = countableScreenshots.length * 10;
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+
+      return [
+        hours.toString().padStart(2, '0'),
+        minutes.toString().padStart(2, '0')
       ].join(':');
-      
-      setElapsedTime(updatedTime);
-    }, 60000); // Update every minute
+    };
+
+    // Set initial time
+    setElapsedTime(calculateElapsedTime());
+
+    // Update every minute
+    const interval = setInterval(() => {
+      setElapsedTime(calculateElapsedTime());
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [currentSession, screenshots]);
