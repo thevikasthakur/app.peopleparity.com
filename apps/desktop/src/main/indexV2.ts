@@ -183,7 +183,19 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('notes:save', async (_, noteText: string) => {
-    return databaseService.saveNote(noteText);
+    console.log('IPC: notes:save called with:', noteText);
+    const result = await databaseService.saveNote(noteText);
+    console.log('IPC: notes:save completed');
+    return result;
+  });
+  
+  ipcMain.handle('notes:get-current', async () => {
+    // Get the current activity from the main window's localStorage
+    const result = await mainWindow?.webContents.executeJavaScript(
+      'localStorage.getItem("currentActivity")'
+    );
+    console.log('Current activity from UI:', result);
+    return result || 'Working';
   });
   
   // Leaderboard handler

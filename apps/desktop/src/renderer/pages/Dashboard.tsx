@@ -82,7 +82,7 @@ export function Dashboard() {
     setShowActivityModal(true);
   };
 
-  const handleActivitySelected = (activity: string) => {
+  const handleActivitySelected = async (activity: string) => {
     setCurrentActivity(activity);
     localStorage.setItem('currentActivity', activity);
     
@@ -93,13 +93,30 @@ export function Dashboard() {
       return updated;
     });
     
+    // Save to database (so it updates the session task and gets saved to screenshot notes)
+    console.log('Dashboard: Saving activity to database:', activity);
+    try {
+      await window.electronAPI.notes.save(activity);
+      console.log('Dashboard: Activity saved successfully:', activity);
+    } catch (error) {
+      console.error('Dashboard: Failed to save activity to database:', error);
+    }
+    
     // Close the activity modal
     setShowActivityModal(false);
     
-    // If we don't have an active session, proceed to task selector
+    // If we don't have an active session, start one with just the activity (no task selector)
     if (!currentSession) {
-      setPendingMode(mode);
-      setShowTaskSelector(true);
+      console.log('No active session, starting new session with activity:', activity);
+      try {
+        await startSession('command_hours', activity, undefined);
+        console.log('Session started successfully with activity:', activity);
+      } catch (error) {
+        console.error('Failed to start session:', error);
+        // Fall back to showing task selector if session start fails
+        setPendingMode(mode);
+        setShowTaskSelector(true);
+      }
     }
   };
 

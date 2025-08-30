@@ -74,10 +74,13 @@ export function ActivityModal({
 
   const handleSave = () => {
     const finalActivity = activityText.trim();
+    console.log('ActivityModal: handleSave called with:', finalActivity);
     // Don't allow saving without an activity
     if (!finalActivity) {
+      console.log('ActivityModal: No activity text, not saving');
       return;
     }
+    console.log('ActivityModal: Calling onActivityChange with:', finalActivity);
     onActivityChange(finalActivity);
     onClose();
   };

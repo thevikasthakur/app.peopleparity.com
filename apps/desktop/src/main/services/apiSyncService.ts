@@ -490,9 +490,15 @@ export class ApiSyncService {
             }
             console.log('Session synced successfully with ID:', sessionResponse.data.session.id);
           } else if (item.operation === 'update') {
-            await this.api.patch(`/sessions/${item.entityId}`, {
-              endTime: new Date(data.endTime).toISOString()
-            });
+            const updateData: any = {};
+            if (data.endTime) {
+              updateData.endTime = new Date(data.endTime).toISOString();
+            }
+            if (data.task !== undefined) {
+              updateData.task = data.task;
+            }
+            await this.api.patch(`/sessions/${item.entityId}`, updateData);
+            console.log(`Session ${item.entityId} updated with:`, updateData);
           }
           break;
           

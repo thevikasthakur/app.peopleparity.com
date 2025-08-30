@@ -610,7 +610,8 @@ export class ActivityTrackerV2 extends EventEmitter {
         sessionId: screenshotData.sessionId.startsWith('TEMP-') ? undefined : screenshotData.sessionId,
         localPath: screenshotData.localPath,
         thumbnailPath: screenshotData.thumbnailPath || '',
-        capturedAt: screenshotData.capturedAt
+        capturedAt: screenshotData.capturedAt,
+        notes: screenshotData.notes  // Pass the notes from the session
       });
       
       if (savedScreenshot) {
@@ -630,25 +631,48 @@ export class ActivityTrackerV2 extends EventEmitter {
     const clicksPerMin = this.currentMetrics.mouseClicks / minutesPassed;
     const scrollsPerMin = this.currentMetrics.mouseScrolls / minutesPassed;
     const uniqueKeysPerMin = this.currentMetrics.uniqueKeys.size / minutesPassed;
+    const mouseDistancePerMin = this.currentMetrics.mouseDistance / minutesPassed;
     
     // Calculate score components
     let score = 0;
     
-    // Keyboard activity (0-40 points)
-    score += Math.min(40, keysPerMin * 2);
+    // Keyboard activity (0-35 points) - Reduced slightly to make room for mouse bonus
+    score += Math.min(35, keysPerMin * 2);
     
-    // Mouse activity (0-20 points)
-    score += Math.min(20, clicksPerMin * 5);
+    // Mouse clicks (0-25 points) - Increased from 20
+    score += Math.min(25, clicksPerMin * 8); // Increased multiplier from 5 to 8
+    
+    // Mouse movement (0-15 points) - New component for mouse distance
+    // Normal mouse movement is 1000-5000 pixels per minute
+    score += Math.min(15, mouseDistancePerMin / 200); // 3000px = 15 points
     
     // Scroll activity (0-10 points)
-    score += Math.min(10, scrollsPerMin * 2);
+    score += Math.min(10, scrollsPerMin * 3); // Increased multiplier from 2 to 3
     
-    // Key diversity (0-20 points)
-    score += Math.min(20, uniqueKeysPerMin * 4);
+    // Key diversity (0-15 points) - Reduced from 20
+    score += Math.min(15, uniqueKeysPerMin * 3);
     
     // Active time bonus (0-10 points)
     const activePercentage = (this.activeSeconds / 60) * 100;
     score += Math.min(10, activePercentage / 10);
+    
+    // Mouse activity bonus (0-30 points) - Only for high mouse activity
+    // Award bonus points for sustained HIGH mouse activity without being suspicious
+    let mouseBonus = 0;
+    const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    
+    if (totalMouseActivity > 15 && totalMouseActivity < 50) { // High activity but not suspicious
+      if (totalMouseActivity > 20) {
+        mouseBonus = 30; // Maximum bonus for very active mouse use
+      } else {
+        mouseBonus = 25; // Bonus for high activity (15-20 units)
+      }
+      
+      // Apply mouse bonus only if there's meaningful mouse activity
+      if (clicksPerMin > 0 || mouseDistancePerMin > 500) {
+        score += mouseBonus;
+      }
+    }
     
     return Math.min(100, Math.round(score));
   }

@@ -186,17 +186,20 @@ export class ScreenshotServiceV2 {
     
     // Try to get active session, but don't fail if none exists
     let session = this.db.getActiveSession();
+    console.log('📷 Screenshot capture - Active session from DB:', session ? `${session.id} (task: ${session.task})` : 'none');
     
     // If no active session, check with activity tracker
     let sessionId: string | undefined = session?.id;
     if (!sessionId && this.activityTracker) {
       const trackerSessionId = this.activityTracker.getCurrentSessionId();
+      console.log('📷 Activity tracker session ID:', trackerSessionId);
       sessionId = trackerSessionId || undefined;
       if (sessionId) {
         // Get session details from database
         const trackerSession = (this.db as any).getSession?.(sessionId);
         if (trackerSession) {
           session = trackerSession;
+          console.log('📷 Session from tracker:', `${trackerSession.id} (task: ${trackerSession.task})`);
         }
       }
     }
@@ -233,6 +236,10 @@ export class ScreenshotServiceV2 {
         .jpeg({ quality: 70 })
         .toFile(thumbnailPath);
       
+      // Get the current activity directly from the database service
+      const currentActivity = (this.db as any).getCurrentActivityNote?.() || session?.task || 'Working';
+      console.log(`📷 Using activity for screenshot: "${currentActivity}"`);
+      
       // Create screenshot data
       const screenshotData = {
         id: crypto.randomUUID(),
@@ -242,7 +249,7 @@ export class ScreenshotServiceV2 {
         thumbnailPath,
         capturedAt: captureTime,
         mode: session?.mode || 'command_hours' as 'client_hours' | 'command_hours',
-        notes: session?.task || undefined
+        notes: currentActivity  // Use the current activity from UI
       };
       
       // Store in activity tracker (which will add to window manager or save directly)

@@ -11,11 +11,26 @@ export class DatabaseService {
   private activityTracker: any = null; // Will be set by index.ts
   private api: AxiosInstance | null = null;
   private store: Store;
+  private currentActivity: string = 'Working'; // Store current activity
 
   constructor() {
     this.localDb = new LocalDatabase();
     this.store = new Store();
     this.initializeApiClient();
+    
+    // Initialize current activity from the most recent note if available
+    try {
+      const user = this.localDb.getCurrentUser();
+      if (user) {
+        const recentNotes = this.localDb.getRecentNotes(user.id, 1);
+        if (recentNotes && recentNotes.length > 0) {
+          this.currentActivity = recentNotes[0];
+          console.log(`DatabaseService: Initialized current activity to: "${this.currentActivity}"`);
+        }
+      }
+    } catch (error) {
+      console.log('DatabaseService: Could not initialize current activity from recent notes');
+    }
   }
   
   private initializeApiClient() {
@@ -308,6 +323,7 @@ export class DatabaseService {
     activityScore?: number;
     relatedPeriodIds?: string[];
     sessionId?: string;
+    notes?: string;  // Add notes parameter
   }) {
     let session = this.localDb.getActiveSession(this.getCurrentUserId());
     let sessionId = data.sessionId || session?.id;
@@ -334,6 +350,9 @@ export class DatabaseService {
     
     const mode = session?.mode || 'command_hours';
     
+    // Use provided notes, or fall back to session task
+    const notes = data.notes || session?.task || 'Idle';
+    
     return this.localDb.saveScreenshot({
       id: data.id,  // Pass through the ID if provided
       userId: this.getCurrentUserId(),
@@ -342,7 +361,7 @@ export class DatabaseService {
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
       mode: mode,
-      task: session?.task || 'Idle'
+      task: notes  // Use the determined notes value
     });
   }
 
@@ -643,7 +662,20 @@ export class DatabaseService {
   }
 
   async saveNote(noteText: string) {
-    this.localDb.saveRecentNote(this.getCurrentUserId(), noteText);
+    console.log(`DatabaseService: saveNote called with: "${noteText}"`);
+    const userId = this.getCurrentUserId();
+    console.log(`DatabaseService: Current user ID: ${userId}`);
+    
+    // Store the current activity for screenshot service to use
+    this.currentActivity = noteText;
+    console.log(`DatabaseService: Updated current activity to: "${noteText}"`);
+    
+    this.localDb.saveRecentNote(userId, noteText);
+    console.log(`DatabaseService: saveNote completed`);
+  }
+  
+  getCurrentActivityNote(): string {
+    return this.currentActivity;
   }
 
   // Leaderboard

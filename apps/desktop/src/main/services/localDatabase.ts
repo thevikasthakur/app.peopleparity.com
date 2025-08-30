@@ -1238,21 +1238,48 @@ export class LocalDatabase {
   
   // Recent notes operations
   saveRecentNote(userId: string, noteText: string) {
+    console.log(`LocalDatabase: saveRecentNote called with userId: ${userId}, noteText: "${noteText}"`);
+    
     const existing = this.db.prepare(
       'SELECT * FROM recent_notes WHERE userId = ? AND noteText = ?'
     ).get(userId, noteText) as any;
     
     if (existing) {
+      console.log(`LocalDatabase: Note already exists, updating use count`);
       this.db.prepare(
         'UPDATE recent_notes SET useCount = useCount + 1, lastUsedAt = ? WHERE id = ?'
       ).run(Date.now(), existing.id);
     } else {
+      console.log(`LocalDatabase: Creating new note entry`);
       const stmt = this.db.prepare(`
         INSERT INTO recent_notes (id, userId, noteText, lastUsedAt, useCount, createdAt)
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       
       stmt.run(crypto.randomUUID(), userId, noteText, Date.now(), 1, Date.now());
+    }
+    
+    // Also update the active session's task field with the new note
+    console.log(`LocalDatabase: Looking for active session for user: ${userId}`);
+    const activeSession = this.getActiveSession(userId);
+    if (activeSession) {
+      console.log(`LocalDatabase: Found active session: ${activeSession.id} with current task: "${activeSession.task}"`);
+      const updateStmt = this.db.prepare('UPDATE sessions SET task = ? WHERE id = ?');
+      const result = updateStmt.run(noteText, activeSession.id);
+      console.log(`LocalDatabase: UPDATE result - changes: ${result.changes}, lastInsertRowid: ${result.lastInsertRowid}`);
+      console.log(`LocalDatabase: Updated active session ${activeSession.id} task from "${activeSession.task}" to: "${noteText}"`);
+      
+      // Add to sync queue if session is already synced
+      const isSynced = this.db.prepare('SELECT isSynced FROM sessions WHERE id = ?').get(activeSession.id) as any;
+      if (isSynced && isSynced.isSynced === 1) {
+        // Add update operation to sync queue
+        this.addToSyncQueue('session', activeSession.id, 'update', {
+          task: noteText
+        });
+        console.log(`LocalDatabase: Added session task update to sync queue`);
+      }
+    } else {
+      console.log(`LocalDatabase: No active session found for user: ${userId}`);
     }
   }
   

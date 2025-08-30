@@ -121,8 +121,10 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
     return { name: 'Low', color: '#FFA500', bgColor: 'bg-orange-500', textColor: 'text-orange-700' }; // Orange
   } else if (score >= 4.0) {
     return { name: 'Poor', color: '#FF4444', bgColor: 'bg-red-500', textColor: 'text-red-700' }; // Red
-  } else {
+  } else if (score >= 2.5) {
     return { name: 'Critical', color: '#B71C1C', bgColor: 'bg-red-800', textColor: 'text-red-900' }; // Dark Red
+  } else {
+    return { name: 'Inactive', color: '#555555', bgColor: 'bg-gray-700', textColor: 'text-gray-800' }; // Dark Gray
   }
 }
 
@@ -432,8 +434,10 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
         let currentStartIdx = 0;
 
         hourScreenshots.forEach((screenshot, idx) => {
-          const activity = screenshot ? (screenshot.activityName || screenshot.task || '(no activity name)') : '';
-          if (activity !== currentActivity) {
+          const activity = screenshot ? (screenshot.notes || '(no activity name)') : '';
+          
+          // If we hit an empty slot or activity changes, close current group
+          if (!screenshot || activity !== currentActivity) {
             if (currentCount > 0) {
               activityGroups.push({ 
                 activity: currentActivity, 
@@ -441,14 +445,24 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                 startIdx: currentStartIdx 
               });
             }
-            currentActivity = activity;
-            currentCount = screenshot ? 1 : 0;
-            currentStartIdx = idx;
-          } else if (screenshot) {
+            
+            // Start new group only if we have a screenshot
+            if (screenshot) {
+              currentActivity = activity;
+              currentCount = 1;
+              currentStartIdx = idx;
+            } else {
+              currentActivity = '';
+              currentCount = 0;
+              currentStartIdx = idx + 1;
+            }
+          } else {
+            // Same activity, increment count
             currentCount++;
           }
         });
         
+        // Add final group if exists
         if (currentCount > 0) {
           activityGroups.push({ 
             activity: currentActivity, 
@@ -456,6 +470,8 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
             startIdx: currentStartIdx 
           });
         }
+        
+        console.log(`Hour ${hour} activity groups:`, activityGroups);
 
         return (
           <div key={hour} className="space-y-2">
@@ -603,23 +619,30 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
           
           {/* Activity Ribbons */}
           {activityGroups.length > 0 && (
-            <div className="relative h-6 bg-gray-100 rounded overflow-hidden flex">
-              {activityGroups.map((group, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-center text-[11px] font-medium text-white px-1 border-r border-white/30"
-                  style={{
-                    width: `${(group.count / 6) * 100}%`,
-                    marginLeft: idx === 0 ? `${(group.startIdx / 6) * 100}%` : 0,
-                    backgroundColor: hourLevel.color + 'DD'
-                  }}
-                  title={group.activity}
-                >
-                  <span className="text-center">
-                    {group.activity}
-                  </span>
-                </div>
-              ))}
+            <div className="relative h-6 bg-gray-100 rounded overflow-hidden">
+              {activityGroups.map((group, idx) => {
+                // Calculate position and width based on grid positions
+                const leftPosition = (group.startIdx / 6) * 100;
+                const width = (group.count / 6) * 100;
+                
+                return (
+                  <div
+                    key={idx}
+                    className="absolute h-full flex items-center justify-center text-[11px] font-medium text-white px-1"
+                    style={{
+                      left: `${leftPosition}%`,
+                      width: `${width}%`,
+                      backgroundColor: hourLevel.color + 'DD',
+                      borderRight: '1px solid rgba(255, 255, 255, 0.3)'
+                    }}
+                    title={group.activity}
+                  >
+                    <span className="text-center truncate">
+                      {group.activity}
+                    </span>
+                  </div>
+                );
+              })}
               {/* Hour Score on Right */}
               <div 
                 className="absolute right-0 top-0 h-full px-2 flex items-center text-[10px] font-bold text-white"

@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPeriodsWithMetrics: (periodIds: string[]) =>
       ipcRenderer.invoke('activity:get-periods-with-metrics', periodIds),
   },
+  notes: {
+    save: (noteText: string) =>
+      ipcRenderer.invoke('notes:save', noteText),
+    getRecent: () =>
+      ipcRenderer.invoke('notes:get-recent'),
+  },
   debug: {
     clearSyncQueue: () => 
       ipcRenderer.invoke('debug:clear-sync-queue'),
