@@ -67,26 +67,24 @@ export class ScreenshotsService {
   }
 
   async create(createScreenshotDto: {
+    id?: string; // Optional ID from desktop app
     userId: string;
     sessionId: string; // Required - direct relationship to session
     url: string;
     thumbnailUrl?: string;
     capturedAt: Date;
     mode: 'client_hours' | 'command_hours';
-    aggregatedScore?: number;
-    activityPeriodIds?: string[]; // Receive as array
     notes?: string;
   }) {
     // Create the main screenshot record with properly populated columns
     const screenshot = this.screenshotsRepository.create({
+      ...(createScreenshotDto.id && { id: createScreenshotDto.id }), // Use provided ID if available
       userId: createScreenshotDto.userId,
       sessionId: createScreenshotDto.sessionId, // Direct relationship to session
       url: createScreenshotDto.url,
       thumbnailUrl: createScreenshotDto.thumbnailUrl,
       capturedAt: createScreenshotDto.capturedAt,
       mode: createScreenshotDto.mode,
-      aggregatedScore: createScreenshotDto.aggregatedScore || 0, // Average score from 10 periods
-      activityPeriodIds: createScreenshotDto.activityPeriodIds ? JSON.stringify(createScreenshotDto.activityPeriodIds) : null, // Convert array to JSON string
       notes: createScreenshotDto.notes || '' // Copy of session task
     });
     
@@ -110,5 +108,9 @@ export class ScreenshotsService {
     }
 
     return query.getMany();
+  }
+
+  async findById(id: string) {
+    return this.screenshotsRepository.findOne({ where: { id } });
   }
 }

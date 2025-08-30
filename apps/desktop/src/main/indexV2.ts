@@ -127,25 +127,8 @@ function setupIpcHandlers() {
     return true;
   });
   
-  ipcMain.handle('auth:check-session', async () => {
-    return apiSyncService.checkSession();
-  });
-
-  ipcMain.handle('auth:verify-token', async (_, token: string) => {
-    return apiSyncService.verifyToken(token);
-  });
-  
-  ipcMain.handle('auth:saml-login', async () => {
-    // Navigate main window to SAML login URL
-    if (mainWindow) {
-      mainWindow.loadURL('http://localhost:3001/api/auth/saml/login');
-      return { success: true };
-    }
-    return { success: false, error: 'Main window not available' };
-  });
-  
   // Session handlers
-  ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
+  ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
     return activityTracker.startSession(mode, projectId, task);
   });
   
@@ -161,7 +144,7 @@ function setupIpcHandlers() {
     return databaseService.getCurrentActivity();
   });
   
-  ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
+  ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) => {
     // Stop current session and start new one
     await activityTracker.stopSession();
     return activityTracker.startSession(mode, projectId, task);
@@ -177,10 +160,6 @@ function setupIpcHandlers() {
     return databaseService.getTodayScreenshots();
   });
   
-  ipcMain.handle('screenshots:get-by-date', async (_, date: string) => {
-    return databaseService.getScreenshotsByDate(new Date(date));
-  });
-  
   ipcMain.handle('screenshots:update-notes', async (_, screenshotIds: string[], notes: string) => {
     return databaseService.updateScreenshotNotes(screenshotIds, notes);
   });
@@ -190,24 +169,12 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('screenshots:delete', async (_, screenshotIds: string[]) => {
-    console.log('[IPC] screenshots:delete handler called with IDs:', screenshotIds);
-    try {
-      const result = await databaseService.deleteScreenshots(screenshotIds);
-      console.log('[IPC] Delete operation result:', result);
-      return result;
-    } catch (error) {
-      console.error('[IPC] Error in delete handler:', error);
-      return { success: false, error: error.message };
-    }
+    return databaseService.deleteScreenshots(screenshotIds);
   });
   
   // Activity handlers
   ipcMain.handle('activity:get-period-details', async (_, periodId: string) => {
     return databaseService.getActivityPeriodDetails(periodId);
-  });
-  
-  ipcMain.handle('activity:get-periods-with-metrics', async (_, periodIds: string[]) => {
-    return databaseService.getActivityPeriodsWithMetrics(periodIds);
   });
   
   // Notes handlers
@@ -216,7 +183,19 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('notes:save', async (_, noteText: string) => {
-    return databaseService.saveNote(noteText);
+    console.log('IPC: notes:save called with:', noteText);
+    const result = await databaseService.saveNote(noteText);
+    console.log('IPC: notes:save completed');
+    return result;
+  });
+  
+  ipcMain.handle('notes:get-current', async () => {
+    // Get the current activity from the main window's localStorage
+    const result = await mainWindow?.webContents.executeJavaScript(
+      'localStorage.getItem("currentActivity")'
+    );
+    console.log('Current activity from UI:', result);
+    return result || 'Working';
   });
   
   // Leaderboard handler

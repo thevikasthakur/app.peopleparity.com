@@ -26,7 +26,9 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         password: configService.get('DATABASE_PASSWORD'),
         database: configService.get('DATABASE_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: process.env.NODE_ENV === 'development',
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
+        synchronize: false, // Disabled after manual schema fix
+        migrationsRun: false, // Disable migrations temporarily
         logging: process.env.NODE_ENV === 'development',
       }),
       inject: [ConfigService],

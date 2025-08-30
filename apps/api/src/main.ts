@@ -21,9 +21,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   
   const port = process.env.PORT || 3001;
-  await app.listen(port);
+  // Force IPv4 to avoid connection issues with desktop app
+  await app.listen(port, '127.0.0.1');
   
-  console.log(`🚀 People Parity API running on http://localhost:${port}/api`);
+  console.log(`🚀 People Parity API running on http://127.0.0.1:${port}/api`);
 }
 
 bootstrap();

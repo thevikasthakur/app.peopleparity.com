@@ -68,6 +68,19 @@ body {
   transition: var(--transition);
 }
 
+/* Electron window dragging */
+.draggable-header {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.draggable-header button,
+.draggable-header input,
+.draggable-header a,
+.draggable-header .no-drag {
+  -webkit-app-region: no-drag;
+}
+
 @layer components {
   .glass-card {
     @apply backdrop-blur-xl bg-white/80 rounded-2xl shadow-xl border border-white/20;
