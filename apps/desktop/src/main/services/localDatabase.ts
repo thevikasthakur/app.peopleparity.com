@@ -1,6 +1,5 @@
 import Database from 'better-sqlite3';
 import path from 'path';
-import { app } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 
@@ -68,9 +67,9 @@ export class LocalDatabase {
   private dbPath: string;
   
   constructor() {
-    // Store database in user's app data directory
-    const userDataPath = app.getPath('userData');
-    this.dbPath = path.join(userDataPath, 'local_tracking.db');
+    // Store database in project root directory
+    const projectRoot = path.resolve(__dirname, '..', '..', '..'); // Navigate up from src/main/services to project root
+    this.dbPath = path.join(projectRoot, 'local_tracking.db');
     
     // Ensure directory exists
     const dir = path.dirname(this.dbPath);
@@ -109,8 +108,7 @@ export class LocalDatabase {
               sessionId TEXT NOT NULL,
               localPath TEXT NOT NULL,
               thumbnailPath TEXT,
-              url TEXT,
-              thumbnailUrl TEXT,
+              s3Url TEXT,
               capturedAt INTEGER NOT NULL,
               mode TEXT NOT NULL CHECK(mode IN ('client_hours', 'command_hours')),
               notes TEXT,
@@ -143,13 +141,12 @@ export class LocalDatabase {
           this.db.exec(`
             INSERT INTO screenshots_new (
               id, userId, sessionId, localPath, thumbnailPath,
-              url, thumbnailUrl, capturedAt, mode, notes,
+              s3Url, capturedAt, mode, notes,
               isDeleted, isSynced, createdAt
             )
             SELECT 
               id, userId, sessionId, localPath, thumbnailPath,
               ${urlExpression},
-              ${thumbnailExpression},
               capturedAt, mode, notes,
               isDeleted, isSynced, createdAt
             FROM screenshots
@@ -266,6 +263,7 @@ export class LocalDatabase {
         activityScore REAL DEFAULT 0,
         isValid INTEGER DEFAULT 1,
         classification TEXT,
+        metricsBreakdown TEXT,  -- JSON string of detailed metrics
         isSynced INTEGER DEFAULT 0,
         createdAt INTEGER NOT NULL,
         FOREIGN KEY (sessionId) REFERENCES sessions(id),
@@ -840,7 +838,7 @@ export class LocalDatabase {
       sessionId: data.sessionId,
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath || null,
-      url: null,
+      s3Url: null,
       capturedAt: data.capturedAt.getTime(),
       mode: data.mode,
       notes: notes,  // Copy from session task
@@ -851,10 +849,10 @@ export class LocalDatabase {
     
     const stmt = this.db.prepare(`
       INSERT INTO screenshots (
-        id, userId, sessionId, localPath, thumbnailPath, url,
+        id, userId, sessionId, localPath, thumbnailPath, s3Url,
         capturedAt, mode, notes, isDeleted, isSynced, createdAt
       ) VALUES (
-        @id, @userId, @sessionId, @localPath, @thumbnailPath, @url,
+        @id, @userId, @sessionId, @localPath, @thumbnailPath, @s3Url,
         @capturedAt, @mode, @notes, @isDeleted, @isSynced, @createdAt
       )
     `);
@@ -973,7 +971,7 @@ export class LocalDatabase {
     const screenshotSyncQuery = this.db.prepare(`
       SELECT 
         s.isSynced as screenshotSynced,
-        s.url,
+        s.s3Url,
         sq.id as queueId,
         sq.attempts,
         sq.createdAt as queuedAt,
@@ -1042,7 +1040,7 @@ export class LocalDatabase {
     
     // Calculate upload percentage (screenshot = 1 item, each period = 1 item)
     const totalItems = 1 + periodIds.length; // 1 screenshot + N activity periods
-    const screenshotUploaded = screenshotSyncQuery?.screenshotSynced === 1 || !!screenshotSyncQuery?.url;
+    const screenshotUploaded = screenshotSyncQuery?.screenshotSynced === 1 || !!screenshotSyncQuery?.s3Url;
     const syncedItems = (screenshotUploaded ? 1 : 0) + (periodsSyncQuery?.syncedPeriods || 0);
     const uploadPercentage = (syncedItems / totalItems) * 100;
     
@@ -1099,12 +1097,12 @@ export class LocalDatabase {
   updateScreenshotUrls(screenshotId: string, url: string, thumbnailUrl: string) {
     const stmt = this.db.prepare(`
       UPDATE screenshots 
-      SET url = ?, thumbnailUrl = ?, isSynced = 1
+      SET s3Url = ?, isSynced = 1
       WHERE id = ?
     `);
     
-    stmt.run(url, thumbnailUrl, screenshotId);
-    console.log(`Updated screenshot ${screenshotId} with S3 URLs`);
+    stmt.run(url, screenshotId);
+    console.log(`Updated screenshot ${screenshotId} with S3 URL`);
   }
 
   updateScreenshotNotes(screenshotIds: string[], notes: string) {
@@ -1229,7 +1227,7 @@ export class LocalDatabase {
       console.log(`[deleteScreenshots] Database transaction completed. Deleted ${deletedCount} screenshots`);
     } catch (error) {
       console.error(`[deleteScreenshots] Database transaction failed:`, error);
-      return { success: false, error: error.message };
+      return { success: false, error: (error as Error).message };
     }
     
     // Delete files from disk (outside transaction)

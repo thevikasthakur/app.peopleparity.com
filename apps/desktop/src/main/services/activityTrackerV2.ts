@@ -62,6 +62,7 @@ export class ActivityTrackerV2 extends EventEmitter {
   
   // Timers
   private periodTimer: NodeJS.Timeout | null = null;
+  private periodStartTimeout: NodeJS.Timeout | null = null;
   private activeTimeTimer: NodeJS.Timeout | null = null;
   
   // Keys configuration
@@ -338,6 +339,11 @@ export class ActivityTrackerV2 extends EventEmitter {
       this.periodTimer = null;
     }
     
+    if (this.periodStartTimeout) {
+      clearTimeout(this.periodStartTimeout);
+      this.periodStartTimeout = null;
+    }
+    
     if (this.activeTimeTimer) {
       clearInterval(this.activeTimeTimer);
       this.activeTimeTimer = null;
@@ -462,7 +468,7 @@ export class ActivityTrackerV2 extends EventEmitter {
     console.log(`⏰ Period timer will start in ${msUntilNextMinute}ms`);
     
     // Wait until next minute boundary
-    setTimeout(() => {
+    this.periodStartTimeout = setTimeout(() => {
       // Save initial period
       this.savePeriodData();
       

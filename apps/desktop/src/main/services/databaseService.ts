@@ -1,6 +1,5 @@
 import { LocalDatabase } from './localDatabase';
 import path from 'path';
-import { app } from 'electron';
 import crypto from 'crypto';
 import axios, { AxiosInstance } from 'axios';
 import Store from 'electron-store';
@@ -802,8 +801,10 @@ export class DatabaseService {
     const sizeInBytes = this.localDb.getDatabaseSize();
     const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
     
+    // Database is now in project root
+    const projectRoot = path.resolve(__dirname, '..', '..', '..');
     return {
-      path: path.join(app.getPath('userData'), 'local_tracking.db'),
+      path: path.join(projectRoot, 'local_tracking.db'),
       sizeInMB: `${sizeInMB} MB`,
       sizeInBytes
     };

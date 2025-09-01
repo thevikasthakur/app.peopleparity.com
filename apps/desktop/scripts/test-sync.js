@@ -7,7 +7,8 @@ const fs = require('fs');
 const Store = require('electron-store');
 
 const store = new Store();
-const dbPath = path.join(require('os').homedir(), 'Library/Application Support/Electron/local_tracking.db');
+// Database is now in project root
+const dbPath = path.join(__dirname, '..', 'local_tracking.db');
 const db = new Database(dbPath);
 
 const token = store.get('authToken');

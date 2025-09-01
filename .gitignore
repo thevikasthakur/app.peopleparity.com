@@ -112,3 +112,30 @@ site/
 
 # Turborepo
 .turbo/
+
+## Local DB files
+/apps/desktop/local_tracking.db
+/apps/desktop/local_tracking.db-shm
+/apps/desktop/local_tracking.db-wal
+/apps/desktop/local_tracking.db-journal
+/apps/desktop/local_tracking.db.bak
+/apps/desktop/local_tracking.db.bak-shm
+/apps/desktop/local_tracking.db.bak-wal
+/apps/desktop/local_tracking.db.bak-journal
+/apps/desktop/src/main/local_tracking.db
+/apps/desktop/src/main/local_tracking.db-shm
+/apps/desktop/src/main/local_tracking.db-wal
+/apps/desktop/src/main/local_tracking.db-journal
+/apps/desktop/src/main/local_tracking.db.bak
+/apps/desktop/src/main/local_tracking.db.bak-shm
+/apps/desktop/src/main/local_tracking.db.bak-wal
+/apps/desktop/src/main/local_tracking.db.bak-journal
+/apps/desktop/src/main/services/local_tracking.db
+/apps/desktop/src/main/services/local_tracking.db-shm
+/apps/desktop/src/main/services/local_tracking.db-wal
+/apps/desktop/src/main/services/local_tracking.db-journal
+/apps/desktop/src/main/services/local_tracking.db.bak
+/apps/desktop/src/main/services/local_tracking.db.bak-shm
+/apps/desktop/src/main/services/local_tracking.db.bak-wal
+/apps/desktop/src/main/services/local_tracking.db.bak-journal
+
