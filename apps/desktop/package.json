@@ -5,6 +5,10 @@
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
+    "start:safe": "node scripts/start.js dev",
+    "start:prod": "node scripts/start.js start",
+    "check:deps": "node scripts/check-native-deps.js",
+    "rebuild": "npm rebuild better-sqlite3 && npm rebuild",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\" \"npm run electron:dev\"",
     "dev:no-electron": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "electron:dev": "wait-on tcp:5174 && wait-on dist/main/index.js && node electron-dev.js",
@@ -57,6 +61,7 @@
     "concurrently": "^8.2.2",
     "electron": "^28.2.0",
     "electron-builder": "^24.9.1",
+    "electron-rebuild": "^3.2.9",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",

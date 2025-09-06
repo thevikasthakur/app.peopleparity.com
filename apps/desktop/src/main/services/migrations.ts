@@ -91,6 +91,7 @@ export class DatabaseMigrator {
               endTime INTEGER,
               isActive INTEGER DEFAULT 1,
               task TEXT,
+              appVersion TEXT,
               isSynced INTEGER DEFAULT 0,
               createdAt INTEGER NOT NULL
             )
@@ -420,6 +421,28 @@ export class DatabaseMigrator {
             DELETE FROM browser_activities 
             WHERE activityPeriodId NOT IN (SELECT id FROM activity_periods)
           `);
+        }
+      },
+      {
+        version: 7,
+        name: 'add_app_version_to_sessions',
+        up: (db) => {
+          console.log('Migration 7: Adding appVersion column to sessions table...');
+          
+          const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").get();
+          
+          if (tableExists) {
+            const columns = db.prepare("PRAGMA table_info(sessions)").all() as any[];
+            const columnNames = columns.map(col => col.name);
+            
+            if (!columnNames.includes('appVersion')) {
+              console.log('Adding appVersion column...');
+              db.exec('ALTER TABLE sessions ADD COLUMN appVersion TEXT');
+              
+              // Set a default version for existing sessions
+              db.exec(`UPDATE sessions SET appVersion = '1.0.0' WHERE appVersion IS NULL`);
+            }
+          }
         }
       }
     ];

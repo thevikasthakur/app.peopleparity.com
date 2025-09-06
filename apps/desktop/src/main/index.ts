@@ -42,8 +42,6 @@ const createWindow = () => {
 };
 
 app.whenReady().then(async () => {
-  createWindow();
-  
   console.log('\n🚀 Initializing application services...');
   
   // Initialize database
@@ -55,6 +53,19 @@ app.whenReady().then(async () => {
   activityTracker = new ActivityTrackerV2(databaseService);
   databaseService.setActivityTracker(activityTracker as any); // Type cast for compatibility
   console.log('✅ Activity tracker V2 initialized');
+  
+  // Initialize other services
+  apiSyncService = new ApiSyncService(databaseService, store);
+  browserBridge = new BrowserExtensionBridge();
+  console.log('✅ API sync and browser bridge initialized');
+  
+  // Setup IPC handlers BEFORE creating window
+  setupIpcHandlers();
+  console.log('✅ IPC handlers registered');
+  
+  // Create window AFTER handlers are registered
+  createWindow();
+  console.log('✅ Main window created');
   
   // Restore existing active session if any
   try {
@@ -79,19 +90,12 @@ app.whenReady().then(async () => {
   screenshotService.setActivityTracker(activityTracker);
   console.log('✅ Screenshot service V2 initialized');
   
-  // Initialize other services
-  apiSyncService = new ApiSyncService(databaseService, store);
-  browserBridge = new BrowserExtensionBridge();
-  console.log('✅ API sync and browser bridge initialized');
-  
   // Start services
   apiSyncService.start();
   browserBridge.start();
   screenshotService.start();
   console.log('✅ All services started');
   
-  setupIpcHandlers();
-  console.log('✅ IPC handlers registered');
   console.log('\n🎉 Application ready!\n');
 });
 
@@ -136,11 +140,33 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('auth:saml-login', async () => {
+    console.log('SAML login requested');
     // Navigate main window to SAML login URL
     if (mainWindow) {
-      mainWindow.loadURL('http://localhost:3001/api/auth/saml/login');
+      const samlUrl = 'http://localhost:3001/api/auth/saml/login';
+      console.log(`Navigating to SAML URL: ${samlUrl}`);
+      
+      // Handle navigation and authentication
+      mainWindow.loadURL(samlUrl);
+      
+      // Listen for successful authentication redirect
+      mainWindow.webContents.on('will-redirect', (event, url) => {
+        console.log('SAML redirect detected:', url);
+        // Check if this is a successful auth redirect
+        if (url.includes('token=') || url.includes('auth/success')) {
+          // Extract token from URL if present
+          const urlParams = new URL(url).searchParams;
+          const token = urlParams.get('token');
+          if (token) {
+            console.log('SAML authentication successful, token received');
+            // You might want to handle the token here
+          }
+        }
+      });
+      
       return { success: true };
     }
+    console.error('Main window not available for SAML login');
     return { success: false, error: 'Main window not available' };
   });
   
