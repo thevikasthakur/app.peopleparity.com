@@ -81,12 +81,21 @@ export function useTracker() {
     const handleIdleStatus = (event: any, idle: boolean) => {
       setIsIdle(idle);
     };
+    
+    const handleSessionUpdate = (event: any, data: any) => {
+      console.log('Session update received:', data);
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    };
 
     window.electronAPI?.on('idle-status', handleIdleStatus);
+    window.electronAPI?.on('session-update', handleSessionUpdate);
+    
     return () => {
       window.electronAPI?.off('idle-status', handleIdleStatus);
+      window.electronAPI?.off('session-update', handleSessionUpdate);
     };
-  }, []);
+  }, [queryClient]);
 
   return {
     currentSession: dashboardData.currentSession,

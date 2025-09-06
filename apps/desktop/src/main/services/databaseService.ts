@@ -145,7 +145,7 @@ export class DatabaseService {
     task?: string;
     startTime: Date;
   }) {
-    const session = this.localDb.createSession({
+    const session = await this.localDb.createSession({
       userId: this.getCurrentUserId(),
       mode: data.mode,
       projectId: data.projectId,
@@ -356,7 +356,7 @@ export class DatabaseService {
     return this.localDb.saveScreenshot({
       id: data.id,  // Pass through the ID if provided
       userId: this.getCurrentUserId(),
-      sessionId: sessionId,
+      sessionId: sessionId!,  // We know sessionId is defined at this point
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
@@ -432,7 +432,7 @@ export class DatabaseService {
         activity: session.task || 'Working...',
         mode: session.mode === 'client_hours' ? 'client' : 'command',
         projectName: projects.find(p => p.id === session.projectId)?.name,
-        isActive: true
+        isActive: Boolean(session.isActive)
       } : null,
       todayStats: {
         clientHours: todayStats.clientHours,

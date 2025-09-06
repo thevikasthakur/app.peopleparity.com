@@ -28,8 +28,16 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         synchronize: false, // Disabled after manual schema fix
-        migrationsRun: false, // Disable migrations temporarily
+        migrationsRun: true, // Enable migrations to run automatically
         logging: process.env.NODE_ENV === 'development',
+        ssl: configService.get('DATABASE_HOST')?.includes('supabase.com') 
+          ? { rejectUnauthorized: false }
+          : false,
+        connectTimeoutMS: 30000,
+        extra: {
+          max: 10,
+          connectionTimeoutMillis: 30000,
+        },
       }),
       inject: [ConfigService],
     }),

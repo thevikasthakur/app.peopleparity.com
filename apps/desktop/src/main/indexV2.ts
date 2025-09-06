@@ -79,6 +79,31 @@ app.whenReady().then(async () => {
   screenshotService.setActivityTracker(activityTracker);
   console.log('✅ Screenshot service V2 initialized');
   
+  // Listen for session stop events to stop screenshot service
+  activityTracker.on('session:stopped', () => {
+    console.log('📷 Stopping screenshot service due to session stop');
+    screenshotService.stop();
+    
+    // Notify renderer that session has stopped
+    if (mainWindow) {
+      mainWindow.webContents.send('session-update', { isActive: false });
+    }
+  });
+  
+  // Listen for session start events to start screenshot service
+  activityTracker.on('session:started', (session: any) => {
+    console.log('📷 Starting screenshot service for new session');
+    screenshotService.start();
+    
+    // Notify renderer that session has started
+    if (mainWindow) {
+      mainWindow.webContents.send('session-update', { 
+        isActive: true, 
+        session: session 
+      });
+    }
+  });
+  
   // Initialize other services
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();

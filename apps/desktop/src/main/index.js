@@ -60,6 +60,32 @@ electron_1.app.whenReady().then(async () => {
         console.error('Failed to restore session:', error);
     }
     screenshotService = new screenshotService_1.ScreenshotService(databaseService);
+    
+    // Listen for session stop events to stop screenshot service
+    activityTracker.on('session:stopped', () => {
+        console.log('📷 Stopping screenshot service due to session stop');
+        screenshotService.stop();
+        
+        // Notify renderer that session has stopped
+        if (mainWindow) {
+            mainWindow.webContents.send('session-update', { isActive: false });
+        }
+    });
+    
+    // Listen for session start events to start screenshot service
+    activityTracker.on('session:started', (session) => {
+        console.log('📷 Starting screenshot service for new session');
+        screenshotService.start();
+        
+        // Notify renderer that session has started
+        if (mainWindow) {
+            mainWindow.webContents.send('session-update', { 
+                isActive: true, 
+                session: session 
+            });
+        }
+    });
+    
     apiSyncService = new apiSyncService_1.ApiSyncService(databaseService, store);
     browserBridge = new browserExtensionBridge_1.BrowserExtensionBridge();
     // Start API sync service

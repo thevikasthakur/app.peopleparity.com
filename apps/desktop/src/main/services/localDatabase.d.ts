@@ -17,6 +17,11 @@ interface Session {
     endTime: number | null;
     isActive: number;
     task: string | null;
+    appVersion?: string | null;
+    deviceInfo?: string | null;
+    realIpAddress?: string | null;
+    location?: string | null;
+    isVpnDetected?: number;
     isSynced: number;
     createdAt: number;
 }
@@ -73,7 +78,7 @@ export declare class LocalDatabase {
         projectId?: string;
         projectName?: string;
         task?: string;
-    }): Session;
+    }): Promise<Session>;
     endActiveSessions(userId: string): void;
     getActiveSession(userId: string): Session | null;
     getCurrentActivityPeriod(sessionId: string): any;

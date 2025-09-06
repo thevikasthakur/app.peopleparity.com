@@ -479,20 +479,49 @@ export class ApiSyncService {
         case 'session':
           console.log('Syncing session:', item.entityId);
           if (item.operation === 'create') {
+            // Parse location if it's a string
+            let location = data.location;
+            if (location && typeof location === 'string') {
+              try {
+                location = JSON.parse(location);
+              } catch (e) {
+                console.warn('Failed to parse location:', e);
+                location = null;
+              }
+            }
+            
             const sessionResponse = await this.api.post('/sessions', {
               id: item.entityId, // Use the local session ID
               ...data,
-              startTime: new Date(data.startTime).toISOString()
+              startTime: new Date(data.startTime).toISOString(),
+              // Include the new metadata fields
+              appVersion: data.appVersion,
+              deviceInfo: data.deviceInfo,
+              realIpAddress: data.realIpAddress,
+              location: location,
+              isVpnDetected: data.isVpnDetected === 1 || data.isVpnDetected === true
             });
             
             if (!sessionResponse.data.success) {
               throw new Error(`Session creation failed: ${sessionResponse.data.message}`);
             }
             console.log('Session synced successfully with ID:', sessionResponse.data.session.id);
+            console.log('Session metadata synced:', {
+              appVersion: data.appVersion,
+              hostname: data.deviceInfo || 'Not provided',
+              realIpAddress: data.realIpAddress,
+              location: location,
+              isVpnDetected: data.isVpnDetected
+            });
           } else if (item.operation === 'update') {
             const updateData: any = {};
             if (data.endTime) {
               updateData.endTime = new Date(data.endTime).toISOString();
+              // When ending a session, always set isActive to false
+              updateData.isActive = false;
+            }
+            if (data.hasOwnProperty('isActive')) {
+              updateData.isActive = data.isActive;
             }
             if (data.task !== undefined) {
               updateData.task = data.task;

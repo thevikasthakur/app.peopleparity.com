@@ -4,6 +4,7 @@ import { app } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import { DatabaseMigrator } from './migrations';
+import { TrackingMetadataService } from './trackingMetadata';
 import * as packageJson from '../../../package.json';
 
 // Local database only stores current user's tracking data
@@ -30,6 +31,10 @@ interface Session {
   isActive: number;
   task: string | null;
   appVersion: string | null;
+  deviceInfo?: string | null;
+  realIpAddress?: string | null;
+  location?: string | null;
+  isVpnDetected?: number;
   isSynced: number;
   createdAt: number;
 }
@@ -161,15 +166,19 @@ export class LocalDatabase {
   }
   
   // Session operations
-  createSession(data: {
+  async createSession(data: {
     userId: string;
     mode: 'client_hours' | 'command_hours';
     projectId?: string;
     projectName?: string;
     task?: string;
-  }): Session {
+  }): Promise<Session> {
     // End any active sessions first
     this.endActiveSessions(data.userId);
+    
+    // Get tracking metadata
+    const metadataService = TrackingMetadataService.getInstance();
+    const metadata = await metadataService.getTrackingMetadata();
     
     const session: Session = {
       id: crypto.randomUUID(),
@@ -182,13 +191,17 @@ export class LocalDatabase {
       isActive: 1,
       task: data.task || null,
       appVersion: packageJson.version || '1.0.0',
+      deviceInfo: metadata.deviceInfo,
+      realIpAddress: metadata.realIpAddress,
+      location: metadata.location ? JSON.stringify(metadata.location) : null,
+      isVpnDetected: metadata.isVpnDetected ? 1 : 0,
       isSynced: 0,
       createdAt: Date.now()
     };
     
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, userId, projectId, projectName, mode, startTime, endTime, isActive, task, appVersion, isSynced, createdAt)
-      VALUES (@id, @userId, @projectId, @projectName, @mode, @startTime, @endTime, @isActive, @task, @appVersion, @isSynced, @createdAt)
+      INSERT INTO sessions (id, userId, projectId, projectName, mode, startTime, endTime, isActive, task, appVersion, deviceInfo, realIpAddress, location, isVpnDetected, isSynced, createdAt)
+      VALUES (@id, @userId, @projectId, @projectName, @mode, @startTime, @endTime, @isActive, @task, @appVersion, @deviceInfo, @realIpAddress, @location, @isVpnDetected, @isSynced, @createdAt)
     `);
     
     stmt.run(session);
@@ -200,21 +213,30 @@ export class LocalDatabase {
   }
   
   endActiveSessions(userId: string) {
+    const endTime = Date.now();
+    
+    // First get the active sessions before updating them
+    const activeSessions = this.db.prepare(
+      'SELECT id FROM sessions WHERE userId = ? AND isActive = 1'
+    ).all(userId);
+    
+    // Update all active sessions to inactive with endTime
     const stmt = this.db.prepare(`
       UPDATE sessions 
       SET isActive = 0, endTime = ?, isSynced = 0
       WHERE userId = ? AND isActive = 1
     `);
-    const result = stmt.run(Date.now(), userId);
+    const result = stmt.run(endTime, userId);
     
     if (result.changes > 0) {
-      // Add to sync queue
-      const sessions = this.db.prepare(
-        'SELECT id FROM sessions WHERE userId = ? AND isActive = 0 AND endTime IS NOT NULL'
-      ).all(userId);
+      console.log(`Ended ${result.changes} active session(s) for user ${userId}`);
       
-      sessions.forEach((session: any) => {
-        this.addToSyncQueue('session', session.id, 'update', { endTime: Date.now() });
+      // Add each ended session to sync queue
+      activeSessions.forEach((session: any) => {
+        this.addToSyncQueue('session', session.id, 'update', { 
+          endTime: endTime,
+          isActive: 0
+        });
       });
     }
   }

@@ -43,6 +43,21 @@ export class Session {
   @Column({ nullable: true })
   task: string;
 
+  @Column({ nullable: true })
+  appVersion: string;
+
+  @Column({ type: 'text', nullable: true })
+  deviceInfo: string; // Stores hostname of the device
+
+  @Column({ nullable: true, length: 45 })
+  realIpAddress: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  location: { lat: number; lon: number } | null;
+
+  @Column({ default: false })
+  isVpnDetected: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

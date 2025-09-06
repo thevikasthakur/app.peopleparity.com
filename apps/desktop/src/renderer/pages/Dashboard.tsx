@@ -172,8 +172,21 @@ export function Dashboard() {
     }
   };
 
+  const [isStopping, setIsStopping] = useState(false);
+  const [showStopConfirmation, setShowStopConfirmation] = useState(false);
+
   const handleStopTracking = async () => {
-    await stopSession();
+    setIsStopping(true);
+    try {
+      await stopSession();
+      setShowStopConfirmation(true);
+      // Hide confirmation after 3 seconds
+      setTimeout(() => setShowStopConfirmation(false), 3000);
+    } catch (error) {
+      console.error('Failed to stop session:', error);
+    } finally {
+      setIsStopping(false);
+    }
   };
 
   return (
@@ -182,6 +195,18 @@ export function Dashboard() {
       <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center z-50">
         <span className="text-xs text-gray-500 font-medium">People Parity Tracker</span>
       </div>
+      
+      {/* Stop Confirmation Notification */}
+      {showStopConfirmation && (
+        <div className="fixed top-12 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in-down">
+          <div className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="font-medium">Tracking stopped successfully!</span>
+          </div>
+        </div>
+      )}
       
       {/* Content with padding to account for fixed header */}
       <div className="p-6 pt-12">
@@ -210,10 +235,20 @@ export function Dashboard() {
               ) : (
                 <button
                   onClick={handleStopTracking}
-                  className="btn-secondary flex items-center gap-2"
+                  disabled={isStopping}
+                  className={`btn-secondary flex items-center gap-2 ${isStopping ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  <Square className="w-4 h-4" />
-                  Stop Tracking
+                  {isStopping ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                      Stopping...
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-4 h-4" />
+                      Stop Tracking
+                    </>
+                  )}
                 </button>
               )}
               

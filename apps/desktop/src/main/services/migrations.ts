@@ -92,6 +92,10 @@ export class DatabaseMigrator {
               isActive INTEGER DEFAULT 1,
               task TEXT,
               appVersion TEXT,
+              deviceInfo TEXT,
+              realIpAddress TEXT,
+              location TEXT,
+              isVpnDetected INTEGER DEFAULT 0,
               isSynced INTEGER DEFAULT 0,
               createdAt INTEGER NOT NULL
             )
@@ -441,6 +445,44 @@ export class DatabaseMigrator {
               
               // Set a default version for existing sessions
               db.exec(`UPDATE sessions SET appVersion = '1.0.0' WHERE appVersion IS NULL`);
+            }
+          }
+        }
+      },
+      {
+        version: 8,
+        name: 'add_tracking_metadata_columns',
+        up: (db) => {
+          console.log('Migration 8: Adding tracking metadata columns to sessions table...');
+          
+          const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").get();
+          
+          if (tableExists) {
+            const columns = db.prepare("PRAGMA table_info(sessions)").all() as any[];
+            const columnNames = columns.map(col => col.name);
+            
+            // Add deviceInfo column
+            if (!columnNames.includes('deviceInfo')) {
+              console.log('Adding deviceInfo column...');
+              db.exec('ALTER TABLE sessions ADD COLUMN deviceInfo TEXT');
+            }
+            
+            // Add realIpAddress column (VPN-proof IP)
+            if (!columnNames.includes('realIpAddress')) {
+              console.log('Adding realIpAddress column...');
+              db.exec('ALTER TABLE sessions ADD COLUMN realIpAddress TEXT');
+            }
+            
+            // Add location column (stores JSON with lat, lon)
+            if (!columnNames.includes('location')) {
+              console.log('Adding location column...');
+              db.exec('ALTER TABLE sessions ADD COLUMN location TEXT');
+            }
+            
+            // Add isVpnDetected flag
+            if (!columnNames.includes('isVpnDetected')) {
+              console.log('Adding isVpnDetected column...');
+              db.exec('ALTER TABLE sessions ADD COLUMN isVpnDetected INTEGER DEFAULT 0');
             }
           }
         }
