@@ -88,6 +88,21 @@ function startDesktopApp() {
   return desktopProcess;
 }
 
+function killPortProcess(port) {
+  try {
+    // Try to get PID using lsof
+    const pid = execSync(`lsof -t -i:${port} 2>/dev/null`).toString().trim();
+    if (pid) {
+      log(`   Found process ${pid} using port ${port}, killing it...`, 'yellow');
+      execSync(`kill -9 ${pid} 2>/dev/null`);
+      return true;
+    }
+  } catch (e) {
+    // Port is free or lsof not available
+  }
+  return false;
+}
+
 async function main() {
   // Banner
   console.log(colors.magenta);
@@ -100,6 +115,15 @@ async function main() {
   let desktopProcess = null;
   
   try {
+    // Step 0: Clean up any existing processes on port 3001
+    log('\n🧹 Step 0: Cleaning up ports...', 'blue');
+    if (killPortProcess(3001)) {
+      log('   Port 3001 has been freed', 'green');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } else {
+      log('   Port 3001 is available', 'green');
+    }
+    
     // Step 1: Check and fix desktop dependencies
     log('\n📦 Step 1: Checking desktop dependencies...', 'blue');
     const depsOk = checkDesktopDependencies();
@@ -121,13 +145,28 @@ async function main() {
         process.exit(1);
       }
       
-      // Wait a bit for API to start
+      // Wait for API to be ready with retries
       log('   Waiting for API to initialize...', 'yellow');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      let apiReady = false;
+      const maxRetries = 30; // 30 seconds max wait
       
-      // Check again
-      if (!checkApiServer()) {
-        log('⚠️  API may still be starting up', 'yellow');
+      for (let i = 0; i < maxRetries; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (checkApiServer()) {
+          apiReady = true;
+          break;
+        }
+        
+        if (i % 5 === 4) {
+          log(`   Still waiting for API... (${i + 1}/${maxRetries})`, 'yellow');
+        }
+      }
+      
+      if (!apiReady) {
+        log('❌ API server failed to start properly after 30 seconds', 'red');
+        if (apiProcess) apiProcess.kill();
+        process.exit(1);
       }
     }
     
