@@ -4,6 +4,7 @@ import { app } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import { DatabaseMigrator } from './migrations';
+import * as packageJson from '../../../package.json';
 
 // Local database only stores current user's tracking data
 // All user auth and organization data comes from API
@@ -28,6 +29,7 @@ interface Session {
   endTime: number | null;
   isActive: number;
   task: string | null;
+  appVersion: string | null;
   isSynced: number;
   createdAt: number;
 }
@@ -179,13 +181,14 @@ export class LocalDatabase {
       endTime: null,
       isActive: 1,
       task: data.task || null,
+      appVersion: packageJson.version || '1.0.0',
       isSynced: 0,
       createdAt: Date.now()
     };
     
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, userId, projectId, projectName, mode, startTime, endTime, isActive, task, isSynced, createdAt)
-      VALUES (@id, @userId, @projectId, @projectName, @mode, @startTime, @endTime, @isActive, @task, @isSynced, @createdAt)
+      INSERT INTO sessions (id, userId, projectId, projectName, mode, startTime, endTime, isActive, task, appVersion, isSynced, createdAt)
+      VALUES (@id, @userId, @projectId, @projectName, @mode, @startTime, @endTime, @isActive, @task, @appVersion, @isSynced, @createdAt)
     `);
     
     stmt.run(session);
