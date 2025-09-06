@@ -197,7 +197,7 @@ function setupIpcHandlers() {
       return result;
     } catch (error) {
       console.error('[IPC] Error in delete handler:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
