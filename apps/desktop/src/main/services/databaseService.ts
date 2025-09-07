@@ -872,4 +872,8 @@ export class DatabaseService {
   setActivityTracker(tracker: any) {
     this.activityTracker = tracker;
   }
+
+  getValidActivityPeriodsForSession(sessionId: string) {
+    return this.localDb.getValidActivityPeriodsForSession(sessionId);
+  }
 }

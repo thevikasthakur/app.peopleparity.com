@@ -1256,7 +1256,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                               <div className="bg-blue-50 rounded p-2">
                                 <div className="flex items-center gap-2 mb-2">
                                   <Activity className="w-4 h-4 text-blue-500" />
-                                  <span className="text-xs font-medium">Score Calculation</span>
+                                  <span className="text-xs font-medium">Activity Metrics</span>
                                 </div>
                                 <div className="space-y-1 text-xs">
                                   <div className="grid grid-cols-2 gap-2">
@@ -1264,43 +1264,14 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                       <div key={key} className="flex justify-between">
                                         <span className="text-gray-600">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
                                         <span className="font-medium">
-                                          {typeof value === 'number' ? (value / 10).toFixed(1) : value}
+                                          {typeof value === 'number' ? value.toFixed(1) : value}
                                         </span>
                                       </div>
                                     ))}
                                   </div>
-                                  {metrics.scoreCalculation.penalties && Object.values(metrics.scoreCalculation.penalties).some(v => v > 0) && (
-                                    <div className="mt-1 pt-1 border-t">
-                                      <span className="text-red-600 font-medium">Penalties:</span>
-                                      {Object.entries(metrics.scoreCalculation.penalties).filter(([_, v]) => v > 0).map(([key, value]) => (
-                                        <div key={key} className="text-[10px] text-red-500">
-                                          -{value} ({key.replace(/([A-Z])/g, ' $1').trim()})
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {metrics.scoreCalculation.bonus?.mouseActivityBonus > 0 && (
-                                    <div className="mt-1 pt-1 border-t">
-                                      <div className="flex justify-between">
-                                        <span className="text-green-600 font-medium">Bonus:</span>
-                                        <span className="text-green-600 font-medium">
-                                          +{(metrics.scoreCalculation.bonus.mouseActivityBonus / 10).toFixed(1)}
-                                        </span>
-                                      </div>
-                                      <div className="text-[10px] text-green-500">
-                                        {metrics.scoreCalculation.bonus.description}
-                                      </div>
-                                    </div>
-                                  )}
                                   <div className="mt-1 pt-1 border-t">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Base Score:</span>
-                                      <span className="font-medium">
-                                        {percentageToTenScale((metrics.scoreCalculation.rawScore || 0) - (metrics.scoreCalculation.bonus?.mouseActivityBonus || 0)).toFixed(1)}
-                                      </span>
-                                    </div>
                                     <div className="flex justify-between font-bold">
-                                      <span className="text-gray-700">Final Score:</span>
+                                      <span className="text-gray-700">Overall Score:</span>
                                       {(() => {
                                         const scoreOutOf10 = percentageToTenScale(metrics.scoreCalculation.finalScore);
                                         const level = getActivityLevel(scoreOutOf10);

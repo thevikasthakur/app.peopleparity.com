@@ -5,6 +5,8 @@ import { ScreenshotServiceV2 } from './services/screenshotServiceV2';
 import { DatabaseService } from './services/databaseService';
 import { ApiSyncService } from './services/apiSyncService';
 import { BrowserExtensionBridge } from './services/browserExtensionBridge';
+import { ProductiveHoursService } from './services/productiveHoursService';
+import { calculateScreenshotScore } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
 
 const store = new Store();
@@ -14,6 +16,7 @@ let screenshotService: ScreenshotServiceV2;
 let databaseService: DatabaseService;
 let apiSyncService: ApiSyncService;
 let browserBridge: BrowserExtensionBridge;
+let productiveHoursService: ProductiveHoursService;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -62,7 +65,8 @@ app.whenReady().then(async () => {
   // Initialize other services
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
-  console.log('✅ API sync and browser bridge initialized');
+  productiveHoursService = new ProductiveHoursService(databaseService);
+  console.log('✅ API sync, browser bridge, and productive hours service initialized');
   
   // Setup IPC handlers BEFORE creating window
   setupIpcHandlers();
@@ -266,6 +270,90 @@ function setupIpcHandlers() {
     await activityTracker.stopSession();
     return activityTracker.startSession(mode, projectId, task);
   });
+
+  // Get current session with productive metrics
+  ipcMain.handle('session:productive-info', async () => {
+    const session = databaseService.getActiveSession();
+    if (!session) return null;
+    
+    const currentUser = databaseService.getCurrentUser();
+    if (!currentUser) return null;
+    
+    // Get screenshots for the current session to count tracked time
+    // The user clarified: "10 min per valid screenshot"
+    // Valid = screenshot with activity score >= 4.0 (not inactive)
+    
+    // Get all screenshots for this session with their activity scores
+    // Apply weighted average calculation based on number of periods
+    const db = (databaseService as any).localDb;
+    
+    // First get all screenshots
+    const screenshots = db.db.prepare(`
+      SELECT id, capturedAt
+      FROM screenshots
+      WHERE sessionId = ?
+      ORDER BY capturedAt
+    `).all(session.id);
+    
+    // Count screenshots that are NOT inactive (activity score >= 25)
+    // UI uses 0-10 scale, DB uses 0-100 scale
+    // Inactive threshold: < 2.5 on UI scale = < 25 on DB scale
+    let validScreenshots = 0;
+    const screenshotDetails: any[] = [];
+    
+    for (const screenshot of screenshots) {
+      // Get all activity periods for this screenshot
+      const activityPeriods = db.db.prepare(`
+        SELECT activityScore
+        FROM activity_periods
+        WHERE screenshotId = ?
+        ORDER BY activityScore DESC
+      `).all(screenshot.id);
+      
+      const scores = activityPeriods.map((p: any) => p.activityScore);
+      
+      // Calculate weighted average using our new function
+      const weightedScore = calculateScreenshotScore(scores);
+      
+      const isValid = weightedScore >= 25;  // 2.5 on UI scale
+      if (isValid) {
+        validScreenshots++;
+      }
+      
+      const uiScore = weightedScore / 10; // Convert to UI scale
+      screenshotDetails.push({
+        time: new Date(screenshot.capturedAt).toLocaleTimeString(),
+        score: weightedScore,
+        uiScore: Math.round(uiScore * 10) / 10, // Round to 1 decimal
+        periodCount: scores.length,
+        valid: isValid,
+        classification: 
+          uiScore >= 8.5 ? 'good' :
+          uiScore >= 7.0 ? 'fair' :
+          uiScore >= 5.5 ? 'low' :
+          uiScore >= 4.0 ? 'poor' :
+          uiScore >= 2.5 ? 'critical' : 'inactive'
+      });
+    }
+    
+    // Each valid (non-inactive) screenshot = 10 minutes of tracked time
+    const trackedMinutes = validScreenshots * 10;
+    
+    console.log('Tracked time calculation:', {
+      totalScreenshots: screenshots.length,
+      validScreenshots,
+      trackedMinutes,
+      sessionId: session.id,
+      details: screenshotDetails
+    });
+    
+    return {
+      session,
+      productiveMinutes: trackedMinutes, // Keep the same field name for compatibility
+      validScreenshots,
+      totalScreenshots: screenshots.length
+    };
+  });
   
   // Dashboard handlers
   ipcMain.handle('dashboard:get-data', async () => {
@@ -322,6 +410,58 @@ function setupIpcHandlers() {
   // Leaderboard handler
   ipcMain.handle('leaderboard:get', async () => {
     return databaseService.getLeaderboard();
+  });
+
+  // Productive hours handler
+  ipcMain.handle('productive-hours:get', async () => {
+    const currentUser = databaseService.getCurrentUser();
+    console.log('Getting productive hours for user:', currentUser);
+    if (!currentUser) {
+      console.log('No current user found');
+      return null;
+    }
+
+    const today = new Date();
+    const productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, today);
+    console.log('Calculated productive hours:', productiveHours);
+    
+    const markers = productiveHoursService.getScaleMarkers(today);
+    const message = productiveHoursService.getHustleMessage(productiveHours, markers);
+    const attendance = productiveHoursService.getAttendanceStatus(productiveHours, markers);
+
+    console.log('Returning productive hours data:', {
+      productiveHours,
+      markers,
+      message,
+      attendance
+    });
+
+    return {
+      productiveHours,
+      markers,
+      message,
+      attendance
+    };
+  });
+
+  // Weekly marathon handler
+  ipcMain.handle('weekly-marathon:get', async () => {
+    const currentUser = databaseService.getCurrentUser();
+    if (!currentUser) {
+      return null;
+    }
+
+    const productiveHours = await productiveHoursService.calculateWeeklyHours(currentUser.id);
+    const markers = productiveHoursService.getWeeklyMarkers();
+    const attendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers);
+    const message = productiveHoursService.getWeeklyMessage(productiveHours, attendance, markers);
+
+    return {
+      productiveHours,
+      markers,
+      attendance,
+      message
+    };
   });
   
   // Browser activity handler

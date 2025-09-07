@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('session:stop'),
     switchMode: (mode: string, task: string, projectId?: string) => 
       ipcRenderer.invoke('session:switch-mode', mode, task, projectId),
+    getProductiveInfo: () =>
+      ipcRenderer.invoke('session:productive-info'),
   },
   dashboard: {
     getData: () => 
@@ -49,6 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRecent: () =>
       ipcRenderer.invoke('notes:get-recent'),
   },
+  getProductiveHours: () =>
+    ipcRenderer.invoke('productive-hours:get'),
+  getWeeklyMarathon: () =>
+    ipcRenderer.invoke('weekly-marathon:get'),
   debug: {
     clearSyncQueue: () => 
       ipcRenderer.invoke('debug:clear-sync-queue'),

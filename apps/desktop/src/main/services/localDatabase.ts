@@ -3,6 +3,7 @@ import path from 'path';
 import { app } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
+import { calculateScreenshotScore, calculateHourlyScore } from '../utils/activityScoreCalculator';
 import { DatabaseMigrator } from './migrations';
 import { TrackingMetadataService } from './trackingMetadata';
 import * as packageJson from '../../../package.json';
@@ -631,14 +632,16 @@ export class LocalDatabase {
     
     console.log('getScreenshotsByDate - found', screenshots.length, 'screenshots for user', userId, 'on date', dateStart.toDateString());
     
-    // For each screenshot, get its associated activity periods and calculate aggregated score
+    // For each screenshot, get its associated activity periods and calculate weighted score
     return screenshots.map((s: any) => {
       // Get activity periods for this screenshot
       const periods = this.getActivityPeriodsForScreenshot(s.id);
       
-      // Calculate aggregated score from associated periods
-      const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
-      const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
+      // Extract scores for weighted average calculation
+      const scores = periods.map((p: any) => p.activityScore || 0);
+      
+      // Calculate weighted average using our new function
+      const aggregatedScore = calculateScreenshotScore(scores);
       
       // Extract period IDs for fetching detailed metrics
       const periodIds = periods.map((p: any) => p.id);
@@ -674,14 +677,16 @@ export class LocalDatabase {
     const screenshots = stmt.all(userId, todayStart.getTime()) as any[];
     console.log('getTodayScreenshots - found', screenshots.length, 'screenshots for user', userId);
     
-    // For each screenshot, get its associated activity periods and calculate aggregated score
+    // For each screenshot, get its associated activity periods and calculate weighted score
     return screenshots.map((s: any) => {
       // Get activity periods for this screenshot
       const periods = this.getActivityPeriodsForScreenshot(s.id);
       
-      // Calculate aggregated score from associated periods
-      const totalScore = periods.reduce((sum: number, period: any) => sum + (period.activityScore || 0), 0);
-      const aggregatedScore = periods.length > 0 ? Math.round(totalScore / periods.length) : 0;
+      // Extract scores for weighted average calculation
+      const scores = periods.map((p: any) => p.activityScore || 0);
+      
+      // Calculate weighted average using our new function
+      const aggregatedScore = calculateScreenshotScore(scores);
       
       // Extract period IDs for fetching detailed metrics
       const periodIds = periods.map((p: any) => p.id);
@@ -992,7 +997,7 @@ export class LocalDatabase {
       SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
       FROM activity_periods
       WHERE userId = ? 
-        AND date(periodStart / 1000, 'unixepoch') = date('now')
+        AND date(periodStart / 1000, 'unixepoch', 'localtime') = date('now', 'localtime')
         AND isValid = 1
       ORDER BY periodStart ASC
     `);
@@ -1033,8 +1038,9 @@ export class LocalDatabase {
         );
         
         if (hourPeriods.length > 0) {
-          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
-          if (avgScore >= 4.0) {
+          const scores = hourPeriods.map(p => p.activityScore);
+          const weightedScore = calculateHourlyScore(scores);
+          if (weightedScore >= 4.0) {
             return true;
           }
         }
@@ -1070,7 +1076,7 @@ export class LocalDatabase {
       SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
       FROM activity_periods
       WHERE userId = ? 
-        AND date(periodStart / 1000, 'unixepoch') >= date('now', '-7 days')
+        AND date(periodStart / 1000, 'unixepoch', 'localtime') >= date('now', '-7 days', 'localtime')
         AND isValid = 1
       ORDER BY periodStart ASC
     `);
@@ -1111,8 +1117,9 @@ export class LocalDatabase {
         );
         
         if (hourPeriods.length > 0) {
-          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
-          if (avgScore >= 4.0) {
+          const scores = hourPeriods.map(p => p.activityScore);
+          const weightedScore = calculateHourlyScore(scores);
+          if (weightedScore >= 4.0) {
             return true;
           }
         }
@@ -1425,5 +1432,20 @@ export class LocalDatabase {
       screenshots,
       exportedAt: Date.now()
     };
+  }
+
+  getValidActivityPeriodsForSession(sessionId: string): any[] {
+    // Get activity periods that count as productive based on activity score
+    // Using the same logic as getTodayStats
+    const stmt = this.db.prepare(`
+      SELECT id, sessionId, periodStart, periodEnd, activityScore
+      FROM activity_periods
+      WHERE sessionId = ? 
+        AND isValid = 1
+        AND activityScore >= 4.0
+      ORDER BY periodStart ASC
+    `);
+    
+    return stmt.all(sessionId) || [];
   }
 }

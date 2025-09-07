@@ -9,6 +9,9 @@ import { Analytics } from '../components/Analytics';
 import { Leaderboard } from '../components/Leaderboard';
 import { TaskSelector } from '../components/TaskSelector';
 import { ProfileDropdown } from '../components/ProfileDropdown';
+import { TodaysHustle } from '../components/TodaysHustle';
+import { WeeklyMarathon } from '../components/WeeklyMarathon';
+import { CurrentSessionInfo } from '../components/CurrentSessionInfo';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
 import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -257,6 +260,11 @@ export function Dashboard() {
             </div>
             
             <div className="flex items-center gap-4">
+              {/* Current Session Display - Enhanced Version */}
+              {currentSession && (
+                <CurrentSessionInfo currentSession={currentSession} />
+              )}
+              
               {!currentSession ? (
                 <button
                   onClick={handleStartTracking}
@@ -282,28 +290,10 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Time Stats - Current Session, Today's Hustle, Weekly Marathon */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <CurrentSessionDisplay
-            screenshots={screenshots}
-            currentSession={currentSession}
-          />
-          
-          <TimeDisplay
-            title="Today's Hustle"
-            clientHours={todayStats.clientHours}
-            commandHours={todayStats.commandHours}
-            icon={<Coffee className="w-5 h-5" />}
-            message=""
-          />
-          
-          <TimeDisplay
-            title="Weekly Marathon"
-            clientHours={weekStats.clientHours}
-            commandHours={weekStats.commandHours}
-            icon={<Zap className="w-5 h-5" />}
-            message=""
-          />
+        {/* Time Stats - Today's Hustle and Weekly Marathon */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TodaysHustle />
+          <WeeklyMarathon />
         </div>
 
         {/* Info Cards Row - Activity, Analytics, Leaderboard */}
