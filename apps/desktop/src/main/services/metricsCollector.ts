@@ -356,33 +356,62 @@ export class MetricsCollector {
     // Scale to 0-100 and apply penalties for base score
     const baseScore = Math.max(0, Math.min(100, (weightedScore * 10) - totalPenalties));
     
-    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
-    let mouseBonus = 0;
+    // Activity bonus (0-30 points) - Added ON TOP of base score
+    // Now includes both mouse and keyboard bonuses
+    let activityBonus = 0;
     let bonusDescription = 'No bonus';
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    const totalKeyboardActivity = keyHitsPerMin + (uniqueKeysPerMin * 2); // Weight diversity higher
     
-    // Apply graduated bonuses based on activity level
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
-      if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Very high activity
-        bonusDescription = 'Very high mouse activity (30% bonus)';
-      } else if (totalMouseActivity > 15) {
-        mouseBonus = 25; // High activity
-        bonusDescription = 'High mouse activity (25% bonus)';
-      } else if (totalMouseActivity > 10) {
-        mouseBonus = 20; // Good activity
-        bonusDescription = 'Good mouse activity (20% bonus)';
-      } else if (totalMouseActivity > 5) {
-        mouseBonus = 15; // Moderate activity
-        bonusDescription = 'Moderate mouse activity (15% bonus)';
-      } else if (totalMouseActivity > 2) {
-        mouseBonus = 10; // Light activity
-        bonusDescription = 'Light mouse activity (10% bonus)';
+    // Check for human-like typing patterns
+    const hasHumanLikeTyping = 
+      keyHitsPerMin > 10 && keyHitsPerMin < 200 && // Reasonable typing speed (10-200 keys/min)
+      uniqueKeysPerMin > 3 && // Good key diversity
+      true; // Simplified bot check for now
+    
+    // Priority 1: Keyboard bonus when mouse activity is low
+    if (totalMouseActivity < 5 && hasHumanLikeTyping) {
+      if (totalKeyboardActivity > 150) {
+        activityBonus = 25; // Very high keyboard activity
+        bonusDescription = 'Exceptional keyboard focus';
+      } else if (totalKeyboardActivity > 100) {
+        activityBonus = 20; // High keyboard activity
+        bonusDescription = 'Strong keyboard activity';
+      } else if (totalKeyboardActivity > 60) {
+        activityBonus = 15; // Good keyboard activity
+        bonusDescription = 'Good keyboard activity';
+      } else if (totalKeyboardActivity > 30) {
+        activityBonus = 10; // Moderate keyboard activity
+        bonusDescription = 'Moderate keyboard activity';
       }
+    }
+    // Priority 2: Mouse bonus when keyboard activity is low (existing logic)
+    else if (totalKeyboardActivity < 30 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+      if (totalMouseActivity > 20) {
+        activityBonus = 30; // Very high mouse activity
+        bonusDescription = 'Exceptional mouse activity';
+      } else if (totalMouseActivity > 15) {
+        activityBonus = 25; // High mouse activity
+        bonusDescription = 'High mouse activity';
+      } else if (totalMouseActivity > 10) {
+        activityBonus = 20; // Good mouse activity
+        bonusDescription = 'Good mouse activity';
+      } else if (totalMouseActivity > 5) {
+        activityBonus = 15; // Moderate mouse activity
+        bonusDescription = 'Moderate mouse activity';
+      } else if (totalMouseActivity > 2) {
+        activityBonus = 10; // Light mouse activity
+        bonusDescription = 'Light mouse activity';
+      }
+    }
+    // Priority 3: Balanced activity gets a small bonus
+    else if (totalMouseActivity > 5 && totalKeyboardActivity > 30 && hasHumanLikeTyping) {
+      activityBonus = 10;
+      bonusDescription = 'Balanced activity';
     }
     
     // Add bonus on top of base score, but cap total at 100
-    const rawScore = baseScore + mouseBonus;
+    const rawScore = baseScore + activityBonus;
     const finalScore = Math.min(100, rawScore);
     
     // Debug logging for transparency
@@ -405,18 +434,18 @@ export class MetricsCollector {
       weighted: weightedScore.toFixed(1),
       penalties: totalPenalties.toFixed(1),
       baseScore: baseScore.toFixed(0),
-      mouseBonus: mouseBonus > 0 ? `+${mouseBonus}` : '0',
+      activityBonus: activityBonus > 0 ? `+${activityBonus}` : '0',
       final: finalScore.toFixed(0)
     });
     
-    const formula = mouseBonus > 0 
-      ? `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}] + mouseBonus[${mouseBonus}]`
+    const formula = activityBonus > 0 
+      ? `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}] + activityBonus[${activityBonus}]`
       : `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}]`;
     
     return {
       components,
       bonus: {
-        mouseActivityBonus: mouseBonus,
+        mouseActivityBonus: activityBonus,
         description: bonusDescription
       },
       penalties,
@@ -757,43 +786,72 @@ export class MetricsCollector {
     // Scale to 0-100 and apply penalties for base score
     const baseScore = Math.max(0, Math.min(100, (weightedScore * 10) - (totalPenalties * 10)));
     
-    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
-    let mouseBonus = 0;
+    // Activity bonus (0-30 points) - Added ON TOP of base score
+    // Now includes both mouse and keyboard bonuses
+    let activityBonus = 0;
     let bonusDescription = 'No bonus';
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    const totalKeyboardActivity = keyHitsPerMin + (uniqueKeysPerMin * 2); // Weight diversity higher
     
-    // Apply graduated bonuses based on activity level
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
-      if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Very high activity
-        bonusDescription = 'Very high mouse activity (30% bonus)';
-      } else if (totalMouseActivity > 15) {
-        mouseBonus = 25; // High activity
-        bonusDescription = 'High mouse activity (25% bonus)';
-      } else if (totalMouseActivity > 10) {
-        mouseBonus = 20; // Good activity
-        bonusDescription = 'Good mouse activity (20% bonus)';
-      } else if (totalMouseActivity > 5) {
-        mouseBonus = 15; // Moderate activity
-        bonusDescription = 'Moderate mouse activity (15% bonus)';
-      } else if (totalMouseActivity > 2) {
-        mouseBonus = 10; // Light activity
-        bonusDescription = 'Light mouse activity (10% bonus)';
+    // Check for human-like typing patterns
+    const hasHumanLikeTyping = 
+      keyHitsPerMin > 10 && keyHitsPerMin < 200 && // Reasonable typing speed (10-200 keys/min)
+      uniqueKeysPerMin > 3 && // Good key diversity
+      true; // Simplified bot check for now
+    
+    // Priority 1: Keyboard bonus when mouse activity is low
+    if (totalMouseActivity < 5 && hasHumanLikeTyping) {
+      if (totalKeyboardActivity > 150) {
+        activityBonus = 25; // Very high keyboard activity
+        bonusDescription = 'Exceptional keyboard focus';
+      } else if (totalKeyboardActivity > 100) {
+        activityBonus = 20; // High keyboard activity
+        bonusDescription = 'Strong keyboard activity';
+      } else if (totalKeyboardActivity > 60) {
+        activityBonus = 15; // Good keyboard activity
+        bonusDescription = 'Good keyboard activity';
+      } else if (totalKeyboardActivity > 30) {
+        activityBonus = 10; // Moderate keyboard activity
+        bonusDescription = 'Moderate keyboard activity';
       }
+    }
+    // Priority 2: Mouse bonus when keyboard activity is low (existing logic)
+    else if (totalKeyboardActivity < 30 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+      if (totalMouseActivity > 20) {
+        activityBonus = 30; // Very high mouse activity
+        bonusDescription = 'Exceptional mouse activity';
+      } else if (totalMouseActivity > 15) {
+        activityBonus = 25; // High mouse activity
+        bonusDescription = 'High mouse activity';
+      } else if (totalMouseActivity > 10) {
+        activityBonus = 20; // Good mouse activity
+        bonusDescription = 'Good mouse activity';
+      } else if (totalMouseActivity > 5) {
+        activityBonus = 15; // Moderate mouse activity
+        bonusDescription = 'Moderate mouse activity';
+      } else if (totalMouseActivity > 2) {
+        activityBonus = 10; // Light mouse activity
+        bonusDescription = 'Light mouse activity';
+      }
+    }
+    // Priority 3: Balanced activity gets a small bonus
+    else if (totalMouseActivity > 5 && totalKeyboardActivity > 30 && hasHumanLikeTyping) {
+      activityBonus = 10;
+      bonusDescription = 'Balanced activity';
     }
     
     // Add bonus on top of base score, but cap total at 100
-    const rawScore = baseScore + mouseBonus;
+    const rawScore = baseScore + activityBonus;
     const finalScore = Math.min(100, rawScore);
 
-    const formula = mouseBonus > 0
-      ? `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)}) + mouseBonus(${mouseBonus})`
+    const formula = activityBonus > 0
+      ? `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)}) + activityBonus(${activityBonus})`
       : `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)})`;
 
     return {
       components,
       bonus: {
-        mouseActivityBonus: mouseBonus,
+        mouseActivityBonus: activityBonus,
         description: bonusDescription
       },
       penalties,

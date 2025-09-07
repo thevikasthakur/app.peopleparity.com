@@ -1,0 +1,120 @@
+{
+  "appId": "com.peopleparity.timetracker",
+  "productName": "People Parity",
+  "copyright": "Copyright © 2025 People Parity",
+  "directories": {
+    "output": "dist-electron",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "!dist/main/*.map",
+    "!dist/renderer/*.map",
+    "package.json",
+    "!node_modules/uiohook-napi/build/**/*",
+    "node_modules/uiohook-napi/build/Release/uiohook.node"
+  ],
+  "asarUnpack": [
+    "node_modules/better-sqlite3/**/*",
+    "node_modules/uiohook-napi/**/*",
+    "node_modules/sharp/**/*",
+    "node_modules/screenshot-desktop/**/*"
+  ],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "icon": "build/icon.icns",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "extendInfo": {
+      "NSAppleEventsUsageDescription": "People Parity needs to monitor your activity to track productive time.",
+      "NSScreenCaptureUsageDescription": "People Parity needs to capture screenshots to verify work activity."
+    },
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64", "arm64"]
+      }
+    ]
+  },
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ],
+    "window": {
+      "width": 540,
+      "height": 380
+    }
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon.ico",
+    "publisherName": "People Parity Inc.",
+    "requestedExecutionLevel": "requireAdministrator"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "People Parity"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      },
+      {
+        "target": "deb",
+        "arch": ["x64"]
+      }
+    ],
+    "category": "Utility",
+    "icon": "build/icons",
+    "desktop": {
+      "Name": "People Parity",
+      "Comment": "Time tracking and productivity monitoring",
+      "Categories": "Utility;Office;"
+    }
+  },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "peopleparity",
+      "repo": "time-tracker-releases",
+      "releaseType": "release",
+      "private": false
+    }
+  ],
+  "afterSign": "scripts/notarize.js",
+  "protocols": {
+    "name": "People Parity Protocol",
+    "schemes": ["peopleparity"]
+  }
+}
