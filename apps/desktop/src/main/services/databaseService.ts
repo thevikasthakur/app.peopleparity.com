@@ -370,31 +370,30 @@ export class DatabaseService {
     return null;
   }
 
-  // Dashboard data - fetch from cloud API first, fallback to local
+  // Dashboard data - ALWAYS use local for current session (source of truth)
   async getDashboardData() {
     const userId = this.getCurrentUserId();
     
-    // Try to fetch from cloud API first
+    // ALWAYS get the current session from local database (it's the source of truth)
+    const localSession = this.localDb.getActiveSession(userId);
+    console.log('Local active session:', localSession ? `${localSession.id} (isActive: ${localSession.isActive})` : 'none');
+    
+    // Try to fetch stats from cloud API
     if (this.api) {
       try {
-        console.log('Fetching dashboard data from cloud...');
-        const [sessionsRes, statsRes] = await Promise.all([
-          this.api.get('/sessions/active'),
-          this.api.get('/dashboard/stats')
-        ]);
-        
-        const cloudSession = sessionsRes.data;
+        console.log('Fetching dashboard stats from cloud...');
+        const statsRes = await this.api.get('/dashboard/stats');
         const cloudStats = statsRes.data;
         
-        // Transform cloud data to match our format
+        // Return local session with cloud stats
         return {
-          currentSession: cloudSession ? {
-            id: cloudSession.id,
-            startTime: new Date(cloudSession.startTime),
-            activity: cloudSession.task || 'Working...',
-            mode: cloudSession.mode === 'client_hours' ? 'client' : 'command',
-            projectName: cloudSession.project?.name,
-            isActive: cloudSession.isActive
+          currentSession: localSession ? {
+            id: localSession.id,
+            startTime: localSession.startTime,
+            activity: localSession.task || 'Working...',
+            mode: localSession.mode === 'client_hours' ? 'client' : 'command',
+            projectName: localSession.projectName,
+            isActive: localSession.isActive
           } : null,
           todayStats: {
             clientHours: cloudStats.today.clientHours || 0,
@@ -414,12 +413,12 @@ export class DatabaseService {
           }
         };
       } catch (error) {
-        console.log('Failed to fetch from cloud, using local data:', error);
+        console.log('Failed to fetch stats from cloud, using local data:', error);
       }
     }
     
-    // Fallback to local database
-    console.log('Using local database for dashboard data');
+    // Fallback to local database for stats
+    console.log('Using local database for stats');
     const session = this.localDb.getActiveSession(userId);
     const todayStats = this.localDb.getTodayStats(userId);
     const weekStats = this.localDb.getWeekStats(userId);

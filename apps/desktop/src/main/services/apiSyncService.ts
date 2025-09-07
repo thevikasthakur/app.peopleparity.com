@@ -208,12 +208,16 @@ export class ApiSyncService {
 
   async verifyToken(token: string): Promise<{ valid: boolean; user?: any }> {
     try {
+      console.log('Verifying token:', token.substring(0, 20) + '...');
+      
       // Set the token temporarily for this request
       const response = await this.api.get('/auth/verify', {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
+      
+      console.log('Token verification response:', response.data);
       
       if (response.data.valid) {
         const user = response.data.user;
@@ -232,10 +236,14 @@ export class ApiSyncService {
           role: user.role
         });
         
+        console.log('Token verified successfully for user:', user.email);
         return { valid: true, user };
+      } else {
+        console.error('Token validation failed - server returned valid: false');
       }
-    } catch (error) {
-      console.error('Token verification failed:', error);
+    } catch (error: any) {
+      console.error('Token verification error:', error.message);
+      console.error('Error details:', error.response?.data || error);
     }
 
     return { valid: false };

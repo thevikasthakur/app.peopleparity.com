@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddTrackingMetadataToSessions1757181501976 implements MigrationInterface {
+export class AddTrackingMetadataToSessions1757181501977 implements MigrationInterface {
     name = 'AddTrackingMetadataToSessions1757181501976'
 
     public async up(queryRunner: QueryRunner): Promise<void> {

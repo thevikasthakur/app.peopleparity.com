@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class UpdateScreenshotSchema1755701146993 implements MigrationInterface {
-    name = 'UpdateScreenshotSchema1755701146993'
+export class UpdateScreenshotSchema1755701146994 implements MigrationInterface {
+    name = 'UpdateScreenshotSchema1755701146994'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         // 1. First make url column nullable if it exists and is NOT NULL

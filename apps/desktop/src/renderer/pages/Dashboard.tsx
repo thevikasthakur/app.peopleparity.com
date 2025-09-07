@@ -32,6 +32,7 @@ export function Dashboard() {
     weekStats, 
     screenshots,
     isIdle,
+    isOperationInProgress,
     startSession,
     switchMode,
     stopSession
@@ -136,10 +137,14 @@ export function Dashboard() {
     const trackingMode = 'command_hours';
     const activityName = task?.trim() || currentActivity;
     
-    if (currentSession) {
-      await switchMode(trackingMode, activityName, projectId);
-    } else {
-      await startSession(trackingMode, activityName, projectId);
+    try {
+      if (currentSession) {
+        await switchMode(trackingMode, activityName, projectId);
+      } else {
+        await startSession(trackingMode, activityName, projectId);
+      }
+    } catch (error) {
+      console.error('Failed to handle task selection:', error);
     }
     setShowTaskSelector(false);
     setPendingMode(null);
@@ -170,7 +175,7 @@ export function Dashboard() {
       console.error('Dashboard: Failed to save activity to database:', error);
     }
     
-    // Close the activity modal
+    // Close the activity modal BEFORE showing the loader
     setShowActivityModal(false);
     
     // If we don't have an active session, start one with just the activity (no task selector)
@@ -188,11 +193,9 @@ export function Dashboard() {
     }
   };
 
-  const [isStopping, setIsStopping] = useState(false);
   const [showStopConfirmation, setShowStopConfirmation] = useState(false);
 
   const handleStopTracking = async () => {
-    setIsStopping(true);
     try {
       await stopSession();
       setShowStopConfirmation(true);
@@ -200,13 +203,28 @@ export function Dashboard() {
       setTimeout(() => setShowStopConfirmation(false), 3000);
     } catch (error) {
       console.error('Failed to stop session:', error);
-    } finally {
-      setIsStopping(false);
     }
   };
 
   return (
     <div className="min-h-screen" data-mode={mode}>
+      {/* Full-screen Processing Overlay */}
+      {isOperationInProgress && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
+          <div className="bg-white rounded-lg p-8 shadow-xl max-w-sm w-full mx-4">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-lg font-medium text-gray-800">
+                Processing...
+              </p>
+              <p className="text-sm text-gray-500 text-center">
+                Please wait while we update your tracking session
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Fixed Draggable Title Bar */}
       <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center z-50">
         <span className="text-xs text-gray-500 font-medium">People Parity Tracker</span>
@@ -243,7 +261,7 @@ export function Dashboard() {
                 <button
                   onClick={handleStartTracking}
                   className="btn-primary flex items-center gap-2"
-                  disabled={showTaskSelector}
+                  disabled={isOperationInProgress || showTaskSelector}
                 >
                   <Play className="w-4 h-4" />
                   Start Tracking
@@ -251,20 +269,11 @@ export function Dashboard() {
               ) : (
                 <button
                   onClick={handleStopTracking}
-                  disabled={isStopping}
-                  className={`btn-secondary flex items-center gap-2 ${isStopping ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={isOperationInProgress}
+                  className="btn-secondary flex items-center gap-2"
                 >
-                  {isStopping ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                      Stopping...
-                    </>
-                  ) : (
-                    <>
-                      <Square className="w-4 h-4" />
-                      Stop Tracking
-                    </>
-                  )}
+                  <Square className="w-4 h-4" />
+                  Stop Tracking
                 </button>
               )}
               

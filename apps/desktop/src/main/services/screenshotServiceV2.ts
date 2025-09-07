@@ -35,12 +35,13 @@ export class ScreenshotServiceV2 {
     }
     
     console.log('📷 Starting screenshot service...');
+    console.log('📷 Auto session creation enabled:', this.autoSessionCreationEnabled);
     this.isCapturing = true;
     
     // Schedule screenshots immediately
     this.scheduleNextScreenshot();
     
-    console.log('✅ Screenshot service started');
+    console.log('✅ Screenshot service started - will capture screenshots every 10 minutes');
   }
   
   stop() {
@@ -72,30 +73,49 @@ export class ScreenshotServiceV2 {
     const currentMinute = now.getMinutes();
     const windowStartMinute = Math.floor(currentMinute / 10) * 10;
     const windowEndMinute = windowStartMinute + 10;
+    const currentHour = now.getHours();
+    const currentWindowId = currentHour * 6 + Math.floor(currentMinute / 10);
     
-    // Always schedule for the NEXT window to avoid rapid-fire screenshots
-    // Generate a random time within the next 10-minute window
-    const nextWindowStart = windowEndMinute % 60; // Handle hour boundary
-    const randomOffsetMinutes = Math.random() * 10; // 0-10 minutes spread
+    // Check if we've already taken a screenshot in this window
+    const alreadyTakenInWindow = this.lastScreenshotWindow === currentWindowId;
     
-    // Calculate the target time
     let captureTime = new Date(now);
     
-    // If next window is in the next hour
-    if (windowEndMinute >= 60) {
-      captureTime.setHours(captureTime.getHours() + 1);
-    }
-    
-    // Set the minutes (now guaranteed to be < 60)
-    const targetMinute = nextWindowStart + randomOffsetMinutes;
-    captureTime.setMinutes(Math.floor(targetMinute));
-    captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
-    captureTime.setMilliseconds(0);
-    
-    // Make sure we're scheduling for the future
-    // If somehow we calculated a time in the past, add an hour
-    if (captureTime.getTime() <= now.getTime()) {
-      captureTime.setHours(captureTime.getHours() + 1);
+    if (!alreadyTakenInWindow && (currentMinute - windowStartMinute) < 8) {
+      // We're early in the current window and haven't taken a screenshot yet
+      // Schedule within the current window (2-8 minutes from window start)
+      const remainingMinutes = windowEndMinute - currentMinute;
+      const randomOffsetMinutes = 2 + Math.random() * Math.min(6, remainingMinutes - 2);
+      const targetMinute = windowStartMinute + randomOffsetMinutes;
+      
+      captureTime.setMinutes(Math.floor(targetMinute));
+      captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
+      captureTime.setMilliseconds(0);
+      
+      // Make sure it's in the future (at least 5 seconds from now)
+      if (captureTime.getTime() <= now.getTime() + 5000) {
+        captureTime.setTime(now.getTime() + 5000 + Math.random() * 10000);
+      }
+    } else {
+      // Schedule for the NEXT window
+      const nextWindowStart = windowEndMinute % 60;
+      const randomOffsetMinutes = Math.random() * 10; // 0-10 minutes spread
+      
+      // If next window is in the next hour
+      if (windowEndMinute >= 60) {
+        captureTime.setHours(captureTime.getHours() + 1);
+      }
+      
+      // Set the minutes
+      const targetMinute = nextWindowStart + randomOffsetMinutes;
+      captureTime.setMinutes(Math.floor(targetMinute));
+      captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
+      captureTime.setMilliseconds(0);
+      
+      // Make sure we're scheduling for the future
+      if (captureTime.getTime() <= now.getTime()) {
+        captureTime.setHours(captureTime.getHours() + 1);
+      }
     }
     
     const delay = captureTime.getTime() - now.getTime();
@@ -296,7 +316,7 @@ export class ScreenshotServiceV2 {
   }
   
   /**
-   * Enable auto session creation
+   * Enable auto session creation (used when starting a new session)
    */
   enableAutoSessionCreation() {
     console.log('🔓 Auto session creation enabled');

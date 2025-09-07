@@ -27,7 +27,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         database: configService.get('DATABASE_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
-        synchronize: false, // Disabled after manual schema fix
+        synchronize: false, // Use migrations for schema management
         migrationsRun: true, // Enable migrations to run automatically
         logging: process.env.NODE_ENV === 'development',
         ssl: configService.get('DATABASE_HOST')?.includes('supabase.com') 

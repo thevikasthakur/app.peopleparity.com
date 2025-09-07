@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ActivityPeriod } from '../../entities/activity-period.entity';
+import { SessionsService } from '../sessions/sessions.service';
 
 @Injectable()
 export class ActivityService {
   constructor(
     @InjectRepository(ActivityPeriod)
     private activityPeriodsRepository: Repository<ActivityPeriod>,
+    private sessionsService: SessionsService,
   ) {}
 
   async create(createActivityDto: {
@@ -33,8 +35,10 @@ export class ActivityService {
     
     console.log(`Checking for concurrent sessions in window ${windowStart.toISOString()} - ${windowEnd.toISOString()}`);
     
+    // First get existing activity periods in this time window from different sessions
     const existingPeriods = await this.activityPeriodsRepository
       .createQueryBuilder('period')
+      .leftJoinAndSelect('period.session', 'session')
       .where('period.userId = :userId', { userId: createActivityDto.userId })
       .andWhere('period.sessionId != :sessionId', { sessionId: createActivityDto.sessionId })
       .andWhere('period.periodStart >= :windowStart', { windowStart })
@@ -42,11 +46,27 @@ export class ActivityService {
       .getMany();
     
     if (existingPeriods.length > 0) {
-      const existingSessionIds = [...new Set(existingPeriods.map(p => p.sessionId))];
-      console.error(`🚫 Concurrent session detected! User ${createActivityDto.userId} already has activity from session(s): ${existingSessionIds.join(', ')} in this time window`);
+      // Get the current session to check device info
+      const currentSession = await this.sessionsService.findById(createActivityDto.sessionId);
+      const currentDevice = currentSession?.deviceInfo || 'unknown';
       
-      // Return error that will trigger session stop on the client
-      throw new Error(`CONCURRENT_SESSION_DETECTED: Another session is already active in this time window. Sessions: ${existingSessionIds.join(', ')}`);
+      // Check if any of the existing periods are from a DIFFERENT device
+      const differentDeviceSessions = existingPeriods.filter(period => {
+        const existingDevice = period.session?.deviceInfo || 'unknown';
+        return existingDevice !== currentDevice;
+      });
+      
+      if (differentDeviceSessions.length > 0) {
+        // Concurrent session from DIFFERENT device detected - this is not allowed
+        const existingSessionIds = [...new Set(differentDeviceSessions.map(p => p.sessionId))];
+        console.error(`🚫 Concurrent session from DIFFERENT DEVICE detected! User ${createActivityDto.userId} already has activity from different device(s) in session(s): ${existingSessionIds.join(', ')}`);
+        
+        // Return error that will trigger session stop on the client
+        throw new Error(`CONCURRENT_SESSION_DETECTED: Another device is already tracking in this time window. Sessions: ${existingSessionIds.join(', ')}`);
+      } else {
+        // Same device, multiple sessions - just log it, don't throw error
+        console.log(`⚠️ Multiple sessions from SAME device detected for user ${createActivityDto.userId}, but allowing it`);
+      }
     }
     
     // Log if metrics are present

@@ -56,6 +56,11 @@ app.whenReady().then(async () => {
   databaseService.setActivityTracker(activityTracker as any); // Type cast for compatibility
   console.log('✅ Activity tracker V2 initialized');
   
+  // Initialize screenshot service V2 (before restoring session)
+  screenshotService = new ScreenshotServiceV2(databaseService);
+  screenshotService.setActivityTracker(activityTracker);
+  console.log('✅ Screenshot service V2 initialized');
+  
   // Restore existing active session if any
   try {
     const activeSession = databaseService.getActiveSession();
@@ -67,6 +72,7 @@ app.whenReady().then(async () => {
         activeSession.projectId || undefined
       );
       // Start screenshot service for the restored session
+      screenshotService.enableAutoSessionCreation();
       screenshotService.start();
       console.log('✅ Session restored and screenshot service started');
     } else {
@@ -75,11 +81,6 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('❌ Failed to restore session:', error);
   }
-  
-  // Initialize screenshot service V2
-  screenshotService = new ScreenshotServiceV2(databaseService);
-  screenshotService.setActivityTracker(activityTracker);
-  console.log('✅ Screenshot service V2 initialized');
   
   // Listen for session stop events to stop screenshot service
   activityTracker.on('session:stopped', () => {
@@ -93,9 +94,16 @@ app.whenReady().then(async () => {
   });
   
   // Listen for session start events to start screenshot service
-  activityTracker.on('session:started', (session: any) => {
-    console.log('📷 Starting screenshot service for new session');
-    screenshotService.start();
+  activityTracker.on('session:started', async (session: any) => {
+    console.log('📷 Session started event received, starting screenshot service for new session:', session.id);
+    try {
+      // Re-enable auto session creation in case it was disabled
+      screenshotService.enableAutoSessionCreation();
+      await screenshotService.start();
+      console.log('✅ Screenshot service started successfully for session:', session.id);
+    } catch (error) {
+      console.error('❌ Failed to start screenshot service:', error);
+    }
     
     // Notify renderer that session has started
     if (mainWindow) {
@@ -177,7 +185,7 @@ app.on('activate', () => {
 function setupIpcHandlers() {
   // Auth handlers
   ipcMain.handle('auth:login', async (_, email: string, password: string) => {
-    return databaseService.authenticateUser(email, password);
+    return apiSyncService.login(email, password);
   });
   
   ipcMain.handle('auth:current-user', async () => {
@@ -190,8 +198,15 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('auth:logout', async () => {
-    databaseService.clearCurrentUser();
-    return true;
+    return apiSyncService.logout();
+  });
+  
+  ipcMain.handle('auth:check-session', async () => {
+    return apiSyncService.checkSession();
+  });
+  
+  ipcMain.handle('auth:verify-token', async (_, token: string) => {
+    return apiSyncService.verifyToken(token);
   });
   
   // Session handlers
