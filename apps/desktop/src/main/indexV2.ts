@@ -113,9 +113,17 @@ app.whenReady().then(async () => {
   app.on('concurrent-session-detected' as any, async (event: any) => {
     console.error('🚫 CONCURRENT SESSION DETECTED!', event);
     
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+    
     // Stop the current session
     if (activityTracker) {
       await activityTracker.stopSession();
+    }
+    
+    // Clear sync queue for this session to prevent more alerts
+    if (event.sessionId) {
+      databaseService.clearSyncQueueForSession(event.sessionId);
     }
     
     // Show notification to user
@@ -127,12 +135,18 @@ app.whenReady().then(async () => {
       });
     }
     
-    // Use electron dialog to show alert
+    // Use electron dialog to show alert (only once)
     const { dialog } = require('electron');
     dialog.showErrorBox(
       'Concurrent Session Detected',
       'Another device is already tracking time for your account. This session has been stopped to prevent duplicate time tracking.'
     );
+    
+    // Re-enable auto session creation after 30 seconds
+    setTimeout(() => {
+      screenshotService.enableAutoSessionCreation();
+      apiSyncService.resetConcurrentSessionFlag();
+    }, 30000);
   });
   
   // Start services

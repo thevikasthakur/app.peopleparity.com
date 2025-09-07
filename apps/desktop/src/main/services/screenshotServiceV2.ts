@@ -17,6 +17,7 @@ export class ScreenshotServiceV2 {
   private captureTimers: Map<number, NodeJS.Timeout> = new Map();
   private activityTracker: ActivityTrackerV2 | null = null;
   private lastScreenshotWindow: number = -1; // Track the last window we took a screenshot in
+  private autoSessionCreationEnabled = true; // Flag to control auto session creation
   
   constructor(private db: DatabaseService) {
     this.screenshotDir = path.join(app.getPath('userData'), 'screenshots');
@@ -204,8 +205,14 @@ export class ScreenshotServiceV2 {
       }
     }
     
-    // If still no session, log warning but continue
+    // If still no session, check if auto-creation is allowed
     if (!session || !sessionId) {
+      if (!this.autoSessionCreationEnabled) {
+        console.log('⚠️ No active session and auto-creation disabled, skipping screenshot');
+        // Schedule next screenshot
+        this.scheduleNextScreenshot();
+        return;
+      }
       console.log('⚠️ No active session found, but continuing with screenshot capture');
       // Use a fallback session ID or create a temporary one
       sessionId = 'TEMP-' + Date.now();
@@ -278,6 +285,22 @@ export class ScreenshotServiceV2 {
     const screenshot = await this.db.getScreenshot(screenshotId) as any;
     if (!screenshot || !screenshot.localPath) return null;
     return screenshot.localPath;
+  }
+  
+  /**
+   * Disable auto session creation (used after concurrent session detection)
+   */
+  disableAutoSessionCreation() {
+    console.log('🔒 Auto session creation disabled');
+    this.autoSessionCreationEnabled = false;
+  }
+  
+  /**
+   * Enable auto session creation
+   */
+  enableAutoSessionCreation() {
+    console.log('🔓 Auto session creation enabled');
+    this.autoSessionCreationEnabled = true;
   }
   
   /**

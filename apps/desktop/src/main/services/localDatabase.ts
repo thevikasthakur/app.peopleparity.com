@@ -1355,6 +1355,18 @@ export class LocalDatabase {
     this.db.prepare('DELETE FROM sync_queue').run();
   }
   
+  clearSyncQueueForSession(sessionId: string) {
+    console.log(`Clearing sync queue entries for session: ${sessionId}`);
+    // Clear all activity periods and screenshots for this session
+    const stmt = this.db.prepare(`
+      DELETE FROM sync_queue 
+      WHERE (entityType = 'activity_period' OR entityType = 'screenshot') 
+      AND json_extract(data, '$.sessionId') = ?
+    `);
+    const result = stmt.run(sessionId);
+    console.log(`Cleared ${result.changes} sync queue entries for session ${sessionId}`);
+  }
+  
   checkForeignKeys() {
     const result = this.db.pragma('foreign_keys');
     console.log('Foreign keys enabled:', result);

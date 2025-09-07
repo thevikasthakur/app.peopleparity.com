@@ -22,6 +22,8 @@ export class ApiSyncService {
   private api: AxiosInstance;
   private syncInterval: NodeJS.Timeout | null = null;
   private isOnline = true;
+  private concurrentSessionDetected = false;
+  private concurrentSessionHandledAt = 0;
 
   constructor(
     private db: DatabaseService,
@@ -295,6 +297,10 @@ export class ApiSyncService {
   }
 
   start() {
+    // Reset concurrent session flag when starting
+    this.concurrentSessionDetected = false;
+    this.concurrentSessionHandledAt = 0;
+    
     // Start periodic sync - sync more frequently for real-time updates
     this.syncInterval = setInterval(() => {
       this.syncData();
@@ -306,6 +312,11 @@ export class ApiSyncService {
     }, 5000);
     
     console.log('API sync service started - syncing every 30 seconds');
+  }
+
+  resetConcurrentSessionFlag() {
+    this.concurrentSessionDetected = false;
+    this.concurrentSessionHandledAt = 0;
   }
 
   stopSync() {
@@ -562,12 +573,20 @@ export class ApiSyncService {
             if (activityResponse.data.error === 'CONCURRENT_SESSION_DETECTED') {
               console.error('🚫 CONCURRENT SESSION DETECTED! Another device is already tracking for this user.');
               
-              // Emit event to stop tracking
-              const { app } = require('electron');
-              app.emit('concurrent-session-detected', {
-                message: activityResponse.data.message,
-                details: activityResponse.data.details
-              });
+              // Only emit event once per detection period (5 minutes)
+              const now = Date.now();
+              if (!this.concurrentSessionDetected || (now - this.concurrentSessionHandledAt) > 5 * 60 * 1000) {
+                this.concurrentSessionDetected = true;
+                this.concurrentSessionHandledAt = now;
+                
+                // Emit event to stop tracking
+                const { app } = require('electron');
+                app.emit('concurrent-session-detected', {
+                  message: activityResponse.data.message,
+                  details: activityResponse.data.details,
+                  sessionId: data.sessionId
+                });
+              }
               
               // Mark this as a critical error that shouldn't be retried
               this.db.markSynced(item.id); // Mark as "synced" to remove from queue

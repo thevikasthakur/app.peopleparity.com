@@ -854,6 +854,10 @@ export class DatabaseService {
     return this.localDb.clearSyncQueue();
   }
   
+  clearSyncQueueForSession(sessionId: string) {
+    return this.localDb.clearSyncQueueForSession(sessionId);
+  }
+  
   clearSessionsAndRelatedData() {
     return this.localDb.clearSessionsAndRelatedData();
   }
