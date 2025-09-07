@@ -66,9 +66,11 @@ app.whenReady().then(async () => {
         activeSession.mode,
         activeSession.projectId || undefined
       );
-      console.log('✅ Session restored');
+      // Start screenshot service for the restored session
+      screenshotService.start();
+      console.log('✅ Session restored and screenshot service started');
     } else {
-      console.log('ℹ️ No active session found');
+      console.log('ℹ️ No active session found - screenshot service NOT started');
     }
   } catch (error) {
     console.error('❌ Failed to restore session:', error);
@@ -149,11 +151,11 @@ app.whenReady().then(async () => {
     }, 30000);
   });
   
-  // Start services
+  // Start services (but NOT screenshot service - it starts with sessions)
   apiSyncService.start();
   browserBridge.start();
-  screenshotService.start();
-  console.log('✅ All services started');
+  // screenshotService.start(); // DO NOT auto-start - only start when session starts
+  console.log('✅ API sync and browser bridge started');
   
   setupIpcHandlers();
   console.log('✅ IPC handlers registered');
