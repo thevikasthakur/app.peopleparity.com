@@ -93,11 +93,16 @@ export class ScreenshotsService {
     return savedScreenshot;
   }
 
-  async findByUser(userId: string, startDate?: Date, endDate?: Date) {
+  async findByUser(userId: string, startDate?: Date, endDate?: Date, includeDeviceInfo = false) {
     const query = this.screenshotsRepository
       .createQueryBuilder('screenshot')
       .where('screenshot.userId = :userId', { userId })
       .andWhere('screenshot.isDeleted = :isDeleted', { isDeleted: false });
+
+    // Include session relation to get device info if requested
+    if (includeDeviceInfo) {
+      query.leftJoinAndSelect('screenshot.session', 'session');
+    }
 
     if (startDate) {
       query.andWhere('screenshot.capturedAt >= :startDate', { startDate });
@@ -107,7 +112,17 @@ export class ScreenshotsService {
       query.andWhere('screenshot.capturedAt <= :endDate', { endDate });
     }
 
-    return query.getMany();
+    const screenshots = await query.getMany();
+    
+    // Map to include device info if available
+    if (includeDeviceInfo) {
+      return screenshots.map(screenshot => ({
+        ...screenshot,
+        deviceInfo: screenshot.session?.deviceInfo || null
+      }));
+    }
+    
+    return screenshots;
   }
 
   async findById(id: string) {

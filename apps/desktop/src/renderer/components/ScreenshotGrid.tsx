@@ -52,6 +52,8 @@ interface Screenshot {
     metricsBreakdown?: any;
   }[];
   syncStatus?: SyncStatus;
+  isFromDifferentDevice?: boolean; // Flag for screenshots from other devices
+  deviceInfo?: string; // Which device captured this
 }
 
 interface DetailedMetrics {
@@ -535,6 +537,31 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   >
                     <div className="absolute top-1 left-1 text-xs text-gray-400">
                       {slotLabel}
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Check if this is a screenshot from a different device
+              if (screenshot.isFromDifferentDevice) {
+                return (
+                  <div
+                    key={`different-device-${hour}-${index}`}
+                    className="relative aspect-video rounded-lg bg-amber-50 border-2 border-amber-200"
+                  >
+                    <div className="absolute top-1 left-1 text-xs text-amber-600">
+                      {slotLabel}
+                    </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-2">
+                      <Monitor className="w-8 h-8 text-amber-400 mb-1" />
+                      <div className="text-xs text-amber-600 text-center font-medium">
+                        Different Device
+                      </div>
+                      {screenshot.deviceInfo && (
+                        <div className="text-[10px] text-amber-500 mt-1 truncate max-w-full px-1">
+                          {screenshot.deviceInfo}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

@@ -668,6 +668,37 @@ export class ApiSyncService {
       console.log(`Successfully synced ${item.entityType}:${item.entityId}`);
     } catch (error: any) {
       console.error(`Failed to sync ${item.entityType}:${item.entityId}:`, error.message);
+      
+      // Check for concurrent session detection
+      if (error.response?.status === 409 || error.response?.data?.error === 'CONCURRENT_SESSION_DETECTED') {
+        console.error('🚫 CONCURRENT SESSION DETECTED DURING SYNC!');
+        const details = error.response?.data?.details || {};
+        
+        // If this was a screenshot upload that failed due to concurrent session
+        if (item.entityType === 'screenshot') {
+          // Mark this screenshot as from a different device in the database
+          console.log('Marking screenshot as from different device:', item.entityId);
+          // Delete the local screenshot since it wasn't uploaded
+          this.db.deleteScreenshots([item.entityId]);
+          
+          // Optionally, you could create a placeholder entry indicating
+          // that this time slot was tracked on a different device
+          // But for now, we'll just delete it to clean up the UI
+        }
+        
+        // Emit event to stop tracking
+        const { app } = require('electron');
+        app.emit('concurrent-session-detected', {
+          message: error.response?.data?.message || 'Another device is tracking time',
+          details,
+          sessionId: details.sessionId,
+          timestamp: new Date()
+        });
+        
+        // Don't retry this sync
+        return;
+      }
+      
       throw error;
     }
   }
