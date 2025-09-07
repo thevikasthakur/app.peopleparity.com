@@ -60,6 +60,22 @@ export function Dashboard() {
   useEffect(() => {
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
   }, []);
+  
+  // Listen for concurrent session detection
+  useEffect(() => {
+    const handleConcurrentSession = (data: any) => {
+      console.log('Concurrent session detected:', data);
+      // Refresh dashboard to show stopped session
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      // Could also show a toast notification here if you have a toast library
+    };
+    
+    window.electronAPI?.on('concurrent-session-detected', handleConcurrentSession);
+    
+    return () => {
+      window.electronAPI?.off('concurrent-session-detected', handleConcurrentSession);
+    };
+  }, [queryClient]);
 
   // Load screenshots for selected date when it changes
   useEffect(() => {

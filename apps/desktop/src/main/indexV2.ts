@@ -109,6 +109,32 @@ app.whenReady().then(async () => {
   browserBridge = new BrowserExtensionBridge();
   console.log('✅ API sync and browser bridge initialized');
   
+  // Listen for concurrent session detection
+  app.on('concurrent-session-detected' as any, async (event: any) => {
+    console.error('🚫 CONCURRENT SESSION DETECTED!', event);
+    
+    // Stop the current session
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+    
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('concurrent-session-detected', {
+        title: 'Session Stopped',
+        message: 'Another device is already tracking time. This session has been stopped.',
+        details: event.details
+      });
+    }
+    
+    // Use electron dialog to show alert
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Concurrent Session Detected',
+      'Another device is already tracking time for your account. This session has been stopped to prevent duplicate time tracking.'
+    );
+  });
+  
   // Start services
   apiSyncService.start();
   browserBridge.start();

@@ -35,6 +35,16 @@ export class ActivityController {
     } catch (error: any) {
       console.error('Error in activity controller:', error);
       
+      // Handle concurrent session detection
+      if (error.message?.includes('CONCURRENT_SESSION_DETECTED')) {
+        return {
+          success: false,
+          error: 'CONCURRENT_SESSION_DETECTED',
+          message: 'Another session is already active in this time window. Stopping current session.',
+          details: error.message
+        };
+      }
+      
       // Return a more informative error for foreign key violations
       if (error.message?.includes('foreign key constraint')) {
         return {

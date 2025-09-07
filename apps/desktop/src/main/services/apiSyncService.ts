@@ -557,6 +557,23 @@ export class ApiSyncService {
           
           if (!activityResponse.data.success) {
             console.error('Activity period sync failed:', activityResponse.data);
+            
+            // Handle concurrent session detection
+            if (activityResponse.data.error === 'CONCURRENT_SESSION_DETECTED') {
+              console.error('🚫 CONCURRENT SESSION DETECTED! Another device is already tracking for this user.');
+              
+              // Emit event to stop tracking
+              const { app } = require('electron');
+              app.emit('concurrent-session-detected', {
+                message: activityResponse.data.message,
+                details: activityResponse.data.details
+              });
+              
+              // Mark this as a critical error that shouldn't be retried
+              this.db.markSynced(item.id); // Mark as "synced" to remove from queue
+              return; // Don't throw, just return
+            }
+            
             if (activityResponse.data.error === 'Session does not exist' || activityResponse.data.error === 'Screenshot does not exist') {
               throw new Error(`foreign key constraint: ${activityResponse.data.message}`);
             }

@@ -25,6 +25,30 @@ export class ActivityService {
   }) {
     console.log('Creating activity period with ID:', createActivityDto.id, 'for session:', createActivityDto.sessionId);
     
+    // Check for overlapping periods from different sessions in the same 10-minute window
+    const windowStart = new Date(createActivityDto.periodStart);
+    windowStart.setMinutes(Math.floor(windowStart.getMinutes() / 10) * 10, 0, 0);
+    const windowEnd = new Date(windowStart);
+    windowEnd.setMinutes(windowEnd.getMinutes() + 10);
+    
+    console.log(`Checking for concurrent sessions in window ${windowStart.toISOString()} - ${windowEnd.toISOString()}`);
+    
+    const existingPeriods = await this.activityPeriodsRepository
+      .createQueryBuilder('period')
+      .where('period.userId = :userId', { userId: createActivityDto.userId })
+      .andWhere('period.sessionId != :sessionId', { sessionId: createActivityDto.sessionId })
+      .andWhere('period.periodStart >= :windowStart', { windowStart })
+      .andWhere('period.periodStart < :windowEnd', { windowEnd })
+      .getMany();
+    
+    if (existingPeriods.length > 0) {
+      const existingSessionIds = [...new Set(existingPeriods.map(p => p.sessionId))];
+      console.error(`🚫 Concurrent session detected! User ${createActivityDto.userId} already has activity from session(s): ${existingSessionIds.join(', ')} in this time window`);
+      
+      // Return error that will trigger session stop on the client
+      throw new Error(`CONCURRENT_SESSION_DETECTED: Another session is already active in this time window. Sessions: ${existingSessionIds.join(', ')}`);
+    }
+    
     // Log if metrics are present
     if (createActivityDto.metrics) {
       const metricsKeys = Object.keys(createActivityDto.metrics);
