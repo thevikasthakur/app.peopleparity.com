@@ -705,6 +705,12 @@ export class LocalDatabase {
     });
   }
   
+  getScreenshot(screenshotId: string) {
+    return this.db.prepare(`
+      SELECT * FROM screenshots WHERE id = ?
+    `).get(screenshotId);
+  }
+  
   getScreenshotSyncStatus(screenshotId: string, periodIds: string[]) {
     // Check screenshot sync status
     const screenshotSyncQuery = this.db.prepare(`
@@ -1283,6 +1289,34 @@ export class LocalDatabase {
       SET attempts = attempts + 1, lastAttempt = ? 
       WHERE id = ?
     `).run(Date.now(), queueId);
+  }
+  
+  getFailedSyncItems() {
+    // Get items that have failed multiple times (5+ attempts)
+    return this.db.prepare(`
+      SELECT * FROM sync_queue 
+      WHERE attempts >= 5 
+      ORDER BY lastAttempt DESC
+    `).all();
+  }
+  
+  getSyncQueueItem(entityId: string, entityType: string) {
+    return this.db.prepare(`
+      SELECT * FROM sync_queue 
+      WHERE entityId = ? AND entityType = ?
+    `).get(entityId, entityType);
+  }
+  
+  resetSyncAttempts(queueId: string) {
+    this.db.prepare(`
+      UPDATE sync_queue 
+      SET attempts = 0, lastAttempt = NULL 
+      WHERE id = ?
+    `).run(queueId);
+  }
+  
+  removeSyncQueueItem(queueId: string) {
+    this.db.prepare('DELETE FROM sync_queue WHERE id = ?').run(queueId);
   }
   
   // Recent notes operations

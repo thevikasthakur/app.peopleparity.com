@@ -365,10 +365,6 @@ export class DatabaseService {
     });
   }
 
-  async getScreenshot(id: string) {
-    // This would need to be implemented in LocalDatabase
-    return null;
-  }
 
   // Dashboard data - ALWAYS use local for current session (source of truth)
   async getDashboardData() {
@@ -785,6 +781,30 @@ export class DatabaseService {
 
   incrementSyncAttempts(queueId: string) {
     this.localDb.incrementSyncAttempts(queueId);
+  }
+  
+  getFailedSyncItems() {
+    return this.localDb.getFailedSyncItems();
+  }
+  
+  getSyncQueueItem(entityId: string, entityType: string) {
+    return this.localDb.getSyncQueueItem(entityId, entityType);
+  }
+  
+  resetSyncAttempts(queueId: string) {
+    this.localDb.resetSyncAttempts(queueId);
+  }
+  
+  removeSyncQueueItem(queueId: string) {
+    this.localDb.removeSyncQueueItem(queueId);
+  }
+  
+  getActivityPeriodsForScreenshot(screenshotId: string) {
+    return this.localDb.getActivityPeriodsForScreenshot(screenshotId);
+  }
+  
+  getScreenshot(screenshotId: string) {
+    return this.localDb.getScreenshot(screenshotId);
   }
 
   // Export and maintenance

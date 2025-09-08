@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
+import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader, RotateCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ActivityModal } from './ActivityModal';
 
@@ -285,6 +285,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [currentEditActivity, setCurrentEditActivity] = useState('');
   const [recentActivities, setRecentActivities] = useState<string[]>([]);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Load recent activities when modal opens
@@ -619,6 +620,73 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     <div className="absolute inset-0 bg-gray-600/20 backdrop-blur-[0.5px] pointer-events-none" />
                   )}
                   
+                  {/* Retry button for failed or stuck partial uploads */}
+                  {((screenshot.syncStatus?.status === 'failed' && percentageToTenScale(screenshot.activityScore) > 0) ||
+                    (screenshot.syncStatus?.status === 'partial')) && (
+                    <button
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 text-white rounded-full transition-all shadow-lg ${
+                        retryingIds.has(screenshot.id) 
+                          ? 'bg-blue-500 cursor-not-allowed animate-pulse' 
+                          : 'bg-orange-500 hover:bg-orange-600'
+                      }`}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        
+                        // Prevent multiple clicks
+                        if (retryingIds.has(screenshot.id)) {
+                          console.log('Already retrying screenshot:', screenshot.id);
+                          return;
+                        }
+                        
+                        console.log('Retrying sync for screenshot:', screenshot.id);
+                        
+                        // Add to retrying set for visual feedback
+                        setRetryingIds(prev => new Set(prev).add(screenshot.id));
+                        
+                        try {
+                          const result = await (window as any).electronAPI.screenshots.retrySync(screenshot.id);
+                          
+                          // Keep the loading state for a moment to show progress
+                          await new Promise(resolve => setTimeout(resolve, 1500));
+                          
+                          if (result.success) {
+                            console.log('Successfully retried sync');
+                            // Refresh the screenshots to update sync status
+                            if (onRefresh) {
+                              await onRefresh();
+                            }
+                          } else {
+                            // Only show error if it's not the "not in queue" error for partial uploads
+                            if (!result.error?.includes('not found in sync queue')) {
+                              console.error('Failed to retry sync:', result.error);
+                              alert(`Failed to retry sync: ${result.error}`);
+                            } else {
+                              // For partial uploads not in queue, still refresh to show updated status
+                              console.log('Item not in queue (likely already syncing), refreshing...');
+                              if (onRefresh) {
+                                await onRefresh();
+                              }
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error retrying sync:', error);
+                          alert(`Error retrying sync: ${error.message || 'Unknown error'}`);
+                        } finally {
+                          // Remove from retrying set
+                          setRetryingIds(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(screenshot.id);
+                            return newSet;
+                          });
+                        }
+                      }}
+                      title={retryingIds.has(screenshot.id) ? "Uploading..." : "Retry upload"}
+                      disabled={retryingIds.has(screenshot.id)}
+                    >
+                      <RotateCw className={`w-3 h-3 ${retryingIds.has(screenshot.id) ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+                  
                   {/* Selection Checkbox */}
                   <button
                     className={`
@@ -847,17 +915,85 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     const statusInfo = getSyncStatusInfo(modalScreenshot.syncStatus);
                     const Icon = statusInfo.icon;
                     return (
-                      <div className={`
-                        px-3 py-1 rounded-full text-xs font-medium
-                        flex items-center gap-1.5 ${statusInfo.bgColor} ${statusInfo.color}
-                        border ${statusInfo.borderColor}
-                      `}>
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{statusInfo.label}</span>
-                        {statusInfo.showProgress && statusInfo.progress && (
-                          <span className="ml-1 opacity-75">
-                            ({Math.round(statusInfo.progress)}%)
-                          </span>
+                      <div className="flex items-center gap-2">
+                        <div className={`
+                          px-3 py-1 rounded-full text-xs font-medium
+                          flex items-center gap-1.5 ${statusInfo.bgColor} ${statusInfo.color}
+                          border ${statusInfo.borderColor}
+                        `}>
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{statusInfo.label}</span>
+                          {statusInfo.showProgress && statusInfo.progress && (
+                            <span className="ml-1 opacity-75">
+                              ({Math.round(statusInfo.progress)}%)
+                            </span>
+                          )}
+                        </div>
+                        {/* Retry button for failed or stuck partial uploads */}
+                        {((modalScreenshot.syncStatus.status === 'failed' && percentageToTenScale(modalScreenshot.activityScore) > 0) ||
+                          (modalScreenshot.syncStatus.status === 'partial')) && (
+                          <button
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
+                              retryingIds.has(modalScreenshot.id)
+                                ? 'bg-blue-500 text-white cursor-not-allowed animate-pulse'
+                                : 'bg-orange-500 text-white hover:bg-orange-600'
+                            }`}
+                            onClick={async () => {
+                              // Prevent multiple clicks
+                              if (retryingIds.has(modalScreenshot.id)) {
+                                console.log('Already retrying screenshot:', modalScreenshot.id);
+                                return;
+                              }
+                              
+                              console.log('Retrying sync for screenshot:', modalScreenshot.id);
+                              
+                              // Add to retrying set for visual feedback
+                              setRetryingIds(prev => new Set(prev).add(modalScreenshot.id));
+                              
+                              try {
+                                const result = await (window as any).electronAPI.screenshots.retrySync(modalScreenshot.id);
+                                
+                                // Keep the loading state for a moment to show progress
+                                await new Promise(resolve => setTimeout(resolve, 1500));
+                                
+                                if (result.success) {
+                                  console.log('Successfully retried sync');
+                                  // Close modal and refresh
+                                  setModalScreenshot(null);
+                                  if (onRefresh) {
+                                    await onRefresh();
+                                  }
+                                } else {
+                                  // Only show error if it's not the "not in queue" error for partial uploads
+                                  if (!result.error?.includes('not found in sync queue')) {
+                                    console.error('Failed to retry sync:', result.error);
+                                    alert(`Failed to retry sync: ${result.error}`);
+                                  } else {
+                                    // For partial uploads not in queue, still refresh to show updated status
+                                    console.log('Item not in queue (likely already syncing), closing modal and refreshing...');
+                                    setModalScreenshot(null);
+                                    if (onRefresh) {
+                                      await onRefresh();
+                                    }
+                                  }
+                                }
+                              } catch (error) {
+                                console.error('Error retrying sync:', error);
+                                alert(`Error retrying sync: ${error.message || 'Unknown error'}`);
+                              } finally {
+                                // Remove from retrying set
+                                setRetryingIds(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(modalScreenshot.id);
+                                  return newSet;
+                                });
+                              }
+                            }}
+                            disabled={retryingIds.has(modalScreenshot.id)}
+                          >
+                            <RotateCw className={`w-3 h-3 ${retryingIds.has(modalScreenshot.id) ? 'animate-spin' : ''}`} />
+                            <span>{retryingIds.has(modalScreenshot.id) ? 'Uploading...' : 'Retry Upload'}</span>
+                          </button>
                         )}
                       </div>
                     );

@@ -389,6 +389,18 @@ function setupIpcHandlers() {
     }
   });
   
+  ipcMain.handle('screenshots:retry-sync', async (_, screenshotId: string) => {
+    console.log('[IPC] screenshots:retry-sync handler called for ID:', screenshotId);
+    try {
+      const result = await apiSyncService.retrySyncItem(screenshotId, 'screenshot');
+      console.log('[IPC] Retry sync result:', result);
+      return result;
+    } catch (error) {
+      console.error('[IPC] Error in retry sync handler:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  
   // Activity handlers
   ipcMain.handle('activity:get-period-details', async (_, periodId: string) => {
     return databaseService.getActivityPeriodDetails(periodId);

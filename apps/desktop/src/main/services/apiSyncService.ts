@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import { DatabaseService } from './databaseService';
 import Store from 'electron-store';
 import path from 'path';
+import crypto from 'crypto';
 
 interface AuthResponse {
   success: boolean;
@@ -334,11 +335,134 @@ export class ApiSyncService {
     }
   }
 
+  /**
+   * Clean up failed screenshots with 0.0 score
+   * These are auto-deleted after max attempts
+   */
+  async cleanupFailedScreenshots() {
+    try {
+      const failedItems = this.db.getFailedSyncItems();
+      const screenshotsToDelete: string[] = [];
+      const queueItemsToRemove: string[] = [];
+      
+      for (const item of failedItems) {
+        const failedItem = item as any;
+        if (failedItem.entityType === 'screenshot' && failedItem.attempts >= 5) {
+          // Get screenshot details
+          const screenshot = this.db.getScreenshot(failedItem.entityId);
+          if (screenshot) {
+            // Check if activity score is 0 (user was away)
+            const activityPeriods = this.db.getActivityPeriodsForScreenshot(failedItem.entityId);
+            const avgScore = activityPeriods.length > 0 
+              ? activityPeriods.reduce((sum: number, p: any) => sum + (p.activityScore || 0), 0) / activityPeriods.length
+              : 0;
+            
+            if (avgScore === 0) {
+              console.log(`Auto-deleting failed screenshot ${failedItem.entityId} with 0.0 score after ${failedItem.attempts} attempts`);
+              screenshotsToDelete.push(failedItem.entityId);
+              queueItemsToRemove.push(failedItem.id);
+            }
+          }
+        }
+      }
+      
+      // Delete screenshots with 0.0 score
+      if (screenshotsToDelete.length > 0) {
+        this.db.deleteScreenshots(screenshotsToDelete);
+        // Remove from sync queue
+        for (const queueId of queueItemsToRemove) {
+          this.db.removeSyncQueueItem(queueId);
+        }
+        console.log(`Cleaned up ${screenshotsToDelete.length} failed screenshots with 0.0 score`);
+      }
+    } catch (error) {
+      console.error('Error cleaning up failed screenshots:', error);
+    }
+  }
+  
+  /**
+   * Manually retry syncing a specific item and its related items
+   */
+  async retrySyncItem(entityId: string, entityType: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`Manual retry requested for ${entityType} ${entityId}`);
+      
+      // If it's a screenshot, also retry its related activity periods
+      if (entityType === 'screenshot') {
+        // Get the screenshot's related activity periods
+        const activityPeriods = this.db.getActivityPeriodsForScreenshot(entityId);
+        console.log(`Found ${activityPeriods.length} activity periods for screenshot ${entityId}`);
+        
+        // Reset and retry each activity period
+        for (const period of activityPeriods) {
+          const periodQueueItem = this.db.getSyncQueueItem(period.id, 'activity_period') as any;
+          if (periodQueueItem) {
+            console.log(`Retrying activity period ${period.id}`);
+            this.db.resetSyncAttempts(periodQueueItem.id);
+            try {
+              await this.syncItem(periodQueueItem);
+              this.db.markSynced(periodQueueItem.id);
+              console.log(`Successfully synced activity period ${period.id}`);
+            } catch (error: any) {
+              console.error(`Failed to sync activity period ${period.id}:`, error.message);
+              this.db.incrementSyncAttempts(periodQueueItem.id);
+            }
+          }
+        }
+      }
+      
+      // Now sync the main item (screenshot)
+      const queueItem = this.db.getSyncQueueItem(entityId, entityType) as any;
+      if (!queueItem) {
+        // For partial uploads, the item might already be synced or syncing
+        // Check if the screenshot exists and has a URL (meaning it's at least partially synced)
+        const screenshot = this.db.getScreenshot(entityId) as any;
+        if (screenshot && screenshot.url) {
+          console.log(`Screenshot ${entityId} appears to be already syncing/synced (has URL), triggering refresh`);
+          // Return success to trigger UI refresh
+          return { success: true };
+        }
+        
+        // If it's truly not in queue and not synced, we still return success
+        // The regular sync process will pick it up eventually
+        console.log(`Item ${entityId} not in sync queue, likely already syncing`);
+        if (screenshot) {
+          console.log(`Screenshot ${entityId} exists, triggering UI refresh`);
+          // Return success to trigger UI refresh even if not in queue
+          return { success: true };
+        }
+        
+        return { success: false, error: 'Item not found in sync queue' };
+      }
+      
+      // Reset attempts to give it a fresh try
+      this.db.resetSyncAttempts(queueItem.id);
+      
+      // Try to sync immediately
+      try {
+        await this.syncItem(queueItem);
+        this.db.markSynced(queueItem.id);
+        console.log(`Successfully synced ${entityType} ${entityId} on manual retry`);
+        return { success: true };
+      } catch (error: any) {
+        console.error(`Failed to sync ${entityType} ${entityId} on manual retry:`, error.message);
+        this.db.incrementSyncAttempts(queueItem.id);
+        return { success: false, error: error.message };
+      }
+    } catch (error: any) {
+      console.error('Error in manual retry:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   private async syncData() {
     if (!this.isOnline) return;
 
     const token = this.store.get('authToken');
     if (!token || token === 'offline-token') return;
+
+    // Clean up failed screenshots with 0.0 score before syncing
+    await this.cleanupFailedScreenshots();
 
     try {
       // Get unsynced items from local database - increase batch size to handle backlog

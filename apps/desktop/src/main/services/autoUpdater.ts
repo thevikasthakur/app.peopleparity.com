@@ -89,7 +89,7 @@ export class AutoUpdaterService extends EventEmitter {
       this.emit('error', error);
     });
     
-    autoUpdater.on('download-progress', (progressObj) => {
+    autoUpdater.on('download-progress', (progressObj: any) => {
       const percent = Math.round(progressObj.percent);
       console.log(`Download progress: ${percent}%`);
       
@@ -106,7 +106,7 @@ export class AutoUpdaterService extends EventEmitter {
       this.emit('download-progress', progressObj);
     });
     
-    autoUpdater.on('update-downloaded', (info) => {
+    autoUpdater.on('update-downloaded', (info: any) => {
       console.log('Update downloaded:', info.version);
       
       const response = dialog.showMessageBoxSync(this.mainWindow!, {
