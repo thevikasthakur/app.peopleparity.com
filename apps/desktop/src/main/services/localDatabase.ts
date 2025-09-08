@@ -415,22 +415,39 @@ export class LocalDatabase {
   }
   
   getActivityMetrics(periodId: string): any {
-    // Get the activity data for this period
-    const commandActivity = this.db.prepare(`
-      SELECT * FROM command_activities WHERE activityPeriodId = ?
+    // Get the activity data directly from activity_periods table
+    const activity = this.db.prepare(`
+      SELECT * FROM activity_periods WHERE id = ?
     `).get(periodId) as any;
     
-    const clientActivity = this.db.prepare(`
-      SELECT * FROM client_activities WHERE activityPeriodId = ?
-    `).get(periodId) as any;
-    
-    const activity = commandActivity || clientActivity;
     if (!activity) return null;
+    
+    // Parse metricsBreakdown if it exists and is a JSON string
+    let keyboardActivity = 0;
+    let mouseActivity = 0;
+    
+    if (activity.metricsBreakdown) {
+      try {
+        const metrics = typeof activity.metricsBreakdown === 'string' 
+          ? JSON.parse(activity.metricsBreakdown)
+          : activity.metricsBreakdown;
+          
+        // Extract keyboard and mouse activity from metrics
+        if (metrics.keyboardMetrics) {
+          keyboardActivity = metrics.keyboardMetrics.keysPerMinute || 0;
+        }
+        if (metrics.mouseMetrics) {
+          mouseActivity = metrics.mouseMetrics.clicksPerMinute || 0;
+        }
+      } catch (e) {
+        console.error('Failed to parse metricsBreakdown:', e);
+      }
+    }
     
     return {
       activityScore: activity.activityScore || 0,
-      keyboardActivity: activity.keyboardActivity || 0,
-      mouseActivity: activity.mouseActivity || 0
+      keyboardActivity: keyboardActivity,
+      mouseActivity: mouseActivity
     };
   }
   

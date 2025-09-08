@@ -24,7 +24,7 @@ import crypto from 'crypto';
 import { DatabaseService } from './databaseService';
 import { WindowManager, ActivityPeriod, Screenshot } from './windowManager';
 import { MetricsCollector, DetailedActivityMetrics } from './metricsCollector';
-import { getGlobalSpikeDetector, resetGlobalSpikeDetector, ActivityData } from '../utils/spikeDetector';
+import { getGlobalSpikeDetectorV2, resetGlobalSpikeDetectorV2, ActivityDataV2 } from '../utils/spikeDetectorV2';
 
 interface ActivityMetrics {
   keyHits: number;
@@ -221,7 +221,7 @@ export class ActivityTrackerV2 extends EventEmitter {
     // Reset metrics and spike detector for new session
     this.currentMetrics = this.createEmptyMetrics();
     this.periodStartTime = new Date();
-    resetGlobalSpikeDetector(); // Reset spike history for new session
+    resetGlobalSpikeDetectorV2(); // Reset spike history for new session
     this.lastActivityTime = new Date();
     this.activeSeconds = 0;
     
@@ -507,14 +507,20 @@ export class ActivityTrackerV2 extends EventEmitter {
     const periodDuration = (periodEnd.getTime() - this.periodStartTime.getTime()) / 1000; // in seconds
     
     // Check for activity spikes before generating metrics
-    const spikeDetector = getGlobalSpikeDetector();
-    const activityData: ActivityData = {
+    const spikeDetector = getGlobalSpikeDetectorV2();
+    const activityData: ActivityDataV2 = {
       keyHits: this.currentMetrics.keyHits,
+      productiveKeyHits: this.currentMetrics.productiveKeyHits,
+      navigationKeyHits: this.currentMetrics.navigationKeyHits,
       uniqueKeys: this.currentMetrics.uniqueKeys.size,
+      keySequencePattern: undefined, // Will be analyzed by the detector
       mouseClicks: this.currentMetrics.mouseClicks,
       mouseScrolls: this.currentMetrics.mouseScrolls,
       mouseDistance: this.currentMetrics.mouseDistance,
-      timestamp: periodEnd
+      timestamp: periodEnd,
+      hasTextPatterns: undefined, // Will be analyzed by the detector
+      hasCodingPatterns: undefined, // Will be analyzed by the detector
+      hasReadingPattern: undefined // Will be analyzed by the detector
     };
     
     const spikeDetectionResult = spikeDetector.addActivity(activityData);
@@ -537,11 +543,16 @@ export class ActivityTrackerV2 extends EventEmitter {
       periodDuration
     );
     
-    // If spike detection identifies bot activity, set score to 0
+    // If spike detection identifies bot activity with high confidence, set score to 0
     let activityScore = detailedMetrics.scoreCalculation.finalScore;
-    if (spikeDetectionResult.isBot) {
-      activityScore = 0; // Mark as bot activity
-      console.log(`  🚫 Bot activity detected via spike analysis: ${spikeDetectionResult.spikeReason}`);
+    if (spikeDetectionResult.isBot && spikeDetectionResult.confidence >= 60) {
+      activityScore = 0; // Mark as bot activity (only if confident)
+      console.log(`  🚫 Bot activity detected via spike analysis (confidence: ${spikeDetectionResult.confidence}%): ${spikeDetectionResult.spikeReason}`);
+    } else if (spikeDetectionResult.hasSpike && spikeDetectionResult.confidence >= 50) {
+      // Reduce score proportionally based on spike severity and confidence
+      const reduction = (spikeDetectionResult.spikeScore / 100) * (spikeDetectionResult.confidence / 100);
+      activityScore = Math.max(0, Math.round(activityScore * (1 - reduction)));
+      console.log(`  ⚠️ Activity spike detected, reducing score by ${Math.round(reduction * 100)}%`);
     }
     
     console.log(`\n📊 Saving period: ${this.periodStartTime.toISOString()} - ${periodEnd.toISOString()}`);
@@ -550,8 +561,11 @@ export class ActivityTrackerV2 extends EventEmitter {
     console.log(`  Mouse: ${this.currentMetrics.mouseClicks} clicks, ${Math.round(this.currentMetrics.mouseDistance)}px distance`);
     
     // Log bot detection from both sources
-    if (spikeDetectionResult.isBot || spikeDetectionResult.hasSpike) {
-      console.log(`  🚨 Spike detected (score: ${spikeDetectionResult.spikeScore}): ${spikeDetectionResult.spikeReason}`);
+    if (spikeDetectionResult.hasSpike && !spikeDetectionResult.isBot) {
+      console.log(`  🚨 Spike detected (score: ${spikeDetectionResult.spikeScore}, confidence: ${spikeDetectionResult.confidence}%): ${spikeDetectionResult.spikeReason}`);
+      if (spikeDetectionResult.details) {
+        console.log(`      Details:`, spikeDetectionResult.details);
+      }
     }
     if (detailedMetrics.botDetection.keyboardBotDetected || detailedMetrics.botDetection.mouseBotDetected) {
       console.log(`  ⚠️ Pattern bot detected: ${detailedMetrics.botDetection.details.join(', ')}`);
@@ -564,6 +578,7 @@ export class ActivityTrackerV2 extends EventEmitter {
         isBot: spikeDetectionResult.isBot,
         hasSpike: spikeDetectionResult.hasSpike,
         spikeScore: spikeDetectionResult.spikeScore,
+        confidence: spikeDetectionResult.confidence,
         spikeReason: spikeDetectionResult.spikeReason,
         details: spikeDetectionResult.details
       }
@@ -578,7 +593,7 @@ export class ActivityTrackerV2 extends EventEmitter {
       periodEnd: periodEnd,
       mode: this.currentMode,
       activityScore,
-      isValid: !spikeDetectionResult.isBot, // Mark invalid if bot detected
+      isValid: !(spikeDetectionResult.isBot && spikeDetectionResult.confidence >= 60), // Mark invalid only if confident bot detection
       classification: spikeDetectionResult.isBot ? 'bot' : detailedMetrics.classification.category,
       metricsBreakdown: enhancedMetrics, // Add enhanced metrics with spike detection
       commandHourData: this.currentMode === 'command_hours' ? {

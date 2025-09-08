@@ -1,4 +1,5 @@
 import { DatabaseService } from './databaseService';
+import { getManagerMessage, getWeeklyMarathonMessage, getCurrentSessionMessage } from '../utils/managerMessages';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -106,28 +107,25 @@ export class ProductiveHoursService {
 
 
   /**
-   * Get playful/sarcastic message based on hustle level
+   * Get manager message based on context
    */
-  getHustleMessage(hours: number, markers: any): string {
-    const percentage = (hours / markers.fullAttendance) * 100;
+  getHustleMessage(hours: number, markers: any, lastActivityScore: number = 5): string {
+    const now = new Date();
+    const context = {
+      currentHour: now.getHours(),
+      dayOfWeek: now.getDay(),
+      dayOfMonth: now.getDate(),
+      month: now.getMonth() + 1,
+      trackedHoursToday: hours,
+      trackedHoursWeek: 0, // Will be calculated separately for weekly
+      lastActivityScore: lastActivityScore,
+      isHolidayWeek: markers.isHolidayWeek || false,
+      currentSessionMinutes: 0, // Will be passed from session
+      targetDailyHours: markers.fullAttendance || 8,
+      targetWeeklyHours: 40
+    };
 
-    if (hours === 0) {
-      return "🦥 Are you even here? The couch misses you less than we do!";
-    } else if (hours < markers.halfAttendance) {
-      return `😴 ${hours.toFixed(1)}h? That's not hustle, that's a coffee break gone rogue!`;
-    } else if (hours < markers.threeQuarterAttendance) {
-      return `🐢 ${hours.toFixed(1)}h - Moving at turtle speed, but hey, at least you're moving!`;
-    } else if (hours < markers.fullAttendance) {
-      return `🏃 ${hours.toFixed(1)}h - Almost there! Just a bit more to earn your full stripes!`;
-    } else if (hours === markers.fullAttendance) {
-      return `🎯 ${hours.toFixed(1)}h - Perfect attendance! You've earned your badge of honor!`;
-    } else if (hours <= 11) {
-      return `🚀 ${hours.toFixed(1)}h - Overachiever alert! Someone's gunning for employee of the month!`;
-    } else if (hours <= 12) {
-      return `🔥 ${hours.toFixed(1)}h - On fire! But remember, even machines need oil breaks!`;
-    } else {
-      return `⚡ ${hours.toFixed(1)}h - LEGENDARY! Did you forget what your home looks like?`;
-    }
+    return getManagerMessage(context);
   }
 
   /**
@@ -295,24 +293,23 @@ export class ProductiveHoursService {
    * Get weekly marathon message
    */
   getWeeklyMessage(hours: number, attendance: any, markers: any): string {
-    const percentage = (attendance.daysEarned / markers.workingDays) * 100;
+    const now = new Date();
+    const targetWeeklyHours = markers.dailyTarget * markers.workingDays;
     
-    if (hours === 0) {
-      return "🎯 The week is young, time to build momentum!";
-    } else if (percentage < 20) {
-      return `📅 ${hours.toFixed(1)}h - Every marathon starts with a single step!`;
-    } else if (percentage < 40) {
-      return `🏃 ${hours.toFixed(1)}h - Picking up pace! Keep the momentum going!`;
-    } else if (percentage < 60) {
-      return `💪 ${hours.toFixed(1)}h - Halfway there! You're crushing it!`;
-    } else if (percentage < 80) {
-      return `🚀 ${hours.toFixed(1)}h - Strong week! The finish line is in sight!`;
-    } else if (percentage < 100) {
-      return `🔥 ${hours.toFixed(1)}h - Almost there! Push for that perfect week!`;
-    } else if (percentage === 100) {
-      return `🏆 ${hours.toFixed(1)}h - PERFECT WEEK! You're a productivity champion!`;
-    } else {
-      return `⚡ ${hours.toFixed(1)}h - LEGENDARY WEEK! You've gone beyond and above!`;
-    }
+    const context = {
+      currentHour: now.getHours(),
+      dayOfWeek: now.getDay(),
+      dayOfMonth: now.getDate(),
+      month: now.getMonth() + 1,
+      trackedHoursToday: 0, // Not relevant for weekly
+      trackedHoursWeek: hours,
+      lastActivityScore: 5, // Default
+      isHolidayWeek: markers.hasHoliday || false,
+      currentSessionMinutes: 0,
+      targetDailyHours: markers.dailyTarget || 9,
+      targetWeeklyHours: targetWeeklyHours || 45
+    };
+
+    return getWeeklyMarathonMessage(context);
   }
 }

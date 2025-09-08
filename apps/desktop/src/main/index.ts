@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, desktopCapturer } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog } from 'electron';
 import path from 'path';
 import { ActivityTrackerV2 } from './services/activityTrackerV2';
 import { ScreenshotServiceV2 } from './services/screenshotServiceV2';
@@ -38,6 +38,42 @@ const createWindow = () => {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+
+  // Handle window close event - prevent accidental closure during tracking
+  mainWindow.on('close', (event) => {
+    // Check if there's an active session
+    const activeSession = databaseService?.getActiveSession();
+    
+    if (activeSession && activeSession.isActive) {
+      // Prevent the window from closing
+      event.preventDefault();
+      
+      // Show confirmation dialog
+      const choice = dialog.showMessageBoxSync(mainWindow!, {
+        type: 'warning',
+        buttons: ['Keep Tracking', 'Stop & Close'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Tracking in Progress',
+        message: 'Time tracking is currently active',
+        detail: 'Do you want to stop tracking and close the application, or continue tracking?'
+      });
+      
+      if (choice === 1) {
+        // User chose to stop and close
+        // Stop the session first
+        activityTracker?.stopSession().then(() => {
+          // Now close the window
+          mainWindow!.destroy();
+        }).catch((error) => {
+          console.error('Error stopping session:', error);
+          // Force close anyway
+          mainWindow!.destroy();
+        });
+      }
+      // If choice === 0, do nothing (keep window open)
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -437,8 +473,12 @@ function setupIpcHandlers() {
     const productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, today);
     console.log('Calculated productive hours:', productiveHours);
     
+    // Get last activity score for context
+    const currentActivity = await databaseService.getCurrentActivity();
+    const lastActivityScore = currentActivity ? (currentActivity.activityScore / 10) : 5; // Convert to 0-10 scale
+    
     const markers = productiveHoursService.getScaleMarkers(today);
-    const message = productiveHoursService.getHustleMessage(productiveHours, markers);
+    const message = productiveHoursService.getHustleMessage(productiveHours, markers, lastActivityScore);
     const attendance = productiveHoursService.getAttendanceStatus(productiveHours, markers);
 
     console.log('Returning productive hours data:', {

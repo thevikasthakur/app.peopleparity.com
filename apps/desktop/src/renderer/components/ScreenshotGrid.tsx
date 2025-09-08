@@ -303,6 +303,23 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
     }
   }, [showEditActivityModal, selectedIds, screenshots]);
 
+  // Handle Escape key to close screenshot modal
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && modalScreenshot) {
+        setModalScreenshot(null);
+      }
+    };
+
+    if (modalScreenshot) {
+      document.addEventListener('keydown', handleEscapeKey);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [modalScreenshot]);
+
   const loadRecentActivities = async () => {
     try {
       const recent = await window.electronAPI.notes.getRecent();

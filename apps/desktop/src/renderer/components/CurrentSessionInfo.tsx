@@ -109,11 +109,11 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
     // Late Morning to Lunch (10 AM - 2 PM)
     else if (hour >= 10 && hour < 14) {
       if (coverageRate < 30) {
-        message = "😤 Are you on bench or what?! I can see you online but no commits! Should I escalate this to the delivery manager?";
+        message = "😤 Are you on bench or what?! I can see you online but no commits! Should I escalate this?";
       } else if (coverageRate < 60) {
         message = "📊 Your utilization is pathetic! Client is asking for daily updates. What should I tell them - resource is 'exploring'?";
       } else if (trackedHours < 3) {
-        message = "⏰ Half day almost over! Sprint deadline is tomorrow. Stop browsing and start delivering!";
+        message = "⏰ Half day almost close! Deadline is approaching. Stop browsing and start delivering!";
       } else {
         message = "✅ Good work! But don't relax yet. Remember, we need to show 9 hours tracked time to client!";
       }

@@ -239,7 +239,7 @@ export function ActivityModal({
                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                            }`}
                 >
-                  Save Activity
+                  Save & Start Tracking
                 </button>
               </div>
 

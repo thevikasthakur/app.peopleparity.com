@@ -151,7 +151,7 @@ export class MetricsCollector {
     }
     
     return {
-      isBotLike: confidence > 0.5,
+      isBotLike: confidence > 0.7, // Increased threshold for keyboard
       confidence: Math.min(confidence, 1),
       reasons
     };
@@ -201,16 +201,17 @@ export class MetricsCollector {
         }
       }
       
-      if (straightLineCount > positions.length * 0.7) {
-        reasons.push('Mouse movement in perfectly straight lines');
-        confidence += 0.4;
+      // Much more lenient - only flag if >90% straight lines AND high speed
+      if (straightLineCount > positions.length * 0.9 && speeds.some(s => s > 2000)) {
+        reasons.push('Mouse movement in perfectly straight lines at high speed');
+        confidence += 0.3;
       }
       
-      // Check for instant teleportation (bot-like)
-      const teleports = speeds.filter(s => s > 5000).length; // 5000 pixels/ms is impossible
-      if (teleports > 0) {
+      // Check for instant teleportation (bot-like) - be more lenient
+      const teleports = speeds.filter(s => s > 10000).length; // 10000 pixels/ms is truly impossible
+      if (teleports > 2) { // Allow occasional spikes from screen switching
         reasons.push(`${teleports} instant mouse teleportations detected`);
-        confidence += 0.5;
+        confidence += 0.4;
       }
     }
     
@@ -225,14 +226,15 @@ export class MetricsCollector {
       const clickVariance = clickIntervals.reduce((sum, i) => sum + Math.pow(i - avgClickInterval, 2), 0) / clickIntervals.length;
       const clickStdDev = Math.sqrt(clickVariance);
       
-      if (clickStdDev < 5) {
-        reasons.push(`Unnaturally consistent click intervals (std dev: ${clickStdDev.toFixed(2)}ms)`);
+      // Much stricter - only flag truly robotic clicking
+      if (clickStdDev < 2 && avgClickInterval < 100) { // Very consistent AND very fast
+        reasons.push(`Unnaturally consistent fast clicking (std dev: ${clickStdDev.toFixed(2)}ms)`);
         confidence += 0.3;
       }
     }
     
     return {
-      isBotLike: confidence > 0.5,
+      isBotLike: confidence > 0.7, // Increased threshold from 0.5 to 0.7 for mouse
       confidence: Math.min(confidence, 1),
       reasons
     };
@@ -324,8 +326,8 @@ export class MetricsCollector {
     if (botDetection.keyboardBotDetected) {
       penalties.botPenalty += 1.5; // Reduced from 25% to 1.5 points
     }
-    if (botDetection.mouseBotDetected) {
-      penalties.botPenalty += 1.5; // Reduced from 25% to 1.5 points
+    if (botDetection.mouseBotDetected && botDetection.confidence > 0.7) {
+      penalties.botPenalty += 1.0; // Further reduced and only apply if confident
     }
     
     // Idle penalty (scale to 0-10 range)
