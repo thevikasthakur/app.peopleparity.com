@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Award, Zap, Target, Calendar, Trophy, Star, Flag, Clock } from 'lucide-react';
+import { TrendingUp, Award, Zap, Target, Calendar, Trophy, Star, Flag, Clock, Lock, Info } from 'lucide-react';
 import { getActivityMessage } from '../utils/activityMessages';
 
 interface WeeklyData {
@@ -92,9 +92,9 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
     return 'Inactive';
   };
   
-  // Calculate day markers
+  // Calculate day markers (only for weekdays)
   const dayMarkers = [];
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
   for (let i = 1; i <= markers.workingDays; i++) {
     const targetHours = i * markers.dailyTarget;
     const position = (targetHours / markers.maxScale) * 100;
@@ -102,7 +102,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
       day: i, 
       hours: targetHours, 
       position,
-      label: dayLabels[i - 1] || `Day ${i}`
+      label: weekdayLabels[i - 1] || `Day ${i}`
     });
   }
 
@@ -172,20 +172,26 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
         </div>
       </div>
 
-      {/* Day Milestones */}
-      <div className="grid grid-cols-5 gap-1.5 mb-4">
-        {dayLabels.map((label, index) => {
+      {/* Day Milestones - Updated to 7 days */}
+      <div className="grid grid-cols-7 gap-1 mb-4 relative">
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => {
           const dayStatus = weeklyData.dailyStatuses?.[index];
           const dayHours = dayStatus?.hours || 0;
           const attendanceStatus = dayStatus?.status || 'absent';
           const statusLabel = dayStatus?.label || 'Absent';
           const statusColor = dayStatus?.color || '#ef4444';
+          const isWeekend = dayStatus?.isWeekend || false;
+          const potentialStatus = dayStatus?.potentialStatus;
+          const potentialLabel = dayStatus?.potentialLabel;
           
           // Check if this is the current day
           const isCurrentDay = dayStatus?.isCurrentDay || false;
           
           // Determine background and border colors based on status
           const getStatusClasses = () => {
+            if (isWeekend) {
+              return 'bg-gray-100 border-gray-300 opacity-75';
+            }
             if (isCurrentDay && attendanceStatus === 'in-progress') {
               return 'bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-400 shadow-md animate-pulse-subtle';
             }
@@ -210,6 +216,16 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           
           // Get icon based on status
           const getStatusIcon = () => {
+            if (isWeekend) {
+              return (
+                <div className="relative group">
+                  <Lock className="w-4 h-4 text-gray-500" />
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                    Weekend - doesn't count for attendance
+                  </div>
+                </div>
+              );
+            }
             if (isCurrentDay && attendanceStatus === 'in-progress') {
               return (
                 <div className="relative">
@@ -240,7 +256,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           return (
             <div 
               key={label}
-              className={`p-2 rounded-lg border text-center transition-all ${getStatusClasses()} ${isCurrentDay ? 'relative overflow-hidden' : ''}`}
+              className={`p-2 rounded-lg border text-center transition-all relative ${getStatusClasses()} ${isCurrentDay && !potentialStatus ? 'overflow-hidden' : ''}`}
               style={isCurrentDay && attendanceStatus === 'in-progress' ? {
                 animation: 'subtle-pulse 3s ease-in-out infinite'
               } : {}}
@@ -248,17 +264,84 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
               <div className="flex items-center justify-center mb-1">
                 {getStatusIcon()}
               </div>
-              <p className="text-xs font-bold text-gray-900">
+              <p className={`text-xs font-bold ${isWeekend ? 'text-gray-600' : 'text-gray-900'}`}>
                 {label}
-                {isCurrentDay && <span className="ml-1 text-[8px] text-blue-500">(Today)</span>}
+                {isCurrentDay && !isWeekend && <span className="ml-1 text-[8px] text-blue-500">(Today)</span>}
               </p>
               <p className="text-[10px] text-gray-600">
-                {attendanceStatus === 'future' ? '-' : `${dayHours.toFixed(1)}h`}
+                {isWeekend ? '-' : attendanceStatus === 'future' ? '-' : `${dayHours.toFixed(1)}h`}
               </p>
-              <p className="text-[10px] font-medium" style={{ color: statusColor }}>
-                {statusLabel}
-              </p>
-              {isCurrentDay && attendanceStatus === 'in-progress' && (
+              <div className="flex items-center justify-center gap-1">
+                <p className="text-[10px] font-medium" style={{ color: isWeekend ? '#6b7280' : statusColor }}>
+                  {isWeekend ? 'Weekend' : statusLabel}
+                </p>
+                {/* Show info icon - different messages for current vs past days */}
+                {((isCurrentDay && attendanceStatus !== 'full' && attendanceStatus !== 'extra' && attendanceStatus !== 'in-progress') || 
+                  (!isCurrentDay && potentialStatus)) && !isWeekend && (
+                  <div className="relative group">
+                    <Info className="w-3 h-3 text-blue-500 cursor-help animate-pulse" />
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 bg-white border-2 border-blue-200 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-50 w-64">
+                      <div className="text-xs space-y-1.5">
+                        <p className="font-bold text-blue-600">🎯 Manager's Tip</p>
+                        <p className="text-gray-700 leading-relaxed">
+                          {/* Messages for current day - encourage to complete today's target */}
+                          {isCurrentDay && (
+                            <>
+                              {attendanceStatus === 'absent' && (
+                                <>Only {dayHours.toFixed(1)} hours so far today! 
+                                You need <span className="font-bold text-orange-600">{Math.max(0, 4.5 - dayHours).toFixed(1)} more hours</span> for Half Day attendance!
+                                <br/>Keep pushing - you can still make it! 💪</>
+                              )}
+                              {attendanceStatus === 'half' && (
+                                <>Good progress with {dayHours.toFixed(1)} hours! 
+                                Just <span className="font-bold text-orange-600">{Math.max(0, 7 - dayHours).toFixed(1)} more hours</span> for Good attendance, or <span className="font-bold text-green-600">{Math.max(0, 9 - dayHours).toFixed(1)} hours</span> for Full!
+                                <br/>You're doing great - keep going! 🚀</>
+                              )}
+                              {attendanceStatus === 'good' && (
+                                <>Excellent work with {dayHours.toFixed(1)} hours! 
+                                Only <span className="font-bold text-green-600">{Math.max(0, 9 - dayHours).toFixed(1)} more hours</span> for Full attendance today!
+                                <br/>Push for excellence! ⭐</>
+                              )}
+                            </>
+                          )}
+                          
+                          {/* Messages for past days - show potential with 45h/week */}
+                          {!isCurrentDay && (
+                            <>
+                              {attendanceStatus === 'absent' && potentialStatus === 'half' && (
+                                <>Only {dayHours.toFixed(1)} hours that day? Don't worry! 
+                                If you complete 45 hours this week, this day will automatically upgrade to <span className="font-bold text-green-600">Half Day</span> attendance! 
+                                <br/>Just push harder this week! 💪</>
+                              )}
+                              {attendanceStatus === 'half' && potentialStatus === 'good' && (
+                                <>Good effort with {dayHours.toFixed(1)} hours! 
+                                Hit the 45-hour weekly target, and this converts to <span className="font-bold text-green-600">Good Attendance</span>! 
+                                <br/>Keep up the momentum! 🚀</>
+                              )}
+                              {attendanceStatus === 'half' && potentialStatus === 'full' && (
+                                <>Solid {dayHours.toFixed(1)} hours logged! 
+                                Achieve 45 hours this week to upgrade this to <span className="font-bold text-green-600">Full Attendance</span>! 
+                                <br/>You're on track! 🏆</>
+                              )}
+                              {attendanceStatus === 'good' && potentialStatus === 'full' && (
+                                <>Impressive {dayHours.toFixed(1)} hours! 
+                                Complete 45 hours this week and this becomes <span className="font-bold text-green-600">Full Attendance</span>! 
+                                <br/>Excellence awaits! ⭐</>
+                              )}
+                            </>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-gray-500 italic border-t pt-1">
+                          {isCurrentDay ? 
+                            "Target: 4.5h (Half) • 7h (Good) • 9h (Full)" : 
+                            "*33% relaxation applies when you reach 45h/week"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {isCurrentDay && attendanceStatus === 'in-progress' && !isWeekend && (
                 <div className="absolute -bottom-1 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-400 opacity-60" 
                      style={{ animation: 'shimmer 2s linear infinite' }} />
               )}

@@ -1199,9 +1199,11 @@ export class LocalDatabase {
   }
   
   getWeekStatsForDate(userId: string, date: Date) {
-    // Get all periods for the week containing the specified date using UTC
+    // Get all periods for the week containing the specified date using UTC (Monday as first day)
     const startOfWeek = new Date(date);
-    startOfWeek.setUTCDate(date.getUTCDate() - date.getUTCDay());
+    const dayOfWeek = date.getUTCDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    startOfWeek.setUTCDate(date.getUTCDate() - daysToMonday);
     startOfWeek.setUTCHours(0, 0, 0, 0);
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);
@@ -1286,10 +1288,12 @@ export class LocalDatabase {
   }
   
   getWeekStats(userId: string) {
-    // Get all periods for the current week in UTC
+    // Get all periods for the current week in UTC (Monday as first day)
     const now = new Date();
     const startOfWeek = new Date(now);
-    startOfWeek.setUTCDate(now.getUTCDate() - now.getUTCDay());
+    const dayOfWeek = now.getUTCDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    startOfWeek.setUTCDate(now.getUTCDate() - daysToMonday);
     startOfWeek.setUTCHours(0, 0, 0, 0);
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);

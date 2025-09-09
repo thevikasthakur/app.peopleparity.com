@@ -43,9 +43,11 @@ export class ProductiveHoursService {
 
     const holidays = this.holidayConfig[year].finalHolidayList || [];
     
-    // Get start and end of the week
+    // Get start and end of the week (Monday as first day)
     const weekStart = new Date(date);
-    weekStart.setDate(date.getDate() - date.getDay()); // Sunday
+    const dayOfWeek = date.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    weekStart.setDate(date.getDate() - daysToMonday);
     weekStart.setHours(0, 0, 0, 0);
     
     const weekEnd = new Date(weekStart);
@@ -185,9 +187,11 @@ export class ProductiveHoursService {
 
     const holidays = this.holidayConfig[year].finalHolidayList || [];
     
-    // Get start of the week (Sunday)
+    // Get start of the week (Monday)
     const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay());
+    const dayOfWeek = now.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    weekStart.setDate(now.getDate() - daysToMonday);
     weekStart.setHours(0, 0, 0, 0);
     
     // Get end of the week (Saturday)
@@ -231,31 +235,37 @@ export class ProductiveHoursService {
   /**
    * Get daily hours breakdown for the week
    */
-  async getDailyHoursForWeek(userId: string, date: Date): Promise<{ hours: number; isFuture: boolean }[]> {
+  async getDailyHoursForWeek(userId: string, date: Date): Promise<{ hours: number; isFuture: boolean; isWeekend: boolean }[]> {
     const db = this.db as any;
-    // Use UTC for week calculation
+    // Use UTC for week calculation (Monday as first day)
     const startOfWeek = new Date(date);
-    startOfWeek.setUTCDate(date.getUTCDate() - date.getUTCDay());
+    const dayOfWeek = date.getUTCDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    startOfWeek.setUTCDate(date.getUTCDate() - daysToMonday);
     startOfWeek.setUTCHours(0, 0, 0, 0);
     
     // Get current UTC date for future day check
     const today = new Date();
     const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999));
     
-    const dailyData: { hours: number; isFuture: boolean }[] = [];
+    const dailyData: { hours: number; isFuture: boolean; isWeekend: boolean }[] = [];
     
-    // Get hours for each day (Mon-Fri)
-    for (let i = 1; i <= 5; i++) { // 1=Monday, 5=Friday
+    // Get hours for all 7 days (Mon-Sun) - Monday is now day 0
+    for (let i = 0; i <= 6; i++) { // 0=Monday, 6=Sunday
       const dayStart = new Date(startOfWeek);
       dayStart.setUTCDate(startOfWeek.getUTCDate() + i);
       
       // Check if this day is in the future (in UTC)
       const isFuture = dayStart > todayUTC;
       
+      // Check if this is weekend (Saturday=5, Sunday=6)
+      const isWeekend = i >= 5;
+      
       const dayStats = db.getDateStats(userId, dayStart);
       dailyData.push({
         hours: dayStats.totalHours,
-        isFuture
+        isFuture,
+        isWeekend
       });
     }
     
@@ -265,11 +275,18 @@ export class ProductiveHoursService {
   /**
    * Calculate attendance status for a day
    */
-  getDayAttendanceStatus(hours: number, isHolidayWeek: boolean, weekTotal: number = 0, isFuture: boolean = false, isCurrentDay: boolean = false): {
-    status: 'absent' | 'half' | 'good' | 'full' | 'extra' | 'future' | 'in-progress';
+  getDayAttendanceStatus(hours: number, isHolidayWeek: boolean, weekTotal: number = 0, isFuture: boolean = false, isCurrentDay: boolean = false, isWeekend: boolean = false): {
+    status: 'absent' | 'half' | 'good' | 'full' | 'extra' | 'future' | 'in-progress' | 'weekend';
     label: string;
     color: string;
+    potentialStatus?: 'half' | 'good' | 'full';
+    potentialLabel?: string;
   } {
+    // If it's a weekend day, return weekend status
+    if (isWeekend) {
+      return { status: 'weekend', label: 'Weekend', color: '#6b7280' }; // gray
+    }
+    
     // If it's a future day, return future status
     if (isFuture) {
       return { status: 'future', label: 'Upcoming', color: '#9ca3af' }; // gray
@@ -310,24 +327,80 @@ export class ProductiveHoursService {
       full: 9 * relaxation
     };
     
+    // Calculate thresholds with potential relaxation (if week reaches 45 hours)
+    const potentialThresholds = isHolidayWeek ? {
+      half: 5.5 * 0.6667,
+      good: 8 * 0.6667,
+      full: 10.5 * 0.6667
+    } : {
+      half: 3.0, // Exactly 3.0 hours (4.5 * 0.6667)
+      good: 4.67,   // 7 * 0.6667
+      full: 6.0    // 9 * 0.6667
+    };
+    
+    // Determine current status
+    let currentStatus: 'absent' | 'half' | 'good' | 'full' | 'extra';
+    let currentLabel: string;
+    let currentColor: string;
+    
     if (hours >= thresholds.full) {
       if (hours > thresholds.full) {
-        return { status: 'extra', label: 'Extra', color: '#9333ea' }; // purple
+        currentStatus = 'extra';
+        currentLabel = 'Extra';
+        currentColor = '#9333ea'; // purple
+      } else {
+        currentStatus = 'full';
+        currentLabel = 'Full';
+        currentColor = '#10b981'; // green
       }
-      return { status: 'full', label: 'Full', color: '#10b981' }; // green
     } else if (hours >= thresholds.good) {
-      return { status: 'good', label: 'Good', color: '#3b82f6' }; // blue
+      currentStatus = 'good';
+      currentLabel = 'Good';
+      currentColor = '#3b82f6'; // blue
     } else if (hours >= thresholds.half) {
-      return { status: 'half', label: 'Half', color: '#f59e0b' }; // amber
+      currentStatus = 'half';
+      currentLabel = 'Half';
+      currentColor = '#f59e0b'; // amber
     } else {
-      return { status: 'absent', label: 'Absent', color: '#ef4444' }; // red
+      currentStatus = 'absent';
+      currentLabel = 'Absent';
+      currentColor = '#ef4444'; // red
     }
+    
+    // Calculate potential status if week total is not yet 45 hours
+    let potentialStatus: 'half' | 'good' | 'full' | undefined;
+    let potentialLabel: string | undefined;
+    
+    if (weekTotal < 45) {
+      // Use a small epsilon for floating point comparison
+      const epsilon = 0.01; // Allow for 0.01 hour (36 seconds) tolerance
+      
+      // Check if hours would result in a better status with relaxation
+      if (hours >= potentialThresholds.full - epsilon && currentStatus !== 'full' && currentStatus !== 'extra') {
+        potentialStatus = 'full';
+        potentialLabel = 'Full*';
+      } else if (hours >= potentialThresholds.good - epsilon && (currentStatus === 'absent' || currentStatus === 'half')) {
+        potentialStatus = 'good';
+        potentialLabel = 'Good*';
+      } else if (hours >= potentialThresholds.half - epsilon && currentStatus === 'absent') {
+        potentialStatus = 'half';
+        potentialLabel = 'Half*';
+      }
+    }
+    
+    return { 
+      status: currentStatus, 
+      label: currentLabel, 
+      color: currentColor,
+      potentialStatus,
+      potentialLabel
+    };
   }
   
   /**
    * Calculate weekly attendance
    */
-  calculateWeeklyAttendance(hours: number, markers: any, dailyData?: { hours: number; isFuture: boolean }[]): {
+  calculateWeeklyAttendance(hours: number, markers: any, dailyData?: { hours: number; isFuture: boolean; isWeekend?: boolean }[], selectedDate?: Date): {
     totalHours: number;
     extraHours: number;
     status: string;
@@ -338,30 +411,53 @@ export class ProductiveHoursService {
     
     // Calculate daily statuses if daily data provided
     let dailyStatuses: any[] = [];
-    if (dailyData && dailyData.length === 5) {
-      const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    if (dailyData && dailyData.length === 7) {
+      const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       
-      // Get current day of week (0 = Sunday, 1 = Monday, ..., 5 = Friday)
+      // Check if we're looking at the current week
       const now = new Date();
+      const weekDate = selectedDate || now;
+      
+      // Get start of the week being viewed
+      const startOfViewedWeek = new Date(weekDate);
+      const viewedDayOfWeek = weekDate.getUTCDay();
+      const daysToMonday = viewedDayOfWeek === 0 ? 6 : viewedDayOfWeek - 1;
+      startOfViewedWeek.setUTCDate(weekDate.getUTCDate() - daysToMonday);
+      startOfViewedWeek.setUTCHours(0, 0, 0, 0);
+      
+      // Get start of current week
+      const startOfCurrentWeek = new Date(now);
       const currentDayOfWeek = now.getUTCDay();
+      const currentDaysToMonday = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1;
+      startOfCurrentWeek.setUTCDate(now.getUTCDate() - currentDaysToMonday);
+      startOfCurrentWeek.setUTCHours(0, 0, 0, 0);
+      
+      // Check if viewing current week
+      const isCurrentWeek = startOfViewedWeek.getTime() === startOfCurrentWeek.getTime();
+      
+      // Get adjusted current day (0=Monday, 6=Sunday)
+      const adjustedCurrentDay = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1;
       
       dailyStatuses = dailyData.map((data, index) => {
-        // Monday = 1, Tuesday = 2, ..., Friday = 5
-        const dayOfWeek = index + 1;
-        const isCurrentDay = dayOfWeek === currentDayOfWeek && !data.isFuture;
+        // index 0=Monday, 1=Tuesday, ..., 6=Sunday
+        // Only mark as current day if we're viewing the current week AND it's the right day
+        const isCurrentDay = isCurrentWeek && index === adjustedCurrentDay && !data.isFuture;
+        const isWeekend = data.isWeekend || false;
         
         const dayStatus = this.getDayAttendanceStatus(
           data.hours, 
           markers.hasHoliday, 
           hours, 
           data.isFuture,
-          isCurrentDay
+          isCurrentDay,
+          isWeekend
         );
         return {
           day: dayLabels[index],
           hours: data.hours,
           isFuture: data.isFuture,
           isCurrentDay,
+          isWeekend,
           ...dayStatus
         };
       });

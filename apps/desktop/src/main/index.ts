@@ -638,10 +638,12 @@ function setupIpcHandlers() {
     const dailyData = await productiveHoursService.getDailyHoursForWeek(currentUser.id, selectedDate);
     const markers = productiveHoursService.getWeeklyMarkers();
     
-    // Calculate average activity score for the week of selected date
+    // Calculate average activity score for the week of selected date (Monday as first day)
     const db = (databaseService as any).localDb;
     const startOfWeek = new Date(selectedDate);
-    startOfWeek.setDate(selectedDate.getDate() - selectedDate.getDay());
+    const dayOfWeek = selectedDate.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    startOfWeek.setDate(selectedDate.getDate() - daysToMonday);
     startOfWeek.setHours(0, 0, 0, 0);
     const endOfWeek = new Date(selectedDate);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
@@ -687,7 +689,7 @@ function setupIpcHandlers() {
       : 0;
     
     // Calculate base attendance with daily breakdown
-    const baseAttendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers, dailyData);
+    const baseAttendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers, dailyData, selectedDate);
     
     // Modify attendance color based on activity score
     const attendance = {

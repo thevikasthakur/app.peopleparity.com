@@ -137,7 +137,7 @@ export class ActivityTrackerV2 extends EventEmitter {
         let avgActivityScore = 0;
         
         if (windowData.activityPeriods.length > 0) {
-          const totalScore = windowData.activityPeriods.reduce((sum, p) => sum + p.activityScore, 0);
+          const totalScore = windowData.activityPeriods.reduce((sum: number, p: any) => sum + p.activityScore, 0);
           avgActivityScore = totalScore / windowData.activityPeriods.length;
           hasZeroActivity = avgActivityScore === 0;
         } else if (windowData.screenshot) {
