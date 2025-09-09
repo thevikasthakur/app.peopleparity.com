@@ -332,7 +332,13 @@ function setupIpcHandlers() {
     return databaseService.getCurrentActivity();
   });
   
-  ipcMain.handle('session:today', async () => {
+  ipcMain.handle('session:today', async (_event, dateString?: string) => {
+    if (dateString) {
+      console.log('[session:today] Date string from frontend:', dateString);
+      const date = new Date(dateString);
+      console.log('[session:today] Parsed date:', date.toISOString(), 'Local:', date.toString());
+      return databaseService.getSessionsForDate(date);
+    }
     return databaseService.getTodaySessions();
   });
   
@@ -523,24 +529,28 @@ function setupIpcHandlers() {
   });
 
   // Productive hours handler
-  ipcMain.handle('productive-hours:get', async () => {
+  ipcMain.handle('productive-hours:get', async (_event, dateString?: string) => {
     const currentUser = databaseService.getCurrentUser();
-    console.log('Getting productive hours for user:', currentUser);
+    console.log('Getting productive hours for user:', currentUser, 'date:', dateString);
     if (!currentUser) {
       console.log('No current user found');
       return null;
     }
 
-    const today = new Date();
-    const productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, today);
-    console.log('Calculated productive hours:', productiveHours);
+    const selectedDate = dateString ? new Date(dateString) : new Date();
+    console.log('[productive-hours:get] Date from frontend:', dateString, '-> parsed as:', selectedDate.toISOString());
+    console.log('[productive-hours:get] Local representation:', selectedDate.toString());
     
-    // Calculate average activity score for today
+    const productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, selectedDate);
+    console.log('Calculated productive hours:', productiveHours, 'for date:', selectedDate);
+    
+    // Calculate average activity score for selected date
     const db = (databaseService as any).localDb;
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = new Date(selectedDate);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(selectedDate);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    console.log('[productive-hours:get] Using UTC range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
     
     // Get all screenshots for today
     const screenshots = db.db.prepare(`
@@ -585,7 +595,7 @@ function setupIpcHandlers() {
     const currentActivity = await databaseService.getCurrentActivity();
     const lastActivityScore = currentActivity ? (currentActivity.activityScore / 10) : 5; // Convert to 0-10 scale
     
-    const markers = productiveHoursService.getScaleMarkers(today);
+    const markers = productiveHoursService.getScaleMarkers(selectedDate);
     const message = productiveHoursService.getHustleMessage(productiveHours, markers, lastActivityScore);
     
     // Modify attendance status color based on activity score
@@ -617,22 +627,24 @@ function setupIpcHandlers() {
   });
 
   // Weekly marathon handler
-  ipcMain.handle('weekly-marathon:get', async () => {
+  ipcMain.handle('weekly-marathon:get', async (_event, dateString?: string) => {
     const currentUser = databaseService.getCurrentUser();
     if (!currentUser) {
       return null;
     }
 
-    const productiveHours = await productiveHoursService.calculateWeeklyHours(currentUser.id);
+    const selectedDate = dateString ? new Date(dateString) : new Date();
+    const productiveHours = await productiveHoursService.calculateWeeklyHours(currentUser.id, selectedDate);
+    const dailyData = await productiveHoursService.getDailyHoursForWeek(currentUser.id, selectedDate);
     const markers = productiveHoursService.getWeeklyMarkers();
     
-    // Calculate average activity score for the week
+    // Calculate average activity score for the week of selected date
     const db = (databaseService as any).localDb;
-    const today = new Date();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
+    const startOfWeek = new Date(selectedDate);
+    startOfWeek.setDate(selectedDate.getDate() - selectedDate.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(today);
+    const endOfWeek = new Date(selectedDate);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
     
     // Get all screenshots for the week
@@ -674,8 +686,8 @@ function setupIpcHandlers() {
       ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
       : 0;
     
-    // Calculate base attendance
-    const baseAttendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers);
+    // Calculate base attendance with daily breakdown
+    const baseAttendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers, dailyData);
     
     // Modify attendance color based on activity score
     const attendance = {
@@ -694,7 +706,9 @@ function setupIpcHandlers() {
       averageActivityScore,
       markers,
       attendance,
-      message
+      message,
+      dailyData: dailyData || [],
+      dailyStatuses: baseAttendance.dailyStatuses || []
     };
   });
   

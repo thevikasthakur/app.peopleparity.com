@@ -20,21 +20,31 @@ interface HustleData {
   };
 }
 
-export const TodaysHustle: React.FC = () => {
+interface TodaysHustleProps {
+  selectedDate: Date;
+  isToday: boolean;
+}
+
+export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToday }) => {
   const [hustleData, setHustleData] = useState<HustleData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadHustleData();
-    // Refresh every 5 minutes
-    const interval = setInterval(loadHustleData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+    // Refresh every 5 minutes only if today
+    let interval: NodeJS.Timeout | undefined;
+    if (isToday) {
+      interval = setInterval(loadHustleData, 5 * 60 * 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedDate, isToday]);
 
   const loadHustleData = async () => {
     try {
-      const data = await window.electronAPI.getProductiveHours();
-      console.log('Loaded hustle data:', data);
+      const data = await window.electronAPI.getProductiveHours(selectedDate.toISOString());
+      console.log('Loaded hustle data for date:', selectedDate, data);
       setHustleData(data);
     } catch (error) {
       console.error('Failed to load hustle data:', error);
@@ -78,6 +88,7 @@ export const TodaysHustle: React.FC = () => {
 
   // Determine milestone status
   const getMilestoneStatus = () => {
+    if (productiveHours > markers.fullAttendance) return 'extra';
     if (productiveHours >= markers.fullAttendance) return 'full';
     if (productiveHours >= markers.threeQuarterAttendance) return 'three-quarter';
     if (productiveHours >= markers.halfAttendance) return 'half';
@@ -88,13 +99,15 @@ export const TodaysHustle: React.FC = () => {
 
   // Get progress bar color based on milestone
   const getProgressGradient = () => {
+    if (productiveHours > markers.fullAttendance) 
+      return 'linear-gradient(90deg, #9333ea 0%, #7c3aed 100%)'; // Purple for extra
     if (productiveHours >= markers.fullAttendance) 
-      return 'linear-gradient(90deg, #10b981 0%, #059669 100%)';
+      return 'linear-gradient(90deg, #10b981 0%, #059669 100%)'; // Green for full
     if (productiveHours >= markers.threeQuarterAttendance)
-      return 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)';
+      return 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)'; // Blue for good
     if (productiveHours >= markers.halfAttendance)
-      return 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)';
-    return 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)';
+      return 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)'; // Amber for half
+    return 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)'; // Red for none
   };
 
   return (
@@ -106,7 +119,7 @@ export const TodaysHustle: React.FC = () => {
             <TrendingUp className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold">Today's Hustle</h3>
+            <h3 className="text-lg font-semibold">{isToday ? "Today's" : "Day's"} Hustle</h3>
             <p className="text-xs text-gray-500">Daily productivity tracker</p>
           </div>
           {markers.isHolidayWeek && (
@@ -125,7 +138,7 @@ export const TodaysHustle: React.FC = () => {
                 {productiveHours.toFixed(1)}h
               </span>
             </div>
-            <span className="text-xs text-gray-500">tracked today</span>
+            <span className="text-xs text-gray-500">tracked {isToday ? 'today' : `on ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}</span>
           </div>
           
           <div className="w-px h-10 bg-gray-200" />
@@ -149,57 +162,102 @@ export const TodaysHustle: React.FC = () => {
         </div>
       </div>
 
-      {/* Milestone Indicators */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      {/* Milestone Indicators - 5 columns */}
+      <div className="grid grid-cols-5 gap-1.5 mb-4">
+        {/* No Attendance */}
         <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus !== 'none' 
-            ? 'bg-amber-50 border-amber-300' 
+          milestoneStatus === 'none' 
+            ? 'bg-red-50 border-red-300 ring-2 ring-red-300' 
             : 'bg-gray-50 border-gray-200'
         }`}>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-gray-600">Half Day</span>
-            {milestoneStatus !== 'none' ? (
-              <CheckCircle className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[11px] font-medium text-gray-600">No Attendance</span>
+            {milestoneStatus === 'none' ? (
+              <AlertCircle className="w-3 h-3 text-red-500" />
             ) : (
-              <AlertCircle className="w-3.5 h-3.5 text-gray-300" />
+              <AlertCircle className="w-3 h-3 text-gray-300" />
+            )}
+          </div>
+          <p className="text-sm font-bold text-gray-900">&lt;{markers.halfAttendance}h</p>
+          <p className="text-[10px] text-gray-500">0% attendance</p>
+        </div>
+
+        {/* Half Day */}
+        <div className={`p-2 rounded-lg border transition-all ${
+          milestoneStatus === 'half' 
+            ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-300' 
+            : milestoneStatus !== 'none'
+            ? 'bg-amber-50 border-amber-300'
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-medium text-gray-600">Half Day</span>
+            {milestoneStatus !== 'none' ? (
+              <CheckCircle className="w-3 h-3 text-amber-500" />
+            ) : (
+              <AlertCircle className="w-3 h-3 text-gray-300" />
             )}
           </div>
           <p className="text-sm font-bold text-gray-900">{markers.halfAttendance}h</p>
-          <p className="text-xs text-gray-500">50% attendance</p>
+          <p className="text-[10px] text-gray-500">50% attendance</p>
         </div>
 
+        {/* Good Day */}
         <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus === 'three-quarter' || milestoneStatus === 'full'
+          milestoneStatus === 'three-quarter'
+            ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-300'
+            : milestoneStatus === 'full' || milestoneStatus === 'extra'
             ? 'bg-blue-50 border-blue-300' 
             : 'bg-gray-50 border-gray-200'
         }`}>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-gray-600">Good Day</span>
-            {milestoneStatus === 'three-quarter' || milestoneStatus === 'full' ? (
-              <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+            <span className="text-[11px] font-medium text-gray-600">Good Day</span>
+            {milestoneStatus === 'three-quarter' || milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
+              <CheckCircle className="w-3 h-3 text-blue-500" />
             ) : (
-              <Target className="w-3.5 h-3.5 text-gray-300" />
+              <Target className="w-3 h-3 text-gray-300" />
             )}
           </div>
           <p className="text-sm font-bold text-gray-900">{markers.threeQuarterAttendance}h</p>
-          <p className="text-xs text-gray-500">75% attendance</p>
+          <p className="text-[10px] text-gray-500">75% attendance</p>
         </div>
 
+        {/* Full Day */}
         <div className={`p-2 rounded-lg border transition-all ${
           milestoneStatus === 'full'
+            ? 'bg-green-50 border-green-300 ring-2 ring-green-300'
+            : milestoneStatus === 'extra'
             ? 'bg-green-50 border-green-300' 
             : 'bg-gray-50 border-gray-200'
         }`}>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-gray-600">Full Day</span>
-            {milestoneStatus === 'full' ? (
-              <Award className="w-3.5 h-3.5 text-green-500" />
+            <span className="text-[11px] font-medium text-gray-600">Full Day</span>
+            {milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
+              <Award className="w-3 h-3 text-green-500" />
             ) : (
-              <Flag className="w-3.5 h-3.5 text-gray-300" />
+              <Flag className="w-3 h-3 text-gray-300" />
             )}
           </div>
           <p className="text-sm font-bold text-gray-900">{markers.fullAttendance}h</p>
-          <p className="text-xs text-gray-500">100% attendance</p>
+          <p className="text-[10px] text-gray-500">100% attendance</p>
+        </div>
+
+        {/* Extra Mileage */}
+        <div className={`p-2 rounded-lg border transition-all ${
+          milestoneStatus === 'extra'
+            ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-300 animate-pulse' 
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-medium text-gray-600">Extra Mileage</span>
+            {milestoneStatus === 'extra' ? (
+              <Zap className="w-3 h-3 text-purple-500" />
+            ) : (
+              <Zap className="w-3 h-3 text-gray-300" />
+            )}
+          </div>
+          <p className="text-sm font-bold text-gray-900">&gt;{markers.fullAttendance}h</p>
+          <p className="text-[10px] text-gray-500">Flexibility earned</p>
         </div>
       </div>
 
@@ -285,7 +343,7 @@ export const TodaysHustle: React.FC = () => {
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full animate-pulse" 
                  style={{ backgroundColor: attendance.color }} />
-            <span className="text-xs text-gray-600">Today's Achievement:</span>
+            <span className="text-xs text-gray-600">{isToday ? "Today's" : "Day's"} Achievement:</span>
             <span className="font-bold text-sm px-2 py-1 rounded-lg"
                   style={{ 
                     backgroundColor: `${attendance.color}15`,

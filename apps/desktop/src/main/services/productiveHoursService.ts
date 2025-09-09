@@ -89,17 +89,17 @@ export class ProductiveHoursService {
    * The getTodayStats already filters based on activity scores
    */
   async calculateProductiveHours(userId: string, date: Date = new Date()): Promise<number> {
-    // Get today's stats from the database
+    // Get stats for the specified date from the database
     // This already filters periods based on activity scores:
     // - Counts periods with activityScore >= 4.0 (Poor, Fair, Good)
     // - Counts Critical periods (2.5-4.0) if adjacent to better periods or average hour is >= 4.0
     // - Excludes Inactive periods (< 2.5)
     console.log('Calculating productive hours for userId:', userId, 'date:', date.toISOString());
-    const todayStats = this.db.getTodayStats(userId);
-    console.log('Today stats from DB:', todayStats);
+    const dateStats = this.db.getDateStats(userId, date);
+    console.log('Date stats from DB:', dateStats);
     
     // Total productive hours (already filtered by activity level)
-    const productiveHours = todayStats.clientHours + todayStats.commandHours;
+    const productiveHours = dateStats.clientHours + dateStats.commandHours;
     console.log('Total productive hours:', productiveHours);
     
     return productiveHours;
@@ -166,8 +166,8 @@ export class ProductiveHoursService {
   /**
    * Calculate weekly productive hours
    */
-  async calculateWeeklyHours(userId: string): Promise<number> {
-    const weekStats = this.db.getWeekStats(userId);
+  async calculateWeeklyHours(userId: string, date: Date = new Date()): Promise<number> {
+    const weekStats = this.db.getWeekStatsForDate(userId, date);
     const productiveHours = weekStats.clientHours + weekStats.commandHours;
     return productiveHours;
   }
@@ -229,63 +229,133 @@ export class ProductiveHoursService {
   }
 
   /**
+   * Get daily hours breakdown for the week
+   */
+  async getDailyHoursForWeek(userId: string, date: Date): Promise<{ hours: number; isFuture: boolean }[]> {
+    const db = this.db as any;
+    // Use UTC for week calculation
+    const startOfWeek = new Date(date);
+    startOfWeek.setUTCDate(date.getUTCDate() - date.getUTCDay());
+    startOfWeek.setUTCHours(0, 0, 0, 0);
+    
+    // Get current UTC date for future day check
+    const today = new Date();
+    const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999));
+    
+    const dailyData: { hours: number; isFuture: boolean }[] = [];
+    
+    // Get hours for each day (Mon-Fri)
+    for (let i = 1; i <= 5; i++) { // 1=Monday, 5=Friday
+      const dayStart = new Date(startOfWeek);
+      dayStart.setUTCDate(startOfWeek.getUTCDate() + i);
+      
+      // Check if this day is in the future (in UTC)
+      const isFuture = dayStart > todayUTC;
+      
+      const dayStats = db.getDateStats(userId, dayStart);
+      dailyData.push({
+        hours: dayStats.totalHours,
+        isFuture
+      });
+    }
+    
+    return dailyData;
+  }
+  
+  /**
+   * Calculate attendance status for a day
+   */
+  getDayAttendanceStatus(hours: number, isHolidayWeek: boolean, weekTotal: number = 0, isFuture: boolean = false): {
+    status: 'absent' | 'half' | 'good' | 'full' | 'extra' | 'future';
+    label: string;
+    color: string;
+  } {
+    // If it's a future day, return future status
+    if (isFuture) {
+      return { status: 'future', label: 'Upcoming', color: '#9ca3af' }; // gray
+    }
+    
+    // Apply 33.33% relaxation if week total >= 45 hours
+    const relaxation = weekTotal >= 45 ? 0.6667 : 1.0; // 33.33% reduction = multiply by 0.6667
+    
+    const thresholds = isHolidayWeek ? {
+      half: 5.5 * relaxation,
+      good: 8 * relaxation,
+      full: 10.5 * relaxation
+    } : {
+      half: 4.5 * relaxation,
+      good: 7 * relaxation,
+      full: 9 * relaxation
+    };
+    
+    if (hours >= thresholds.full) {
+      if (hours > thresholds.full) {
+        return { status: 'extra', label: 'Extra', color: '#9333ea' }; // purple
+      }
+      return { status: 'full', label: 'Full', color: '#10b981' }; // green
+    } else if (hours >= thresholds.good) {
+      return { status: 'good', label: 'Good', color: '#3b82f6' }; // blue
+    } else if (hours >= thresholds.half) {
+      return { status: 'half', label: 'Half', color: '#f59e0b' }; // amber
+    } else {
+      return { status: 'absent', label: 'Absent', color: '#ef4444' }; // red
+    }
+  }
+  
+  /**
    * Calculate weekly attendance
    */
-  calculateWeeklyAttendance(hours: number, markers: any): {
-    daysEarned: number;
+  calculateWeeklyAttendance(hours: number, markers: any, dailyData?: { hours: number; isFuture: boolean }[]): {
+    totalHours: number;
     extraHours: number;
     status: string;
     color: string;
+    dailyStatuses?: any[];
   } {
     const fullWeekTarget = markers.dailyTarget * markers.workingDays;
-    let daysEarned = 0;
-    let remainingHours = hours;
     
-    // Calculate full days earned
-    if (remainingHours >= fullWeekTarget) {
-      daysEarned = markers.workingDays;
-      remainingHours = hours - fullWeekTarget;
-    } else {
-      daysEarned = Math.floor(remainingHours / markers.dailyTarget);
-      remainingHours = remainingHours % markers.dailyTarget;
-      
-      // Calculate partial day from remaining hours
-      if (remainingHours >= 8) {
-        daysEarned += 0.75;
-      } else if (remainingHours >= 5.5) {
-        daysEarned += 0.5;
-      } else if (remainingHours >= 4.5 && !markers.hasHoliday) {
-        // In non-holiday weeks, 4.5h = 0.5 day
-        daysEarned += 0.5;
-      }
+    // Calculate daily statuses if daily data provided
+    let dailyStatuses: any[] = [];
+    if (dailyData && dailyData.length === 5) {
+      const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+      dailyStatuses = dailyData.map((data, index) => {
+        const dayStatus = this.getDayAttendanceStatus(data.hours, markers.hasHoliday, hours, data.isFuture);
+        return {
+          day: dayLabels[index],
+          hours: data.hours,
+          isFuture: data.isFuture,
+          ...dayStatus
+        };
+      });
     }
     
-    // Determine status and color
+    // Determine overall week status based on total hours
     let status = '';
     let color = '';
     
-    if (daysEarned >= markers.workingDays) {
-      status = `Full Week (${markers.workingDays} days)`;
+    if (hours >= fullWeekTarget) {
+      status = `${hours.toFixed(1)} hours (Full Week)`;
       color = '#10b981'; // green
-    } else if (daysEarned >= 3) {
-      status = `${daysEarned.toFixed(2)} days`;
+    } else if (hours >= fullWeekTarget * 0.75) {
+      status = `${hours.toFixed(1)} hours`;
       color = '#3b82f6'; // blue
-    } else if (daysEarned >= 1) {
-      status = `${daysEarned.toFixed(2)} days`;
+    } else if (hours >= fullWeekTarget * 0.5) {
+      status = `${hours.toFixed(1)} hours`;
       color = '#f59e0b'; // amber
-    } else if (daysEarned > 0) {
-      status = `${daysEarned.toFixed(2)} days`;
+    } else if (hours > 0) {
+      status = `${hours.toFixed(1)} hours`;
       color = '#ef4444'; // red
     } else {
-      status = 'No days earned';
+      status = 'No hours';
       color = '#6b7280'; // gray
     }
     
     return {
-      daysEarned,
+      totalHours: hours,
       extraHours: Math.max(0, hours - fullWeekTarget),
       status,
-      color
+      color,
+      dailyStatuses
     };
   }
 

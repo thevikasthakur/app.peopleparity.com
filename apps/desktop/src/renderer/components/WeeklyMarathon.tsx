@@ -13,29 +13,49 @@ interface WeeklyData {
     workingDays: number;
   };
   attendance: {
-    daysEarned: number;
+    totalHours?: number; // For backward compatibility
+    daysEarned?: number; // For backward compatibility
     extraHours: number;
     status: string;
     color: string;
   };
   message: string;
+  dailyData?: Array<{ hours: number; isFuture: boolean }>;
+  dailyStatuses?: Array<{
+    day: string;
+    hours: number;
+    isFuture?: boolean;
+    status: 'absent' | 'half' | 'good' | 'full' | 'extra' | 'future';
+    label: string;
+    color: string;
+  }>;
 }
 
-export const WeeklyMarathon: React.FC = () => {
+interface WeeklyMarathonProps {
+  selectedDate: Date;
+  isToday: boolean;
+}
+
+export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, isToday }) => {
   const [weeklyData, setWeeklyData] = useState<WeeklyData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadWeeklyData();
-    // Refresh every 5 minutes
-    const interval = setInterval(loadWeeklyData, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+    // Refresh every 5 minutes only if today
+    let interval: NodeJS.Timeout | undefined;
+    if (isToday) {
+      interval = setInterval(loadWeeklyData, 5 * 60 * 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedDate, isToday]);
 
   const loadWeeklyData = async () => {
     try {
-      const data = await window.electronAPI.getWeeklyMarathon();
-      console.log('Loaded weekly data:', data);
+      const data = await window.electronAPI.getWeeklyMarathon(selectedDate.toISOString());
+      console.log('Loaded weekly data for week of:', selectedDate, data);
       setWeeklyData(data);
     } catch (error) {
       console.error('Failed to load weekly data:', error);
@@ -86,32 +106,19 @@ export const WeeklyMarathon: React.FC = () => {
     });
   }
 
-  // Get progress color based on days earned
+  // Get progress color based on total hours
   const getProgressGradient = () => {
-    if (attendance.daysEarned >= markers.workingDays) {
+    const fullWeekTarget = markers.dailyTarget * markers.workingDays;
+    if (productiveHours >= fullWeekTarget) {
       return 'linear-gradient(90deg, #10b981 0%, #059669 100%)'; // Green - full week
-    } else if (attendance.daysEarned >= 3) {
+    } else if (productiveHours >= fullWeekTarget * 0.75) {
       return 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)'; // Blue - good progress
-    } else if (attendance.daysEarned >= 1) {
+    } else if (productiveHours >= fullWeekTarget * 0.5) {
       return 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)'; // Amber - some progress
     } else {
       return 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)'; // Red - low progress
     }
   };
-
-  // Calculate milestone achievements
-  const getMilestoneStatus = () => {
-    const daysCompleted = Math.floor(attendance.daysEarned);
-    return {
-      day1: daysCompleted >= 1,
-      day2: daysCompleted >= 2,
-      day3: daysCompleted >= 3,
-      day4: daysCompleted >= 4,
-      day5: daysCompleted >= 5,
-    };
-  };
-
-  const milestones = getMilestoneStatus();
 
   return (
     <div className="glass-card p-5">
@@ -123,7 +130,7 @@ export const WeeklyMarathon: React.FC = () => {
           </div>
           <div>
             <h3 className="text-lg font-semibold">Weekly Marathon</h3>
-            <p className="text-xs text-gray-500">5-day productivity tracker</p>
+            <p className="text-xs text-gray-500">{isToday ? 'This week' : `Week of ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}</p>
           </div>
           {markers.hasHoliday && (
             <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full animate-pulse">
@@ -141,7 +148,7 @@ export const WeeklyMarathon: React.FC = () => {
                 {productiveHours.toFixed(1)}h
               </span>
             </div>
-            <span className="text-xs text-gray-500">tracked this week</span>
+            <span className="text-xs text-gray-500">tracked {isToday ? 'this week' : 'that week'}</span>
           </div>
           
           <div className="w-px h-10 bg-gray-200" />
@@ -168,41 +175,65 @@ export const WeeklyMarathon: React.FC = () => {
       {/* Day Milestones */}
       <div className="grid grid-cols-5 gap-1.5 mb-4">
         {dayLabels.map((label, index) => {
-          const dayNum = index + 1;
-          const isCompleted = attendance.daysEarned >= dayNum;
-          const isPartial = attendance.daysEarned > index && attendance.daysEarned < dayNum;
-          const dayTarget = markers.dailyTarget;
+          const dayStatus = weeklyData.dailyStatuses?.[index];
+          const dayHours = dayStatus?.hours || 0;
+          const attendanceStatus = dayStatus?.status || 'absent';
+          const statusLabel = dayStatus?.label || 'Absent';
+          const statusColor = dayStatus?.color || '#ef4444';
+          
+          // Determine background and border colors based on status
+          const getStatusClasses = () => {
+            switch (attendanceStatus) {
+              case 'future':
+                return 'bg-gray-50 border-gray-200';
+              case 'extra':
+                return 'bg-purple-50 border-purple-300';
+              case 'full':
+                return 'bg-green-50 border-green-300';
+              case 'good':
+                return 'bg-blue-50 border-blue-300';
+              case 'half':
+                return 'bg-amber-50 border-amber-300';
+              case 'absent':
+              default:
+                return 'bg-red-50 border-red-300';
+            }
+          };
+          
+          // Get icon based on status
+          const getStatusIcon = () => {
+            switch (attendanceStatus) {
+              case 'future':
+                return <Calendar className="w-4 h-4 text-gray-400" />;
+              case 'extra':
+                return <Zap className="w-4 h-4 text-purple-500" />;
+              case 'full':
+                return <Star className="w-4 h-4 text-green-500 fill-green-500" />;
+              case 'good':
+                return <Star className="w-4 h-4 text-blue-500 fill-blue-500" />;
+              case 'half':
+                return <Star className="w-4 h-4 text-amber-500" />;
+              case 'absent':
+              default:
+                return <Star className="w-4 h-4 text-gray-300" />;
+            }
+          };
           
           return (
             <div 
               key={label}
-              className={`p-2 rounded-lg border text-center transition-all ${
-                isCompleted 
-                  ? 'bg-green-50 border-green-300' 
-                  : isPartial
-                  ? 'bg-amber-50 border-amber-300'
-                  : 'bg-gray-50 border-gray-200'
-              }`}
+              className={`p-2 rounded-lg border text-center transition-all ${getStatusClasses()}`}
             >
               <div className="flex items-center justify-center mb-1">
-                {isCompleted ? (
-                  <Star className="w-4 h-4 text-green-500 fill-green-500" />
-                ) : isPartial ? (
-                  <Star className="w-4 h-4 text-amber-500" />
-                ) : (
-                  <Star className="w-4 h-4 text-gray-300" />
-                )}
+                {getStatusIcon()}
               </div>
               <p className="text-xs font-bold text-gray-900">{label}</p>
-              <p className="text-[10px] text-gray-500">{dayTarget}h</p>
-              {isCompleted && (
-                <p className="text-[10px] font-medium text-green-600">✓ Done</p>
-              )}
-              {isPartial && (
-                <p className="text-[10px] font-medium text-amber-600">
-                  {((attendance.daysEarned - index) * 100).toFixed(0)}%
-                </p>
-              )}
+              <p className="text-[10px] text-gray-600">
+                {attendanceStatus === 'future' ? '-' : `${dayHours.toFixed(1)}h`}
+              </p>
+              <p className="text-[10px] font-medium" style={{ color: statusColor }}>
+                {statusLabel}
+              </p>
             </div>
           );
         })}
@@ -215,9 +246,9 @@ export const WeeklyMarathon: React.FC = () => {
           <div className="flex items-center gap-3">
             <span className="text-xs">
               <span className="font-bold" style={{ color: attendance.color }}>
-                {attendance.daysEarned.toFixed(2)}
+                {productiveHours.toFixed(1)}h
               </span>
-              <span className="text-gray-500"> / {markers.workingDays} days</span>
+              <span className="text-gray-500"> / {(markers.dailyTarget * markers.workingDays).toFixed(0)}h</span>
             </span>
             <span className="text-xs font-bold" style={{ color: attendance.color }}>
               {Math.round(percentage)}%
@@ -236,7 +267,7 @@ export const WeeklyMarathon: React.FC = () => {
             }}
           >
             {/* Animated shimmer for full week completion */}
-            {attendance.daysEarned >= markers.workingDays && attendance.extraHours > 0 && (
+            {productiveHours >= (markers.dailyTarget * markers.workingDays) && attendance.extraHours > 0 && (
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
             )}
             
@@ -259,7 +290,7 @@ export const WeeklyMarathon: React.FC = () => {
               >
                 <div 
                   className={`w-0.5 h-full ${
-                    attendance.daysEarned >= marker.day 
+                    productiveHours >= marker.hours 
                       ? 'bg-green-400/50' 
                       : 'bg-gray-400/30'
                   }`} 

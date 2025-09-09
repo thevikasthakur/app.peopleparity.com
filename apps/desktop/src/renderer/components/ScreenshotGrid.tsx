@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader, RotateCw } from 'lucide-react';
+import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader, RotateCw, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ActivityModal } from './ActivityModal';
 
@@ -587,6 +587,18 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
     );
   }
 
+  // Check if we need to add date separators (for when UTC date != local date)
+  const getLocalDateString = (timestamp: Date) => {
+    return timestamp.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+  
+  // Track when local date changes
+  let lastLocalDate: string | null = null;
+  
   return (
     <div className="space-y-4">
       {Object.entries(hourGroups).map(([hour, hourScreenshots]) => {
@@ -643,8 +655,27 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
         
         console.log(`Hour ${hour} activity groups:`, activityGroups);
 
+        // Check if we need a date separator
+        const firstValidScreenshot = validScreenshots[0];
+        const currentLocalDate = firstValidScreenshot ? getLocalDateString(firstValidScreenshot.timestamp) : null;
+        const showDateSeparator = currentLocalDate && currentLocalDate !== lastLocalDate;
+        if (currentLocalDate) {
+          lastLocalDate = currentLocalDate;
+        }
+
         return (
           <div key={hour} className="space-y-2">
+            {showDateSeparator && (
+              <div className="flex items-center gap-3 py-2 mt-4 first:mt-0">
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+                <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-600">{currentLocalDate}</span>
+                  <span className="text-xs text-gray-400">(Local Time)</span>
+                </div>
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="w-4 h-4" />
               <span className="font-medium">{hour}</span>

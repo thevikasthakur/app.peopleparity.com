@@ -56,7 +56,18 @@ export function Dashboard() {
   });
   const [showAnalyticsTooltip, setShowAnalyticsTooltip] = useState(false);
   const [showLeaderboardTooltip, setShowLeaderboardTooltip] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(() => {
+    // Get current UTC date
+    const now = new Date();
+    // Create a date at UTC midnight for today
+    const todayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      0, 0, 0, 0
+    ));
+    return todayUTC;
+  });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customScreenshots, setCustomScreenshots] = useState<any[]>([]);
   const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false);
@@ -65,7 +76,7 @@ export function Dashboard() {
   useEffect(() => {
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
     loadTodaySessions();
-  }, []);
+  }, [selectedDate]);
   
   useEffect(() => {
     // Reload sessions when current session changes
@@ -74,10 +85,10 @@ export function Dashboard() {
   
   const loadTodaySessions = async () => {
     try {
-      const sessions = await window.electronAPI.session.getTodaySessions();
+      const sessions = await window.electronAPI.session.getTodaySessions(selectedDate.toISOString());
       setTodaySessions(sessions || []);
     } catch (error) {
-      console.error('Failed to load today\'s sessions:', error);
+      console.error('Failed to load sessions for date:', selectedDate, error);
     }
   };
   
@@ -99,7 +110,21 @@ export function Dashboard() {
 
   // Load screenshots for selected date when it changes
   useEffect(() => {
-    const isToday = selectedDate.toDateString() === new Date().toDateString();
+    // Compare dates in UTC to match backend logic
+  const isToday = (() => {
+    const now = new Date();
+    const selectedUTC = new Date(Date.UTC(
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(),
+      selectedDate.getDate()
+    ));
+    const todayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    ));
+    return selectedUTC.getTime() === todayUTC.getTime();
+  })();
     if (!isToday) {
       loadScreenshotsForDate(selectedDate);
     }
@@ -119,26 +144,60 @@ export function Dashboard() {
   };
 
   const handleDateChange = (date: Date) => {
-    setSelectedDate(date);
+    // Convert the input date to UTC midnight
+    const newDate = new Date(Date.UTC(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      0, 0, 0, 0
+    ));
+    setSelectedDate(newDate);
     setShowDatePicker(false);
   };
 
   const handlePreviousDay = () => {
     const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() - 1);
+    newDate.setUTCDate(newDate.getUTCDate() - 1);
     setSelectedDate(newDate);
   };
 
   const handleNextDay = () => {
     const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() + 1);
-    // Don't allow future dates
-    if (newDate <= new Date()) {
+    newDate.setUTCDate(newDate.getUTCDate() + 1);
+    
+    // Check if future in UTC
+    const now = new Date();
+    const newDateUTC = new Date(Date.UTC(
+      newDate.getFullYear(),
+      newDate.getMonth(),
+      newDate.getDate()
+    ));
+    const todayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    ));
+    
+    if (newDateUTC <= todayUTC) {
       setSelectedDate(newDate);
     }
   };
 
-  const isToday = selectedDate.toDateString() === new Date().toDateString();
+  // Compare dates in UTC to match backend logic
+  const isToday = (() => {
+    const now = new Date();
+    const selectedUTC = new Date(Date.UTC(
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(),
+      selectedDate.getDate()
+    ));
+    const todayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    ));
+    return selectedUTC.getTime() === todayUTC.getTime();
+  })();
   const displayScreenshots = isToday ? screenshots : customScreenshots;
 
   // Client mode disabled - always use command mode
@@ -268,11 +327,87 @@ export function Dashboard() {
           {/* Header */}
           <div className="glass-card p-4 bounce-in shadow-lg">
             <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                People Parity
-              </h1>
-              <p className="sarcastic-text mt-1">{randomMessage}</p>
+            <div className="flex items-center gap-6">
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                  People Parity
+                </h1>
+                <p className="sarcastic-text mt-1">{randomMessage}</p>
+              </div>
+              
+              {/* Date Selector - Moved from screenshots section */}
+              <div className="flex items-center gap-2 ml-4">
+                <button
+                  onClick={handlePreviousDay}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Previous day"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                
+                <button
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary/10 to-secondary/10 hover:from-primary/20 hover:to-secondary/20 rounded-lg transition-all relative border border-primary/20"
+                >
+                  <Calendar className="w-5 h-5 text-primary" />
+                  <span className="font-medium">
+                    {isToday ? 'Today' : `${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`}
+                  </span>
+                  
+                  {/* Date Picker Dropdown */}
+                  {showDatePicker && (
+                    <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
+                      <input
+                        type="date"
+                        value={selectedDate.toISOString().split('T')[0]}
+                        max={(() => {
+                          const now = new Date();
+                          const todayUTC = new Date(Date.UTC(
+                            now.getUTCFullYear(),
+                            now.getUTCMonth(),
+                            now.getUTCDate()
+                          ));
+                          return todayUTC.toISOString().split('T')[0];
+                        })()}
+                        onChange={(e) => handleDateChange(new Date(e.target.value))}
+                        className="px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  )}
+                </button>
+                
+                <button
+                  onClick={handleNextDay}
+                  className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${
+                    isToday 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : ''
+                  }`}
+                  disabled={isToday}
+                  title="Next day"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+                
+                {!isToday && (
+                  <button
+                    onClick={() => {
+                      // Get current UTC date
+                      const now = new Date();
+                      const todayUTC = new Date(Date.UTC(
+                        now.getUTCFullYear(),
+                        now.getUTCMonth(),
+                        now.getUTCDate(),
+                        0, 0, 0, 0
+                      ));
+                      setSelectedDate(todayUTC);
+                    }}
+                    className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium"
+                  >
+                    Today
+                  </button>
+                )}
+              </div>
             </div>
             
             <div className="flex items-center gap-4">
@@ -308,8 +443,8 @@ export function Dashboard() {
 
         {/* Time Stats - Today's Hustle and Weekly Marathon */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TodaysHustle />
-          <WeeklyMarathon />
+          <TodaysHustle selectedDate={selectedDate} isToday={isToday} />
+          <WeeklyMarathon selectedDate={selectedDate} isToday={isToday} />
         </div>
 
         {/* Info Cards Row - Activity, Analytics, Leaderboard */}
@@ -345,7 +480,7 @@ export function Dashboard() {
             {todaySessions.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-semibold text-gray-600">Earlier Today</h4>
+                  <h4 className="text-xs font-semibold text-gray-600">{isToday ? 'Earlier Today' : `Sessions on ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`}</h4>
                   <span className="text-xs text-gray-500">{todaySessions.length} session{todaySessions.length !== 1 ? 's' : ''}</span>
                 </div>
                 
@@ -466,8 +601,8 @@ export function Dashboard() {
             
             {todaySessions.length === 0 && (
               <div className="text-center py-6">
-                <p className="text-sm text-gray-400">No sessions yet today</p>
-                <p className="text-xs text-gray-400 mt-1">Start tracking to see your sessions here</p>
+                <p className="text-sm text-gray-400">No sessions {isToday ? 'yet today' : 'on this date'}</p>
+                <p className="text-xs text-gray-400 mt-1">{isToday ? 'Start tracking to see your sessions here' : 'Select a different date to view sessions'}</p>
               </div>
             )}
           </div>
@@ -533,70 +668,12 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Activity className="w-5 h-5 text-primary" />
-              {isToday ? "Today's" : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} Snapshots
+              {isToday ? "Today's" : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} Snapshots
             </h2>
             
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted">
-                {isLoadingScreenshots ? 'Loading...' : `${displayScreenshots.length} moments captured`}
-              </span>
-              
-              {/* Date Selector */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePreviousDay}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                  title="Previous day"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                
-                <button
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors relative"
-                >
-                  <Calendar className="w-4 h-4" />
-                  <span className="text-sm font-medium">
-                    {isToday ? 'Today' : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </span>
-                  
-                  {/* Simple Date Picker Dropdown */}
-                  {showDatePicker && (
-                    <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
-                      <input
-                        type="date"
-                        value={selectedDate.toISOString().split('T')[0]}
-                        max={new Date().toISOString().split('T')[0]}
-                        onChange={(e) => handleDateChange(new Date(e.target.value))}
-                        className="px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleNextDay}
-                  className={`p-1 hover:bg-gray-100 rounded transition-colors ${
-                    selectedDate.toDateString() === new Date().toDateString() 
-                      ? 'opacity-50 cursor-not-allowed' 
-                      : ''
-                  }`}
-                  disabled={selectedDate.toDateString() === new Date().toDateString()}
-                  title="Next day"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-                
-                {!isToday && (
-                  <button
-                    onClick={() => setSelectedDate(new Date())}
-                    className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                  >
-                    Today
-                  </button>
-                )}
-              </div>
-            </div>
+            <span className="text-sm text-muted">
+              {isLoadingScreenshots ? 'Loading...' : `${displayScreenshots.length} moments captured`}
+            </span>
           </div>
           
           {isLoadingScreenshots ? (

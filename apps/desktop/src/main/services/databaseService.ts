@@ -4,6 +4,7 @@ import { app } from 'electron';
 import crypto from 'crypto';
 import axios, { AxiosInstance } from 'axios';
 import Store from 'electron-store';
+import { calculateScreenshotScore, calculateTop80Average } from '../utils/activityScoreCalculator';
 
 export class DatabaseService {
   private static instance: DatabaseService;
@@ -457,6 +458,14 @@ export class DatabaseService {
   getWeekStats(userId: string) {
     return this.localDb.getWeekStats(userId);
   }
+  
+  getDateStats(userId: string, date: Date) {
+    return this.localDb.getDateStats(userId, date);
+  }
+  
+  getWeekStatsForDate(userId: string, date: Date) {
+    return this.localDb.getWeekStatsForDate(userId, date);
+  }
 
   async getScreenshotsByDate(date: Date) {
     console.log('\n=== getScreenshotsByDate called ===', date);
@@ -898,16 +907,17 @@ export class DatabaseService {
     return this.localDb.getValidActivityPeriodsForSession(sessionId);
   }
 
-  getTodaySessions() {
+  getSessionsForDate(date: Date) {
     const userId = this.getCurrentUserId();
     if (!userId) return [];
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Use UTC for consistent day boundaries
+    const startOfDay = new Date(date);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setUTCHours(23, 59, 59, 999);
     
-    // Get all sessions for today
+    // Get all sessions for the specified date
     const sessions = (this.localDb as any).db.prepare(`
       SELECT 
         s.id,
@@ -922,7 +932,7 @@ export class DatabaseService {
         AND s.startTime >= ?
         AND s.startTime < ?
       ORDER BY s.startTime DESC
-    `).all(userId, today.getTime(), tomorrow.getTime());
+    `).all(userId, startOfDay.getTime(), endOfDay.getTime());
     
     // Process sessions to calculate metrics for each
     return sessions.map((session: any) => {
@@ -930,47 +940,51 @@ export class DatabaseService {
       const endTime = session.endTime ? new Date(session.endTime) : new Date();
       const elapsedMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
       
-      // Get activity periods for this session to calculate tracked time
-      const activityPeriods = (this.localDb as any).db.prepare(`
-        SELECT activityScore
-        FROM activity_periods
-        WHERE sessionId = ?
-      `).all(session.id);
-      
-      // Get screenshot count
-      const screenshotCount = (this.localDb as any).db.prepare(`
-        SELECT COUNT(*) as count
+      // Get screenshots for this session
+      const screenshots = (this.localDb as any).db.prepare(`
+        SELECT id
         FROM screenshots
         WHERE sessionId = ?
-      `).get(session.id)?.count || 0;
+        ORDER BY capturedAt
+      `).all(session.id);
       
-      // Calculate tracked minutes (each valid screenshot = 10 minutes)
-      // Valid means activity score >= 25 (2.5 on UI scale)
-      let trackedMinutes = 0;
-      let totalScore = 0;
-      let validPeriods = 0;
+      // Calculate activity score using the same method as productive-hours
+      const allScores: number[] = [];
+      let validScreenshots = 0;
       
-      activityPeriods.forEach((period: any) => {
-        if (period.activityScore >= 25) {
-          validPeriods++;
+      for (const screenshot of screenshots) {
+        // Get all activity periods for this screenshot
+        const activityPeriods = (this.localDb as any).db.prepare(`
+          SELECT activityScore
+          FROM activity_periods
+          WHERE screenshotId = ?
+          ORDER BY activityScore DESC
+        `).all(screenshot.id);
+        
+        const scores = activityPeriods.map((p: any) => p.activityScore);
+        
+        if (scores.length > 0) {
+          // Calculate weighted average using the same function as productive hours
+          const weightedScore = calculateScreenshotScore(scores);
+          const uiScore = weightedScore / 10; // Convert to UI scale
+          
+          // Count valid screenshots (activity score >= 2.5 on UI scale)
+          if (weightedScore >= 25) {
+            validScreenshots++;
+          }
+          
+          if (uiScore > 0) {
+            allScores.push(uiScore);
+          }
         }
-        totalScore += period.activityScore;
-      });
-      
-      // Each valid period represents 1 minute of activity tracking
-      // But we count 10 minutes per valid screenshot for "tracked time"
-      trackedMinutes = Math.min(screenshotCount * 10, elapsedMinutes); // Cap at elapsed time
-      
-      // If we have valid periods, use that for more accurate tracking
-      if (validPeriods > 0) {
-        // Each activity period is 1 minute, so valid periods = tracked minutes
-        // But for UI purposes, we still use the 10-minute rule per screenshot
-        const validScreenshots = Math.ceil(validPeriods / 6); // ~6 periods per screenshot
-        trackedMinutes = validScreenshots * 10;
       }
       
-      const averageActivityScore = activityPeriods.length > 0 
-        ? (totalScore / activityPeriods.length) / 10  // Convert to 0-10 scale
+      // Calculate tracked minutes (each valid screenshot = 10 minutes)
+      const trackedMinutes = Math.min(validScreenshots * 10, elapsedMinutes); // Cap at elapsed time
+      
+      // Calculate top 80% average activity score, same as productive hours
+      const averageActivityScore = allScores.length > 0 
+        ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
         : 0;
       
       return {
@@ -983,10 +997,14 @@ export class DatabaseService {
         projectId: session.projectId,
         elapsedMinutes,
         trackedMinutes: Math.min(trackedMinutes, elapsedMinutes), // Never more than elapsed
-        averageActivityScore: Math.round(averageActivityScore * 10) / 10, // Round to 1 decimal
-        periodCount: activityPeriods.length,
-        screenshotCount
+        averageActivityScore,  // Already rounded to 1 decimal
+        screenshotCount: screenshots.length
       };
     });
+  }
+  
+  getTodaySessions() {
+    const today = new Date();
+    return this.getSessionsForDate(today);
   }
 }

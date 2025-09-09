@@ -22,8 +22,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('session:switch-mode', mode, task, projectId),
     getProductiveInfo: () =>
       ipcRenderer.invoke('session:productive-info'),
-    getTodaySessions: () =>
-      ipcRenderer.invoke('session:today'),
+    getTodaySessions: (dateString?: string) =>
+      ipcRenderer.invoke('session:today', dateString),
   },
   dashboard: {
     getData: () => 
@@ -57,10 +57,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRecent: () =>
       ipcRenderer.invoke('notes:get-recent'),
   },
-  getProductiveHours: () =>
-    ipcRenderer.invoke('productive-hours:get'),
-  getWeeklyMarathon: () =>
-    ipcRenderer.invoke('weekly-marathon:get'),
+  getProductiveHours: (dateString?: string) =>
+    ipcRenderer.invoke('productive-hours:get', dateString),
+  getWeeklyMarathon: (dateString?: string) =>
+    ipcRenderer.invoke('weekly-marathon:get', dateString),
   debug: {
     clearSyncQueue: () => 
       ipcRenderer.invoke('debug:clear-sync-queue'),
