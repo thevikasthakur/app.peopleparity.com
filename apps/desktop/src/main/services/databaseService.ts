@@ -897,4 +897,96 @@ export class DatabaseService {
   getValidActivityPeriodsForSession(sessionId: string) {
     return this.localDb.getValidActivityPeriodsForSession(sessionId);
   }
+
+  getTodaySessions() {
+    const userId = this.getCurrentUserId();
+    if (!userId) return [];
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Get all sessions for today
+    const sessions = (this.localDb as any).db.prepare(`
+      SELECT 
+        s.id,
+        s.startTime,
+        s.endTime,
+        s.mode,
+        s.isActive,
+        s.task,
+        s.projectId
+      FROM sessions s
+      WHERE s.userId = ?
+        AND s.startTime >= ?
+        AND s.startTime < ?
+      ORDER BY s.startTime DESC
+    `).all(userId, today.getTime(), tomorrow.getTime());
+    
+    // Process sessions to calculate metrics for each
+    return sessions.map((session: any) => {
+      const startTime = new Date(session.startTime);
+      const endTime = session.endTime ? new Date(session.endTime) : new Date();
+      const elapsedMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+      
+      // Get activity periods for this session to calculate tracked time
+      const activityPeriods = (this.localDb as any).db.prepare(`
+        SELECT activityScore
+        FROM activity_periods
+        WHERE sessionId = ?
+      `).all(session.id);
+      
+      // Get screenshot count
+      const screenshotCount = (this.localDb as any).db.prepare(`
+        SELECT COUNT(*) as count
+        FROM screenshots
+        WHERE sessionId = ?
+      `).get(session.id)?.count || 0;
+      
+      // Calculate tracked minutes (each valid screenshot = 10 minutes)
+      // Valid means activity score >= 25 (2.5 on UI scale)
+      let trackedMinutes = 0;
+      let totalScore = 0;
+      let validPeriods = 0;
+      
+      activityPeriods.forEach((period: any) => {
+        if (period.activityScore >= 25) {
+          validPeriods++;
+        }
+        totalScore += period.activityScore;
+      });
+      
+      // Each valid period represents 1 minute of activity tracking
+      // But we count 10 minutes per valid screenshot for "tracked time"
+      trackedMinutes = Math.min(screenshotCount * 10, elapsedMinutes); // Cap at elapsed time
+      
+      // If we have valid periods, use that for more accurate tracking
+      if (validPeriods > 0) {
+        // Each activity period is 1 minute, so valid periods = tracked minutes
+        // But for UI purposes, we still use the 10-minute rule per screenshot
+        const validScreenshots = Math.ceil(validPeriods / 6); // ~6 periods per screenshot
+        trackedMinutes = validScreenshots * 10;
+      }
+      
+      const averageActivityScore = activityPeriods.length > 0 
+        ? (totalScore / activityPeriods.length) / 10  // Convert to 0-10 scale
+        : 0;
+      
+      return {
+        id: session.id,
+        startTime: startTime.toISOString(),
+        endTime: session.endTime ? endTime.toISOString() : null,
+        mode: session.mode,
+        isActive: !!session.isActive,
+        task: session.task,
+        projectId: session.projectId,
+        elapsedMinutes,
+        trackedMinutes: Math.min(trackedMinutes, elapsedMinutes), // Never more than elapsed
+        averageActivityScore: Math.round(averageActivityScore * 10) / 10, // Round to 1 decimal
+        periodCount: activityPeriods.length,
+        screenshotCount
+      };
+    });
+  }
 }

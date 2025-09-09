@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('session:switch-mode', mode, task, projectId),
     getProductiveInfo: () =>
       ipcRenderer.invoke('session:productive-info'),
+    getTodaySessions: () =>
+      ipcRenderer.invoke('session:today'),
   },
   dashboard: {
     getData: () => 

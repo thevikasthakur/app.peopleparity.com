@@ -332,6 +332,10 @@ function setupIpcHandlers() {
     return databaseService.getCurrentActivity();
   });
   
+  ipcMain.handle('session:today', async () => {
+    return databaseService.getTodaySessions();
+  });
+  
   ipcMain.handle('session:switch-mode', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
     // Stop current session and start new one
     await activityTracker.stopSession();

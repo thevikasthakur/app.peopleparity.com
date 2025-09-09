@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, TrendingUp, Award, Zap, Coffee, Target } from 'lucide-react';
+import { Clock, TrendingUp, Award, Zap, Coffee, Target, Flag, CheckCircle, AlertCircle } from 'lucide-react';
+import { getActivityMessage } from '../utils/activityMessages';
 
 interface HustleData {
   productiveHours: number;
@@ -75,150 +76,257 @@ export const TodaysHustle: React.FC = () => {
   const threeQuarterMarkerPos = (markers.threeQuarterAttendance / markers.maxScale) * 100;
   const fullMarkerPos = (markers.fullAttendance / markers.maxScale) * 100;
 
-  // Determine the icon based on performance
-  const getIcon = () => {
-    if (productiveHours === 0) return <Coffee className="w-5 h-5" />;
-    if (productiveHours < markers.halfAttendance) return <Clock className="w-5 h-5" />;
-    if (productiveHours < markers.fullAttendance) return <Target className="w-5 h-5" />;
-    if (productiveHours > markers.fullAttendance) return <Zap className="w-5 h-5" />;
-    return <Award className="w-5 h-5" />;
+  // Determine milestone status
+  const getMilestoneStatus = () => {
+    if (productiveHours >= markers.fullAttendance) return 'full';
+    if (productiveHours >= markers.threeQuarterAttendance) return 'three-quarter';
+    if (productiveHours >= markers.halfAttendance) return 'half';
+    return 'none';
+  };
+
+  const milestoneStatus = getMilestoneStatus();
+
+  // Get progress bar color based on milestone
+  const getProgressGradient = () => {
+    if (productiveHours >= markers.fullAttendance) 
+      return 'linear-gradient(90deg, #10b981 0%, #059669 100%)';
+    if (productiveHours >= markers.threeQuarterAttendance)
+      return 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)';
+    if (productiveHours >= markers.halfAttendance)
+      return 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)';
+    return 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)';
   };
 
   return (
-    <div className="glass-card p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="glass-card p-5">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
-          <TrendingUp className="w-5 h-5 text-primary" />
-          <h3 className="text-lg font-semibold">Today's Hustle</h3>
+          <div className="p-2 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-lg">
+            <TrendingUp className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Today's Hustle</h3>
+            <p className="text-xs text-gray-500">Daily productivity tracker</p>
+          </div>
           {markers.isHolidayWeek && (
-            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
-              Holiday Week
+            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full animate-pulse">
+              🎉 Holiday Mode
             </span>
           )}
         </div>
-        <div className="flex items-center space-x-3">
-          <div className="flex flex-col items-end">
-            <span className="text-xl font-bold" style={{ color: attendance.color }}>
-              {productiveHours.toFixed(1)}h
-            </span>
+        
+        {/* Stats */}
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-gray-400" />
+              <span className="text-2xl font-bold" style={{ color: attendance.color }}>
+                {productiveHours.toFixed(1)}h
+              </span>
+            </div>
+            <span className="text-xs text-gray-500">tracked today</span>
+          </div>
+          
+          <div className="w-px h-10 bg-gray-200" />
+          
+          <div className="text-right">
             <div className="flex items-center gap-1">
-              <span className="text-xs font-medium" style={{ color: attendance.color }}>
+              <span className="text-lg font-bold" style={{ color: attendance.color }}>
                 {averageActivityScore.toFixed(1)}
               </span>
-              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium" 
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium" 
                     style={{ 
-                      backgroundColor: `${attendance.color}20`,
-                      color: attendance.color
+                      backgroundColor: `${attendance.color}15`,
+                      color: attendance.color,
+                      border: `1px solid ${attendance.color}30`
                     }}>
                 {getActivityLevel(averageActivityScore)}
               </span>
             </div>
+            <span className="text-xs text-gray-500">activity level</span>
           </div>
-          {getIcon()}
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="relative mb-4">
-        <div className="h-6 bg-gray-100 rounded-full overflow-hidden relative">
-          {/* Progress Fill */}
-          <div 
-            className="h-full transition-all duration-500 ease-out relative"
-            style={{
-              width: `${percentage}%`,
-              background: productiveHours >= markers.fullAttendance 
-                ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' 
-                : productiveHours >= markers.threeQuarterAttendance
-                ? 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)'
-                : productiveHours >= markers.halfAttendance
-                ? 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)'
-                : 'linear-gradient(90deg, #6b7280 0%, #4b5563 100%)'
-            }}
-          >
-            {/* Animated shimmer effect for extra mileage */}
-            {productiveHours > markers.fullAttendance && (
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
+      {/* Milestone Indicators */}
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className={`p-2 rounded-lg border transition-all ${
+          milestoneStatus !== 'none' 
+            ? 'bg-amber-50 border-amber-300' 
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-600">Half Day</span>
+            {milestoneStatus !== 'none' ? (
+              <CheckCircle className="w-3.5 h-3.5 text-amber-500" />
+            ) : (
+              <AlertCircle className="w-3.5 h-3.5 text-gray-300" />
             )}
           </div>
+          <p className="text-sm font-bold text-gray-900">{markers.halfAttendance}h</p>
+          <p className="text-xs text-gray-500">50% attendance</p>
+        </div>
 
-          {/* Scale Markers */}
-          <div className="absolute inset-0 flex items-center">
-            {/* Half Attendance Marker */}
+        <div className={`p-2 rounded-lg border transition-all ${
+          milestoneStatus === 'three-quarter' || milestoneStatus === 'full'
+            ? 'bg-blue-50 border-blue-300' 
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-600">Good Day</span>
+            {milestoneStatus === 'three-quarter' || milestoneStatus === 'full' ? (
+              <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+            ) : (
+              <Target className="w-3.5 h-3.5 text-gray-300" />
+            )}
+          </div>
+          <p className="text-sm font-bold text-gray-900">{markers.threeQuarterAttendance}h</p>
+          <p className="text-xs text-gray-500">75% attendance</p>
+        </div>
+
+        <div className={`p-2 rounded-lg border transition-all ${
+          milestoneStatus === 'full'
+            ? 'bg-green-50 border-green-300' 
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-600">Full Day</span>
+            {milestoneStatus === 'full' ? (
+              <Award className="w-3.5 h-3.5 text-green-500" />
+            ) : (
+              <Flag className="w-3.5 h-3.5 text-gray-300" />
+            )}
+          </div>
+          <p className="text-sm font-bold text-gray-900">{markers.fullAttendance}h</p>
+          <p className="text-xs text-gray-500">100% attendance</p>
+        </div>
+      </div>
+
+      {/* Enhanced Progress Bar */}
+      <div className="relative mb-5">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-xs font-medium text-gray-600">Progress</span>
+          <span className="text-xs font-bold" style={{ color: attendance.color }}>
+            {Math.round(percentage)}%
+          </span>
+        </div>
+        
+        <div className="h-10 bg-gray-100 rounded-xl overflow-hidden relative shadow-inner">
+          {/* Progress Fill */}
+          <div 
+            className="h-full transition-all duration-700 ease-out relative rounded-xl"
+            style={{
+              width: `${percentage}%`,
+              background: getProgressGradient(),
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}
+          >
+            {/* Animated shimmer for overachievement */}
+            {productiveHours > markers.fullAttendance && (
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+            )}
+            
+            {/* Current value indicator */}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs font-bold shadow-sm"
+                 style={{ color: attendance.color }}>
+              {productiveHours.toFixed(1)}h
+            </div>
+          </div>
+
+          {/* Milestone Markers */}
+          <div className="absolute inset-0 pointer-events-none">
+            {/* Half Day Marker */}
             <div 
-              className="absolute h-full w-0.5 bg-gray-400"
+              className="absolute h-full flex flex-col justify-end pb-1"
               style={{ left: `${halfMarkerPos}%` }}
             >
-              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-gray-600 whitespace-nowrap">
-                {markers.halfAttendance}h (0.5)
+              <div className="w-0.5 h-full bg-amber-400/50" />
+              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-medium text-amber-600 whitespace-nowrap bg-white px-1 rounded">
+                Half
               </div>
             </div>
 
-            {/* Three Quarter Attendance Marker */}
+            {/* Good Day Marker */}
             <div 
-              className="absolute h-full w-0.5 bg-gray-500"
+              className="absolute h-full flex flex-col justify-end pb-1"
               style={{ left: `${threeQuarterMarkerPos}%` }}
             >
-              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-gray-600 whitespace-nowrap">
-                {markers.threeQuarterAttendance}h (0.75)
+              <div className="w-0.5 h-full bg-blue-400/50" />
+              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-medium text-blue-600 whitespace-nowrap bg-white px-1 rounded">
+                Good
               </div>
             </div>
 
-            {/* Full Attendance Marker */}
+            {/* Full Day Marker */}
             <div 
-              className="absolute h-full w-1 bg-green-500"
+              className="absolute h-full flex flex-col justify-end pb-1"
               style={{ left: `${fullMarkerPos}%` }}
             >
-              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-semibold text-green-600 whitespace-nowrap">
-                {markers.fullAttendance}h (Full)
+              <div className="w-1 h-full bg-green-500/50" />
+              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs font-medium text-green-600 whitespace-nowrap bg-white px-1 rounded">
+                Full
               </div>
             </div>
           </div>
         </div>
 
         {/* Scale Labels */}
-        <div className="flex justify-between mt-2 text-xs text-gray-500">
-          <span>0h</span>
-          <span className="font-semibold">{markers.maxScale}h</span>
+        <div className="flex justify-between mt-8 text-xs text-gray-500">
+          <span className="font-medium">0h</span>
+          <span className="font-medium">{markers.maxScale}h target</span>
         </div>
       </div>
 
-      {/* Status Message */}
-      <div className="bg-gray-50 rounded-lg p-3">
-        <p className="text-sm text-gray-700 italic">{message}</p>
-        
-        <div className="mt-2 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs text-gray-500">Attendance Earned:</span>
-            <span 
-              className="text-sm font-bold px-2 py-1 rounded"
-              style={{ 
-                backgroundColor: `${attendance.color}20`,
-                color: attendance.color 
-              }}
-            >
+      {/* Status Messages - Swapped order for better message visibility */}
+      <div className="space-y-2">
+        {/* Achievement Status - Moved to top */}
+        <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full animate-pulse" 
+                 style={{ backgroundColor: attendance.color }} />
+            <span className="text-xs text-gray-600">Today's Achievement:</span>
+            <span className="font-bold text-sm px-2 py-1 rounded-lg"
+                  style={{ 
+                    backgroundColor: `${attendance.color}15`,
+                    color: attendance.color,
+                    border: `1px solid ${attendance.color}30`
+                  }}>
               {attendance.status}
             </span>
           </div>
           
           {productiveHours > markers.fullAttendance && (
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center gap-1 animate-bounce">
               <Zap className="w-4 h-4 text-yellow-500" />
-              <span className="text-xs font-semibold text-yellow-600">
-                +{(productiveHours - markers.fullAttendance).toFixed(1)}h Extra Mileage!
+              <span className="text-xs font-bold text-yellow-600">
+                +{(productiveHours - markers.fullAttendance).toFixed(1)}h Extra!
               </span>
             </div>
           )}
         </div>
+
+        {/* Manager Message - Moved to bottom with more space */}
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200">
+          <p className="text-sm text-gray-700 font-medium mb-2">{message}</p>
+          <div className="border-t border-gray-300 pt-2">
+            <p className="text-xs text-gray-600 italic leading-relaxed">
+              {getActivityMessage(averageActivityScore, productiveHours, false)}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Legend */}
-      <div className="mt-3 text-xs text-gray-500">
-        <p>Based on productive hours (10 min per active screenshot)</p>
-        {markers.isHolidayWeek && (
-          <p className="mt-1 text-amber-600">
-            Holiday week: relaxed targets
-          </p>
-        )}
+      {/* Footer Info */}
+      <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
+        <div className="flex items-center justify-between">
+          <p>Tracking: 10 min per active screenshot</p>
+          {markers.isHolidayWeek && (
+            <p className="text-amber-600 font-medium">
+              🎉 Holiday targets applied
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

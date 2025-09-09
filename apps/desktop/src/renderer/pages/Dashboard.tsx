@@ -14,7 +14,7 @@ import { WeeklyMarathon } from '../components/WeeklyMarathon';
 import { CurrentSessionInfo } from '../components/CurrentSessionInfo';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight, Minus } from 'lucide-react';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",
@@ -60,10 +60,26 @@ export function Dashboard() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customScreenshots, setCustomScreenshots] = useState<any[]>([]);
   const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false);
+  const [todaySessions, setTodaySessions] = useState<any[]>([]);
 
   useEffect(() => {
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
+    loadTodaySessions();
   }, []);
+  
+  useEffect(() => {
+    // Reload sessions when current session changes
+    loadTodaySessions();
+  }, [currentSession]);
+  
+  const loadTodaySessions = async () => {
+    try {
+      const sessions = await window.electronAPI.session.getTodaySessions();
+      setTodaySessions(sessions || []);
+    } catch (error) {
+      console.error('Failed to load today\'s sessions:', error);
+    }
+  };
   
   // Listen for concurrent session detection
   useEffect(() => {
@@ -305,23 +321,155 @@ export function Dashboard() {
               <Activity className="w-5 h-5 text-primary" />
               Activity
             </h3>
+            
+            {/* Activity Selector */}
             <div 
-              className="p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+              className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors mb-3"
               onClick={() => setShowActivityModal(true)}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-gray-500" />
-                  <span className="font-medium text-lg">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span className="font-medium text-sm">
                     {currentActivity || 'Select Activity'}
                   </span>
                 </div>
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Click to change your current activity
+              <p className="text-xs text-gray-500 mt-1">
+                Click to change
               </p>
             </div>
+            
+            {/* Today's Sessions List */}
+            {todaySessions.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-gray-600">Earlier Today</h4>
+                  <span className="text-xs text-gray-500">{todaySessions.length} session{todaySessions.length !== 1 ? 's' : ''}</span>
+                </div>
+                
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto custom-scrollbar">
+                  {todaySessions.slice(0, 8).map((session) => {
+                    const sessionStartTime = new Date(session.startTime);
+                    const sessionEndTime = session.endTime ? new Date(session.endTime) : null;
+                    const startTimeStr = sessionStartTime.toLocaleTimeString('en-US', { 
+                      hour: 'numeric', 
+                      minute: '2-digit',
+                      hour12: true 
+                    });
+                    const endTimeStr = sessionEndTime ? sessionEndTime.toLocaleTimeString('en-US', { 
+                      hour: 'numeric', 
+                      minute: '2-digit',
+                      hour12: true 
+                    }) : 'ongoing';
+                    const timeRange = `${startTimeStr} - ${endTimeStr}`;
+
+                    const formatSessionTime = (minutes: number) => {
+                      const hours = Math.floor(minutes / 60);
+                      const mins = minutes % 60;
+                      if (hours > 0) {
+                        return `${hours}h${mins > 0 ? ` ${mins}m` : ''}`;
+                      }
+                      return `${mins}m`;
+                    };
+                    
+                    const getActivityColor = (score: number) => {
+                      if (score >= 8.5) return '#10b981';
+                      if (score >= 7.0) return '#3b82f6';
+                      if (score >= 5.5) return '#f59e0b';
+                      if (score >= 4.0) return '#ef4444';
+                      return '#dc2626';
+                    };
+                    
+                    const getActivityLevel = (score: number) => {
+                      if (score >= 8.5) return 'Good';
+                      if (score >= 7.0) return 'Fair';
+                      if (score >= 5.5) return 'Low';
+                      if (score >= 4.0) return 'Poor';
+                      return 'Critical';
+                    };
+
+                    const isCurrentSession = currentSession && session.id === currentSession.id;
+
+                    return (
+                      <div 
+                        key={session.id} 
+                        className={`flex items-center justify-between px-2.5 py-2 rounded-md transition-colors ${
+                          isCurrentSession 
+                            ? 'bg-primary/10 border border-primary/20' 
+                            : 'bg-white hover:bg-gray-50 border border-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {/* Status */}
+                          <div className="flex-shrink-0">
+                            {session.isActive ? (
+                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                            ) : (
+                              <Minus className="w-3 h-3 text-gray-300" />
+                            )}
+                          </div>
+                          
+                          {/* Time and task */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-gray-700">{timeRange}</span>
+                              {isCurrentSession && (
+                                <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded text-[10px]">Active</span>
+                              )}
+                            </div>
+                            <p className="text-gray-500 truncate text-xs mt-0.5">
+                              {session.task || 'No activity specified'}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Metrics */}
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          {/* Elapsed time */}
+                          <div className="text-right">
+                            <div className="text-xs font-medium text-gray-600">
+                              {formatSessionTime(session.elapsedMinutes)}
+                            </div>
+                            <div className="text-[10px] text-gray-400">elapsed</div>
+                          </div>
+                          
+                          {/* Tracked time */}
+                          <div className="text-right">
+                            <div className="text-xs font-semibold" style={{ color: getActivityColor(session.averageActivityScore) }}>
+                              {formatSessionTime(session.trackedMinutes)}
+                            </div>
+                            <div className="text-[10px] text-gray-400">tracked</div>
+                          </div>
+                          
+                          {/* Activity level */}
+                          <div className="text-right min-w-[45px]">
+                            <div className="text-xs font-semibold" style={{ color: getActivityColor(session.averageActivityScore) }}>
+                              {session.averageActivityScore.toFixed(1)}
+                            </div>
+                            <div className="text-[10px]" style={{ color: getActivityColor(session.averageActivityScore) }}>
+                              {getActivityLevel(session.averageActivityScore)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {todaySessions.length > 8 && (
+                  <p className="text-xs text-gray-400 text-center mt-2">+{todaySessions.length - 8} more session{todaySessions.length - 8 !== 1 ? 's' : ''}</p>
+                )}
+              </div>
+            )}
+            
+            {todaySessions.length === 0 && (
+              <div className="text-center py-6">
+                <p className="text-sm text-gray-400">No sessions yet today</p>
+                <p className="text-xs text-gray-400 mt-1">Start tracking to see your sessions here</p>
+              </div>
+            )}
           </div>
 
           {/* Analytics */}
