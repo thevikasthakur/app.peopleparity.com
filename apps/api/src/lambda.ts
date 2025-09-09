@@ -1,4 +1,5 @@
 // src/lambda.ts
+import 'reflect-metadata';
 import type { Handler, Context, Callback } from 'aws-lambda';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';

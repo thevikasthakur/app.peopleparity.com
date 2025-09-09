@@ -11,14 +11,14 @@ export class Session {
   @PrimaryColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   userId: string;
 
   @ManyToOne(() => User, user => user.sessions)
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   projectId: string;
 
   @ManyToOne(() => Project, project => project.sessions, { nullable: true })
@@ -37,25 +37,25 @@ export class Session {
   @Column({ type: 'timestamp', nullable: true })
   endTime: Date;
 
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   task: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   appVersion: string;
 
   @Column({ type: 'text', nullable: true })
   deviceInfo: string; // Stores hostname of the device
 
-  @Column({ nullable: true, length: 45 })
+  @Column({ type: 'varchar', nullable: true, length: 45 })
   realIpAddress: string;
 
   @Column({ type: 'jsonb', nullable: true })
   location: { lat: number; lon: number } | null;
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   isVpnDetected: boolean;
 
   @CreateDateColumn()

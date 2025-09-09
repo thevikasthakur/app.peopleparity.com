@@ -35,13 +35,14 @@ export class DatabaseService {
   
   private initializeApiClient() {
     const token = this.store.get('authToken') as string; // Changed from 'auth.token' to 'authToken'
-    // Use IPv4 explicitly to avoid IPv6 connection issues
-    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
-    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
+    // Force IPv4 by using 127.0.0.1 instead of localhost
+    const envUrl = process.env.API_URL || 'http://localhost:3001';
+    const baseUrl = envUrl.replace('localhost', '127.0.0.1');
+    const apiUrl = `${baseUrl}/api`;
     
     if (token) {
       this.api = axios.create({
-        baseURL: apiUrlFixed,
+        baseURL: apiUrl,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

@@ -8,14 +8,14 @@ export class Screenshot {
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
-  @Column()
+  @Column('uuid')
   userId: string;
 
   @ManyToOne(() => User, (user) => user.screenshots)
   @JoinColumn({ name: "userId" })
   user: User;
 
-  @Column({ nullable: false }) // MANDATORY - Cannot be null
+  @Column({ type: 'uuid', nullable: false }) // MANDATORY - Cannot be null
   sessionId: string;
 
   @ManyToOne(() => Session, (session) => session.screenshots, {
@@ -25,10 +25,10 @@ export class Screenshot {
   @JoinColumn({ name: "sessionId" })
   session: Session;
 
-  @Column({ nullable: true }) // S3 URL - nullable for local screenshots not yet uploaded
+  @Column({ type: 'varchar', nullable: true }) // S3 URL - nullable for local screenshots not yet uploaded
   url: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   thumbnailUrl: string;
 
   @Column({ type: 'timestamp' })
@@ -40,10 +40,10 @@ export class Screenshot {
   })
   mode: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   notes: string; // Copy of session task
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
 
   @OneToMany(() => ActivityPeriod, activityPeriod => activityPeriod.screenshot)

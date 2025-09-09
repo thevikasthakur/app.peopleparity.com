@@ -7,23 +7,23 @@ export class Project {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   name: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   description: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   organizationId: string;
 
   @ManyToOne(() => Organization, org => org.projects)
   @JoinColumn({ name: 'organizationId' })
   organization: Organization;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   color: string;
 
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
   @CreateDateColumn()

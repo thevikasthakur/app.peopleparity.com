@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog } from 'electron';
 import path from 'path';
+import * as dotenv from 'dotenv';
 import { ActivityTrackerV2 } from './services/activityTrackerV2';
 import { ScreenshotServiceV2 } from './services/screenshotServiceV2';
 import { DatabaseService } from './services/databaseService';
@@ -8,6 +9,9 @@ import { BrowserExtensionBridge } from './services/browserExtensionBridge';
 import { ProductiveHoursService } from './services/productiveHoursService';
 import { calculateScreenshotScore } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
+
+// Load environment variables from .env file
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
@@ -232,6 +236,10 @@ function setupIpcHandlers() {
     return apiSyncService.login(email, password);
   });
   
+  ipcMain.handle('auth:get-api-url', async () => {
+    return process.env.API_URL || 'http://localhost:3001';
+  });
+  
   ipcMain.handle('auth:current-user', async () => {
     return databaseService.getCurrentUser();
   });
@@ -257,7 +265,8 @@ function setupIpcHandlers() {
     console.log('SAML login requested');
     // Navigate main window to SAML login URL
     if (mainWindow) {
-      const samlUrl = 'http://localhost:3001/api/auth/saml/login';
+      const apiUrl = process.env.API_URL || 'http://localhost:3001';
+      const samlUrl = `${apiUrl}/api/auth/saml/login`;
       console.log(`Navigating to SAML URL: ${samlUrl}`);
       
       // Handle navigation and authentication
@@ -433,6 +442,18 @@ function setupIpcHandlers() {
       return result;
     } catch (error) {
       console.error('[IPC] Error in retry sync handler:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  
+  ipcMain.handle('screenshots:fetch-signed-url', async (_, screenshotId: string) => {
+    console.log('[IPC] screenshots:fetch-signed-url handler called for ID:', screenshotId);
+    try {
+      const response = await apiSyncService.fetchSignedUrl(screenshotId);
+      console.log('[IPC] Signed URL response:', response);
+      return response;
+    } catch (error) {
+      console.error('[IPC] Error fetching signed URL:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });

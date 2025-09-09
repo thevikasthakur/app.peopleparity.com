@@ -179,8 +179,13 @@ export function Login() {
                   setError('Failed to start Microsoft login. Please try again.');
                 }
               } else {
-                // Fallback for browser environment
-                window.location.href = 'http://localhost:3001/api/auth/saml/login';
+                // Fallback for browser environment - get API URL from backend
+                if (window.electronAPI?.auth?.getApiUrl) {
+                  const apiUrl = await window.electronAPI.auth.getApiUrl();
+                  window.location.href = `${apiUrl}/api/auth/saml/login`;
+                } else {
+                  window.location.href = 'http://localhost:3001/api/auth/saml/login';
+                }
               }
             }}
             disabled={isLoading}

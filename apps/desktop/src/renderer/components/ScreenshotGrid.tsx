@@ -286,6 +286,9 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [currentEditActivity, setCurrentEditActivity] = useState('');
   const [recentActivities, setRecentActivities] = useState<string[]>([]);
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+  const [signedFullUrl, setSignedFullUrl] = useState<string | null>(null);
+  const [loadingSignedUrl, setLoadingSignedUrl] = useState(false);
+  const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Load recent activities when modal opens
@@ -302,6 +305,83 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
       }
     }
   }, [showEditActivityModal, selectedIds, screenshots]);
+
+  // Fetch signed URL when modal opens
+  useEffect(() => {
+    const fetchSignedUrl = async () => {
+      if (!modalScreenshot) {
+        setSignedFullUrl(null);
+        return;
+      }
+
+      // Check if we have a valid cached URL for this screenshot
+      const cached = signedUrlCacheRef.current.get(modalScreenshot.id);
+      const now = Date.now();
+      
+      if (cached && cached.expiresAt > now) {
+        // Use cached URL if it's still valid (with 30 second buffer)
+        console.log(`Using cached signed URL for screenshot ${modalScreenshot.id}, expires in ${Math.round((cached.expiresAt - now) / 1000)}s`);
+        setSignedFullUrl(cached.url);
+        return;
+      }
+
+      // Remove expired cache entry if it exists
+      if (cached) {
+        console.log(`Cached signed URL expired for screenshot ${modalScreenshot.id}, fetching new one`);
+        signedUrlCacheRef.current.delete(modalScreenshot.id);
+      }
+
+      setLoadingSignedUrl(true);
+      try {
+        const response = await window.electronAPI.screenshots.fetchSignedUrl(modalScreenshot.id);
+
+        if (response.success && response.signedUrl) {
+          // Cache the URL with expiration time (5 minutes minus 30 second buffer)
+          const expiresAt = now + ((response.expiresIn || 300) - 30) * 1000;
+          signedUrlCacheRef.current.set(modalScreenshot.id, {
+            url: response.signedUrl,
+            expiresAt
+          });
+          
+          console.log(`Cached new signed URL for screenshot ${modalScreenshot.id}, expires at ${new Date(expiresAt).toLocaleTimeString()}`);
+          setSignedFullUrl(response.signedUrl);
+        } else {
+          console.error('Failed to fetch signed URL:', response.error);
+          // Fall back to using the regular URL
+          setSignedFullUrl(null);
+        }
+      } catch (error) {
+        console.error('Error fetching signed URL:', error);
+        setSignedFullUrl(null);
+      } finally {
+        setLoadingSignedUrl(false);
+      }
+    };
+
+    fetchSignedUrl();
+  }, [modalScreenshot]);
+
+  // Clean up expired cache entries periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const cache = signedUrlCacheRef.current;
+      let cleanedCount = 0;
+      
+      for (const [id, entry] of cache.entries()) {
+        if (entry.expiresAt <= now) {
+          cache.delete(id);
+          cleanedCount++;
+        }
+      }
+      
+      if (cleanedCount > 0) {
+        console.log(`Cleaned up ${cleanedCount} expired signed URL cache entries`);
+      }
+    }, 60000); // Clean up every minute
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   // Handle Escape key to close screenshot modal
   useEffect(() => {
@@ -1032,22 +1112,34 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               <div className="h-[calc(100%-4rem)] flex">
                 {/* Left side - Large Screenshot Image */}
                 <div className="flex-1 bg-gray-100 p-6 flex items-center justify-center overflow-auto">
-                  <img
-                    src={getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl)}
-                    alt="Full size screenshot"
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                    style={{ maxHeight: 'calc(94vh - 8rem)' }}
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      // Try thumbnail first
-                      if (img.src !== getSafeUrl(modalScreenshot.thumbnailUrl)) {
-                        img.src = getSafeUrl(modalScreenshot.thumbnailUrl);
-                      } else {
-                        // Final fallback
-                        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjQwMCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTNhZiI+U2NyZWVuc2hvdCBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4=';
-                      }
-                    }}
-                  />
+                  {loadingSignedUrl ? (
+                    <div className="flex items-center justify-center">
+                      <Loader className="w-8 h-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : (
+                    <img
+                      src={signedFullUrl || getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl)}
+                      alt="Full size screenshot"
+                      className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                      style={{ maxHeight: 'calc(94vh - 8rem)' }}
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement;
+                        // If signed URL fails, try regular full URL
+                        if (signedFullUrl && img.src === signedFullUrl) {
+                          console.warn('Signed URL failed, falling back to regular URL');
+                          setSignedFullUrl(null);
+                          img.src = getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl);
+                        }
+                        // Try thumbnail as next fallback
+                        else if (img.src !== getSafeUrl(modalScreenshot.thumbnailUrl)) {
+                          img.src = getSafeUrl(modalScreenshot.thumbnailUrl);
+                        } else {
+                          // Final fallback
+                          img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjQwMCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTNhZiI+U2NyZWVuc2hvdCBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4=';
+                        }
+                      }}
+                    />
+                  )}
                 </div>
                 
                 {/* Right side - Activity Details */}

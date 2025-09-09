@@ -8,21 +8,21 @@ export class ActivityPeriod {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   sessionId: string;
 
   @ManyToOne(() => Session, session => session.activityPeriods)
   @JoinColumn({ name: 'sessionId' })
   session: Session;
 
-  @Column()
+  @Column({ type: 'uuid' })
   userId: string;
 
   @ManyToOne(() => User, user => user.activityPeriods)
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column({ nullable: true }) // Optional - activity periods can exist without screenshots
+  @Column({ type: 'uuid', nullable: true }) // Optional - activity periods can exist without screenshots
   screenshotId: string;
 
   @ManyToOne(() => Screenshot, screenshot => screenshot.activityPeriods, { 
@@ -44,16 +44,16 @@ export class ActivityPeriod {
   })
   mode: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   notes: string;
 
   @Column({ type: 'float', default: 0 })
   activityScore: number;
 
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   isValid: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   classification: string;
 
   @Column({ type: 'jsonb', nullable: true })

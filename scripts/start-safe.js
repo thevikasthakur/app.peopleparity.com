@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 // Use the fast check by default (only rebuilds when needed)
 const { checkDesktopDependencies } = require('./check-desktop-deps-fast');
+const { updateDesktopEnv } = require('./setup-env');
 
 const colors = {
   reset: '\x1b[0m',
@@ -23,15 +24,19 @@ function log(message, color = 'reset') {
 function checkApiServer() {
   log('\n🔍 Checking API server...', 'cyan');
   
+  // Check port 3001 (both serverless and traditional use this now)
   try {
-    execSync('curl -s http://127.0.0.1:3001/api/health', { stdio: 'pipe' });
-    log('✅ API server is running', 'green');
+    // Check if anything is listening on port 3001
+    execSync('lsof -i:3001', { stdio: 'pipe' });
+    log(`✅ API server is running on port 3001`, 'green');
     return true;
   } catch (error) {
-    log('⚠️  API server is not running', 'yellow');
-    log('   Starting API server...', 'blue');
-    return false;
+    // Port is not in use, so API is not running
   }
+  
+  log('⚠️  API server is not running', 'yellow');
+  log('   Starting API server...', 'blue');
+  return false;
 }
 
 function startApiServer() {
@@ -113,15 +118,24 @@ async function main() {
   
   let apiProcess = null;
   let desktopProcess = null;
+  let apiWasAlreadyRunning = false;
   
   try {
-    // Step 0: Clean up any existing processes on port 3001
-    log('\n🧹 Step 0: Cleaning up ports...', 'blue');
-    if (killPortProcess(3001)) {
-      log('   Port 3001 has been freed', 'green');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    } else {
+    // Step 0: Clean up ports (but preserve API if already running)
+    log('\n🧹 Step 0: Checking ports...', 'blue');
+    
+    // Check if API is already running before cleaning
+    try {
+      execSync('lsof -i:3001', { stdio: 'pipe' });
+      apiWasAlreadyRunning = true;
+      log('   Port 3001 is in use (API already running)', 'cyan');
+    } catch (e) {
       log('   Port 3001 is available', 'green');
+    }
+    
+    // Only clean up port 3002 (serverless lambda port)
+    if (killPortProcess(3002)) {
+      log('   Port 3002 has been freed (lambda)', 'green');
     }
     
     // Step 1: Check and fix desktop dependencies
@@ -144,6 +158,10 @@ async function main() {
         log('❌ Failed to start API server', 'red');
         process.exit(1);
       }
+      
+      // Update desktop .env with API URL
+      log('   Updating desktop .env for API...', 'cyan');
+      updateDesktopEnv('http://localhost:3001');
       
       // Wait for API to be ready with retries
       log('   Waiting for API to initialize...', 'yellow');
@@ -168,6 +186,8 @@ async function main() {
         if (apiProcess) apiProcess.kill();
         process.exit(1);
       }
+    } else if (apiWasAlreadyRunning) {
+      log('   Using existing API server', 'green');
     }
     
     // Step 3: Start desktop app
@@ -192,9 +212,12 @@ async function main() {
         desktopProcess.kill('SIGTERM');
       }
       
-      if (apiProcess) {
+      // Only stop API if we started it (not if it was already running)
+      if (apiProcess && !apiWasAlreadyRunning) {
         log('   Stopping API server...', 'yellow');
         apiProcess.kill('SIGTERM');
+      } else if (apiWasAlreadyRunning) {
+        log('   Leaving API server running (was already running)', 'cyan');
       }
       
       setTimeout(() => {

@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('screenshots:delete', ids),
     retrySync: (id: string) =>
       ipcRenderer.invoke('screenshots:retry-sync', id),
+    fetchSignedUrl: (id: string) =>
+      ipcRenderer.invoke('screenshots:fetch-signed-url', id),
   },
   activity: {
     getPeriodDetails: (periodId: string) =>

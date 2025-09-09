@@ -1,6 +1,5 @@
-import { Module, OnModuleInit } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { User } from '../../entities/user.entity';
@@ -13,17 +12,7 @@ import { Project } from '../../entities/project.entity';
   controllers: [UsersController],
   exports: [UsersService],
 })
-export class UsersModule implements OnModuleInit {
-  constructor(
-    private usersService: UsersService,
-    private configService: ConfigService,
-  ) {}
-
-  async onModuleInit() {
-    // Create super admin on startup if not exists
-    await this.usersService.ensureSuperAdmin(
-      this.configService.get<string>('SUPER_ADMIN_EMAIL'),
-      this.configService.get<string>('SUPER_ADMIN_PASSWORD'),
-    );
-  }
+export class UsersModule {
+  // Remove onModuleInit for now to avoid serverless initialization issues
+  // Super admin creation can be handled via API endpoints or migrations
 }

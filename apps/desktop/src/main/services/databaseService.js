@@ -20,7 +20,8 @@ class DatabaseService {
     }
     initializeApiClient() {
         const token = this.store.get('auth.token');
-        const apiUrl = process.env.API_URL || 'http://localhost:3001';
+        const baseUrl = process.env.API_URL || 'http://localhost:3001';
+        const apiUrl = `${baseUrl}/api`;
         if (token) {
             this.api = axios_1.default.create({
                 baseURL: apiUrl,

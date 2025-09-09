@@ -9,10 +9,10 @@ async function bootstrapLocal() {
 
   const port = Number(process.env.PORT) || 3001;
 
-  // Force IPv4 like before (desktop app compatibility)
-  await app.listen(port, '127.0.0.1');
+  // Listen on all interfaces to avoid IPv4/IPv6 issues
+  await app.listen(port, '0.0.0.0');
 
-  console.log(`🚀 People Parity API running on http://127.0.0.1:${port}/api`);
+  console.log(`🚀 People Parity API running on http://localhost:${port}/api`);
 }
 
 /**

@@ -1,4 +1,4 @@
-service: pp-api
+service: pp-be
 frameworkVersion: "4"
 
 provider:
@@ -7,8 +7,8 @@ provider:
   runtime: nodejs22.x
   region: ap-south-1
   stage: ${opt:stage, 'dev'}
-  memorySize: 512
-  timeout: 20
+  memorySize: 10240
+  timeout: 900
   logRetentionInDays: 14
   httpApi:
     cors: true
@@ -60,17 +60,22 @@ build:
     format: cjs
     target: node22
     sourcemap: true
-    external:
-      - "@nestjs/websockets"
-      - "@nestjs/websockets/socket-module"
-      - "@nestjs/microservices"
-      - "@nestjs/microservices/microservices-module"
+    keepNames: true
+    minify: false
+    packages: external
 
 custom:
   screenshotsBucket: pp-tracker-screenshots-${sls:stage}
 
   dotenv:
     logging: false
+
+  serverless-offline:
+    httpPort: 3001
+    lambdaPort: 3002
+    noPrependStageInUrl: true
+    timeout: 60
+    host: 0.0.0.0
 
 resources:
   Resources:
@@ -82,20 +87,28 @@ resources:
         BucketName: ${self:custom.screenshotsBucket}
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
-          BlockPublicPolicy: true
+          BlockPublicPolicy: false
           IgnorePublicAcls: true
-          RestrictPublicBuckets: true
+          RestrictPublicBuckets: false
         BucketEncryption:
           ServerSideEncryptionConfiguration:
             - ServerSideEncryptionByDefault:
                 SSEAlgorithm: AES256
-        # Optional CORS (enable if you upload directly from browsers)
-        # CorsConfiguration:
-        #   CorsRules:
-        #     - AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
-        #       AllowedOrigins: ['*']   # tighten in prod
-        #       AllowedHeaders: ['*']
-        #       MaxAge: 3000
+       
+    ScreenshotsBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref ScreenshotsBucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            # Public read for ONLY thumbnails under inzint/*/thumb/*
+            - Sid: PublicReadThumbs
+              Effect: Allow
+              Principal: "*"
+              Action: s3:GetObject
+              Resource:
+                - !Sub arn:aws:s3:::${self:custom.screenshotsBucket}/inzint/*/thumb/*
 
   Outputs:
     ScreenshotsBucketName:

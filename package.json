@@ -21,7 +21,10 @@
     "type-check": "turbo run type-check",
     "api": "cd apps/api && npm run dev",
     "desktop": "cd apps/desktop && npm run dev",
-    "desktop:safe": "npm run check:deps && npm run desktop"
+    "desktop:safe": "npm run check:deps && npm run desktop",
+    "env:local": "node scripts/setup-env.js local",
+    "env:cloud": "node scripts/setup-env.js cloud",
+    "env:auto": "node scripts/setup-env.js auto"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",

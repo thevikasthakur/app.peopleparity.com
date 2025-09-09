@@ -11,19 +11,19 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', unique: true })
   email: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   name: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   password: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   microsoftId: string;
 
-  @Column({ default: 'local' })
+  @Column({ type: 'varchar', default: 'local' })
   authProvider: 'local' | 'microsoft';
 
   @Column({
@@ -33,17 +33,17 @@ export class User {
   })
   role: UserRole;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   organizationId: string;
 
   @ManyToOne(() => Organization, org => org.users, { nullable: true })
   @JoinColumn({ name: 'organizationId' })
   organization: Organization;
 
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   lastLogin: Date;
 
   @CreateDateColumn()

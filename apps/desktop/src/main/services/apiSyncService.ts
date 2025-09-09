@@ -30,17 +30,16 @@ export class ApiSyncService {
     private db: DatabaseService,
     private store: Store
   ) {
-    // Use IPv4 explicitly to avoid IPv6 connection issues
-    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
-    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
+    // Force IPv4 by using 127.0.0.1 instead of localhost
+    const envUrl = process.env.API_URL || 'http://localhost:3001';
+    // Replace localhost with 127.0.0.1 to ensure IPv4
+    const baseUrl = envUrl.replace('localhost', '127.0.0.1');
+    const apiUrl = `${baseUrl}/api`;
     
     this.api = axios.create({
-      baseURL: apiUrlFixed,
-      timeout: 10000,
-      // Force IPv4
-      httpAgent: new (require('http').Agent)({ family: 4 }),
-      httpsAgent: new (require('https').Agent)({ family: 4 })
-    } as any);
+      baseURL: apiUrl,
+      timeout: 10000
+    });
 
     this.setupInterceptors();
   }
@@ -302,6 +301,22 @@ export class ApiSyncService {
         };
       }
       return { today: [], week: [] };
+    }
+  }
+
+  async fetchSignedUrl(screenshotId: string) {
+    try {
+      const response = await this.api.get(`/screenshots/${screenshotId}/signed-url`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Failed to fetch signed URL:', error.message);
+      if (error.response?.status === 404) {
+        return { success: false, error: 'Screenshot not found' };
+      }
+      if (error.response?.status === 403) {
+        return { success: false, error: 'Unauthorized access' };
+      }
+      return { success: false, error: error.message || 'Failed to fetch signed URL' };
     }
   }
 
@@ -733,49 +748,66 @@ export class ApiSyncService {
           break;
           
         case 'screenshot':
-          console.log('Uploading screenshot to S3:', data.localPath);
-          // Read the actual file and upload to S3
+          console.log('Processing screenshot sync:', item.entityId);
           const fs = require('fs');
-          const FormData = require('form-data');
           
-          if (!fs.existsSync(data.localPath)) {
-            console.error('Screenshot file not found:', data.localPath);
+          // Check if screenshot already has S3 URLs (already uploaded)
+          const screenshotData = this.db.getScreenshot(item.entityId) as any;
+          if (!screenshotData) {
+            console.error('Screenshot not found in database:', item.entityId);
             return;
           }
           
-          const formData = new FormData();
-          const fileStream = fs.createReadStream(data.localPath);
-          formData.append('screenshot', fileStream, {
-            filename: path.basename(data.localPath),
-            contentType: 'image/jpeg'
-          });
-          formData.append('id', item.entityId); // Include screenshot ID for reference
-          formData.append('capturedAt', new Date(data.capturedAt).toISOString());
-          formData.append('sessionId', data.sessionId); // Direct session relationship
-          formData.append('mode', data.mode || 'command_hours');
-          formData.append('userId', data.userId);
+          let s3FullUrl = screenshotData.url;
+          let s3ThumbnailUrl = screenshotData.thumbnailUrl;
           
-          // Add notes (copied from session task)
-          if (data.notes) {
-            formData.append('notes', data.notes);
-          }
-          
-          const screenshotResponse = await this.api.post('/screenshots/upload', formData, {
-            headers: {
-              ...formData.getHeaders()
+          // If URLs don't exist, upload to S3 first
+          if (!s3FullUrl || !s3ThumbnailUrl) {
+            if (!fs.existsSync(data.localPath)) {
+              console.error('Screenshot file not found:', data.localPath);
+              return;
             }
+            
+            console.log('Uploading screenshot to S3:', data.localPath);
+            const uploadResult = await this.uploadScreenshot(data.localPath);
+            s3FullUrl = uploadResult.fullUrl;
+            s3ThumbnailUrl = uploadResult.thumbnailUrl;
+            
+            console.log('Screenshot uploaded to S3:', s3FullUrl);
+            
+            // Update local DB with S3 URLs
+            this.db.updateScreenshotUrls(item.entityId, s3FullUrl, s3ThumbnailUrl);
+            
+            // Delete local files since they're now on S3
+            try {
+              await fs.promises.unlink(data.localPath);
+              if (data.thumbnailPath) {
+                await fs.promises.unlink(data.thumbnailPath);
+              }
+              console.log('Deleted local screenshot files after successful S3 upload');
+            } catch (deleteError) {
+              console.warn('Failed to delete local screenshot files:', deleteError);
+            }
+          }
+          
+          // Step 2: Send screenshot data with S3 URLs to the server
+          console.log('Creating screenshot record on server with S3 URLs');
+          const screenshotResponse = await this.api.post('/screenshots/create', {
+            id: item.entityId,
+            sessionId: data.sessionId,
+            userId: data.userId,
+            url: s3FullUrl,
+            thumbnailUrl: s3ThumbnailUrl,
+            capturedAt: new Date(data.capturedAt).toISOString(),
+            mode: data.mode || 'client_hours',
+            notes: data.notes || ''
           });
           
-          console.log('Screenshot uploaded:', screenshotResponse.data.url, 'Thumbnail:', screenshotResponse.data.thumbnailUrl);
-          
-          // Update local DB with S3 URLs
-          if (screenshotResponse.data.url && screenshotResponse.data.thumbnailUrl) {
-            this.db.updateScreenshotUrls(
-              item.entityId, 
-              screenshotResponse.data.url,
-              screenshotResponse.data.thumbnailUrl
-            );
+          if (!screenshotResponse.data.success) {
+            throw new Error(`Screenshot creation failed: ${screenshotResponse.data.message}`);
           }
+          
+          console.log('Screenshot record created successfully on server');
           break;
           
         case 'command_activity':
@@ -838,19 +870,77 @@ export class ApiSyncService {
     }, 30000);
   }
 
-  async uploadScreenshot(localPath: string): Promise<string> {
+  async uploadScreenshot(localPath: string): Promise<{ fullUrl: string; thumbnailUrl: string }> {
     try {
-      const formData = new FormData();
-      // Read file and append to form data
-      const fs = require('fs');
-      const fileStream = fs.createReadStream(localPath);
-      formData.append('screenshot', fileStream);
+      const fs = require('fs').promises;
+      const path = require('path');
+      const sharp = require('sharp');
       
-      const response = await this.api.post('/screenshots/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      // Read the file
+      const fileBuffer = await fs.readFile(localPath);
+      const filename = path.basename(localPath);
+      
+      // Get local timezone information
+      const now = new Date();
+      const timezoneOffset = now.getTimezoneOffset(); // in minutes
+      const offsetHours = Math.floor(Math.abs(timezoneOffset) / 60);
+      const offsetMinutes = Math.abs(timezoneOffset) % 60;
+      const offsetSign = timezoneOffset <= 0 ? '+' : '-'; // Note: getTimezoneOffset returns negative for positive offsets
+      const timezone = `${offsetSign}${offsetHours.toString().padStart(2, '0')}${offsetMinutes.toString().padStart(2, '0')}`;
+      
+      // Format local time as YYYY-MM-DDTHH:MM:SS without timezone conversion
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hour = String(now.getHours()).padStart(2, '0');
+      const minute = String(now.getMinutes()).padStart(2, '0');
+      const second = String(now.getSeconds()).padStart(2, '0');
+      const localTimestamp = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+      
+      // Step 1: Request signed URLs from the server
+      const urlResponse = await this.api.post('/screenshots/generate-upload-url', {
+        filename,
+        contentType: 'image/jpeg',
+        timezone,
+        localTimestamp // This is now in local time, not UTC
       });
       
-      return response.data.url;
+      const { uploadUrls, key } = urlResponse.data;
+      
+      // Step 2: Create thumbnail
+      const thumbnailBuffer = await sharp(fileBuffer)
+        .resize(250, null, { 
+          fit: 'inside',
+          withoutEnlargement: false 
+        })
+        .jpeg({ quality: 99 })
+        .toBuffer();
+      
+      // Step 3: Upload both files directly to S3 using signed URLs
+      const [fullUpload, thumbUpload] = await Promise.all([
+        // Upload full image
+        axios.put(uploadUrls.fullUrl, fileBuffer, {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': fileBuffer.length
+          }
+        }),
+        // Upload thumbnail
+        axios.put(uploadUrls.thumbnailUrl, thumbnailBuffer, {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': thumbnailBuffer.length
+          }
+        })
+      ]);
+      
+      // Step 4: Return the S3 URLs (construct from bucket and keys)
+      const bucket = process.env.SCREENSHOTS_BUCKET || 'pp-tracker-screenshots-dev';
+      const region = process.env.AWS_REGION || 'ap-south-1';
+      const fullUrl = `https://${bucket}.s3.${region}.amazonaws.com/${uploadUrls.fullKey}`;
+      const thumbnailUrl = `https://${bucket}.s3.${region}.amazonaws.com/${uploadUrls.thumbnailKey}`;
+      
+      return { fullUrl, thumbnailUrl };
     } catch (error) {
       console.error('Failed to upload screenshot:', error);
       throw error;

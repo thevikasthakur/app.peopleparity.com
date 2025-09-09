@@ -1,10 +1,12 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Request, Inject } from '@nestjs/common';
 import { ActivityService } from './activity.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('activity-periods')
 export class ActivityController {
-  constructor(private activityService: ActivityService) {}
+  constructor(
+    @Inject(ActivityService) private readonly activityService: ActivityService
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
@@ -85,7 +87,9 @@ export class ActivityController {
 
 @Controller('activities')
 export class ActivitiesController {
-  constructor(private activityService: ActivityService) {}
+  constructor(
+    @Inject(ActivityService) private readonly activityService: ActivityService
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
