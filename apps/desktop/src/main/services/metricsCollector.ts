@@ -271,48 +271,53 @@ export class MetricsCollector {
     // Score components (0-10 scale each) - Updated thresholds for higher scores
     const components = {
       // Key hits: Progressive scoring to allow max 9.0 from keyboard alone
-      // 0-30: linear (0-5), 31-60: slower growth (5-7), 61-100: diminishing (7-8.5), 100+: caps at 9.0
-      keyHits: keyHitsPerMin <= 30 
-        ? (keyHitsPerMin / 30) * 5
-        : keyHitsPerMin <= 60
-        ? 5 + ((keyHitsPerMin - 30) / 30) * 2
-        : keyHitsPerMin <= 100
-        ? 7 + ((keyHitsPerMin - 60) / 40) * 1.5
-        : Math.min(9, 8.5 + ((keyHitsPerMin - 100) / 100) * 0.5),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-25.5: linear (0-5), 26-51: slower growth (5-7), 52-85: diminishing (7-8.5), 85+: caps at 9.0
+      keyHits: keyHitsPerMin <= 25.5 
+        ? (keyHitsPerMin / 25.5) * 5
+        : keyHitsPerMin <= 51
+        ? 5 + ((keyHitsPerMin - 25.5) / 25.5) * 2
+        : keyHitsPerMin <= 85
+        ? 7 + ((keyHitsPerMin - 51) / 34) * 1.5
+        : Math.min(9, 8.5 + ((keyHitsPerMin - 85) / 85) * 0.5),
       
       // Key diversity: Progressive scoring for unique keys
-      // 0-10: linear (0-5), 11-20: slower (5-7), 21-30: diminishing (7-8.5), 30+: caps at 9.0
-      keyDiversity: uniqueKeysPerMin <= 10
-        ? (uniqueKeysPerMin / 10) * 5
-        : uniqueKeysPerMin <= 20
-        ? 5 + ((uniqueKeysPerMin - 10) / 10) * 2
-        : uniqueKeysPerMin <= 30
-        ? 7 + ((uniqueKeysPerMin - 20) / 10) * 1.5
-        : Math.min(9, 8.5 + ((uniqueKeysPerMin - 30) / 20) * 0.5),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-8.5: linear (0-5), 9-17: slower (5-7), 18-25.5: diminishing (7-8.5), 25.5+: caps at 9.0
+      keyDiversity: uniqueKeysPerMin <= 8.5
+        ? (uniqueKeysPerMin / 8.5) * 5
+        : uniqueKeysPerMin <= 17
+        ? 5 + ((uniqueKeysPerMin - 8.5) / 8.5) * 2
+        : uniqueKeysPerMin <= 25.5
+        ? 7 + ((uniqueKeysPerMin - 17) / 8.5) * 1.5
+        : Math.min(9, 8.5 + ((uniqueKeysPerMin - 25.5) / 17) * 0.5),
       
       // Mouse clicks: Progressive scoring to help achieve 7.5 with mouse alone
-      // 0-15: linear (0-5), 16-30: slower (5-6.5), 31-50: diminishing (6.5-7.5)
-      mouseClicks: clicksPerMin <= 15
-        ? (clicksPerMin / 15) * 5
-        : clicksPerMin <= 30
-        ? 5 + ((clicksPerMin - 15) / 15) * 1.5
-        : Math.min(7.5, 6.5 + ((clicksPerMin - 30) / 20) * 1),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-12.75: linear (0-5), 13-25.5: slower (5-6.5), 26-42.5: diminishing (6.5-7.5)
+      mouseClicks: clicksPerMin <= 12.75
+        ? (clicksPerMin / 12.75) * 5
+        : clicksPerMin <= 25.5
+        ? 5 + ((clicksPerMin - 12.75) / 12.75) * 1.5
+        : Math.min(7.5, 6.5 + ((clicksPerMin - 25.5) / 17) * 1),
       
       // Mouse scrolls: Progressive scoring
-      // 0-8: linear (0-5), 9-15: slower (5-6.5), 16+: caps at 7.5
-      mouseScrolls: scrollsPerMin <= 8
-        ? (scrollsPerMin / 8) * 5
-        : scrollsPerMin <= 15
-        ? 5 + ((scrollsPerMin - 8) / 7) * 1.5
-        : Math.min(7.5, 6.5 + ((scrollsPerMin - 15) / 10) * 1),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-6.8: linear (0-5), 7-12.75: slower (5-6.5), 13.6+: caps at 7.5
+      mouseScrolls: scrollsPerMin <= 6.8
+        ? (scrollsPerMin / 6.8) * 5
+        : scrollsPerMin <= 12.75
+        ? 5 + ((scrollsPerMin - 6.8) / 5.95) * 1.5
+        : Math.min(7.5, 6.5 + ((scrollsPerMin - 12.75) / 8.5) * 1),
       
       // Mouse movement: Progressive scoring based on distance
-      // 0-2000: linear (0-5), 2001-4000: slower (5-6.5), 4001+: caps at 7.5
-      mouseMovement: mouseDistancePerMin <= 2000
-        ? (mouseDistancePerMin / 2000) * 5
-        : mouseDistancePerMin <= 4000
-        ? 5 + ((mouseDistancePerMin - 2000) / 2000) * 1.5
-        : Math.min(7.5, 6.5 + ((mouseDistancePerMin - 4000) / 2000) * 1),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-1700: linear (0-5), 1701-3400: slower (5-6.5), 3401+: caps at 7.5
+      mouseMovement: mouseDistancePerMin <= 1700
+        ? (mouseDistancePerMin / 1700) * 5
+        : mouseDistancePerMin <= 3400
+        ? 5 + ((mouseDistancePerMin - 1700) / 1700) * 1.5
+        : Math.min(7.5, 6.5 + ((mouseDistancePerMin - 3400) / 1700) * 1),
     };
     
     // Calculate penalties for suspicious behavior

@@ -1,0 +1,396 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The AWS CloudFormation template for this Serverless application",
+  "Resources": {
+    "ApiLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/pp-api-dev-api",
+        "RetentionInDays": 14
+      }
+    },
+    "IamRoleLambdaExecution": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Join": [
+                "-",
+                [
+                  "pp-api",
+                  "dev",
+                  "lambda"
+                ]
+              ]
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:CreateLogGroup",
+                    "logs:TagResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/pp-api-dev*:*"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/pp-api-dev*:*:*"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:ListBucket"
+                  ],
+                  "Resource": "arn:aws:s3:::pp-tracker-screenshots-dev"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": "arn:aws:s3:::pp-tracker-screenshots-dev/*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "xray:PutTraceSegments",
+                    "xray:PutTelemetryRecords"
+                  ],
+                  "Resource": [
+                    "*"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "Path": "/",
+        "RoleName": {
+          "Fn::Join": [
+            "-",
+            [
+              "pp-api",
+              "dev",
+              {
+                "Ref": "AWS::Region"
+              },
+              "lambdaRole"
+            ]
+          ]
+        }
+      }
+    },
+    "ApiLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
+          "S3Key": "serverless/pp-api/dev/1757357675363-2025-09-08T18:54:35.363Z/pp-api.zip"
+        },
+        "Handler": "src/lambda.handler",
+        "Runtime": "nodejs22.x",
+        "FunctionName": "pp-api-dev-api",
+        "MemorySize": 512,
+        "Timeout": 20,
+        "TracingConfig": {
+          "Mode": "Active"
+        },
+        "Environment": {
+          "Variables": {
+            "NODE_OPTIONS": "--enable-source-maps",
+            "STAGE": "dev",
+            "SCREENSHOTS_BUCKET": "pp-tracker-screenshots-dev",
+            "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
+            "DATABASE_PORT": "6543",
+            "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
+            "DATABASE_PASSWORD": "FIr5FKZ3YqwRuxxv",
+            "DATABASE_NAME": "postgres",
+            "JWT_SECRET": "people-parity-secret-key-2024",
+            "JWT_EXPIRATION": "7d",
+            "PORT": "3001",
+            "NODE_ENV": "development",
+            "SUPER_ADMIN_EMAIL": "admin@peopleparity.com",
+            "SUPER_ADMIN_PASSWORD": "Expressparity1!",
+            "SAML_ENTRY_POINT": "https://login.microsoftonline.com/383cc6fe-545e-4fab-8276-0c78ac6258f7/saml2",
+            "SAML_ISSUER": "PeopleParity",
+            "SAML_CLIENT_ID": "PeopleParity",
+            "SAML_CALLBACK_URL": "http://localhost:3001/api/auth/saml/callback",
+            "SAML_CERT": "-----BEGIN CERTIFICATE-----\nMIIC8DCCAdigAwIBAgIQcNr6w7TexKlOQiRcfM3EkTANBgkqhkiG9w0BAQsFADA0MTIwMAYDVQQD\nEylNaWNyb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTAeFw0yNTA4MjAxNzA4\nMDVaFw0yODA4MjAxNzA4MDVaMDQxMjAwBgNVBAMTKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQg\nU1NPIENlcnRpZmljYXRlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4B+KN+dY3vNS\nNOySyWE6KS90Eeg9TC54XpYrWZj/dKI0gtEcfvm2hSvqKfDX5pDLUBB/SOe00Gz0OELqDZ6Tgg78\nM5lyKNQHpxg7g0rnKzNpI+j2uc5gS9eMK27N1GQxpnS/GqpF3N4iXuQYP8X4s2yNTleRfmjttrHW\nf4YSlp9l5zGHjdt8cs+JaBNupcAxPKFh2vBBWkab95O+UpjsOv/E3BnIyp/+R+kXmyaHvSk5hAEG\n74UcMKmBrSUYpa0R+CTpIb6YtPMkzwYkESGoqtvQkNahaIAr0i94ZWC/H33gvaapqTO84GwUF/pJ\nzQkmCjTglK5V4OKMxuzA+N+wCQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQDGprNWc6nrUiEQmiF3\nNDgqumqmxhLafGe3iMFaEJhGkuZge4ZpiqU8AdaK6KYnvzZ8may/rm0uj5z4RIufs6hkAed0OVrC\nHTw2bVHqgwHc8iMXouy7gzz8tvn54yGq69rZkEWg3/spgvGFR1ZZudXHIPkQp5irLG9f63iyi1cF\nC2T0Wl5PgkGZVkM+s8hU0AiYshSYYd5i73IPNFEvDoLV69GqUU6RRobMUlm5oUuaNohht3+6ZRp7\ncfuxmh/dKbjYWc4jfB1/Na4YL+hmoaFRqtaY39AyLSQDkpvThq2Wgl55CbxKhlSnXlTao+4pDcBr\nXyQ9nY0Lnh+p0dOEqU8o\n-----END CERTIFICATE-----",
+            "FRONTEND_URL": "http://localhost:5174"
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        }
+      },
+      "DependsOn": [
+        "ApiLogGroup"
+      ]
+    },
+    "ApiLambdaVersionRseCUxEoR2Skt9kmsch0A9nF6M01Fe73SL55j7qv0": {
+      "Type": "AWS::Lambda::Version",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "ApiLambdaFunction"
+        },
+        "CodeSha256": "OpCiCQotOBSOm+oRtZUBg6AZSdtWf1xx3Dd1KVWoKRM="
+      }
+    },
+    "HttpApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": "dev-pp-api",
+        "ProtocolType": "HTTP",
+        "CorsConfiguration": {
+          "AllowHeaders": [
+            "Content-Type",
+            "X-Amz-Date",
+            "Authorization",
+            "X-Api-Key",
+            "X-Amz-Security-Token",
+            "X-Amz-User-Agent",
+            "X-Amzn-Trace-Id"
+          ],
+          "AllowMethods": [
+            "OPTIONS",
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "HEAD",
+            "DELETE"
+          ],
+          "AllowOrigins": [
+            "*"
+          ]
+        }
+      }
+    },
+    "HttpApiStage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "DetailedMetricsEnabled": false
+        }
+      }
+    },
+    "ApiLambdaPermissionHttpApi": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiLambdaFunction",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "HttpApi"
+              },
+              "/*"
+            ]
+          ]
+        }
+      }
+    },
+    "HttpApiIntegrationApi": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "ApiLambdaFunction",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 30000
+      }
+    },
+    "HttpApiRouteAnyProxyVar": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "ANY /{proxy+}",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "HttpApiIntegrationApi"
+              }
+            ]
+          ]
+        }
+      },
+      "DependsOn": "HttpApiIntegrationApi"
+    },
+    "HttpApiRouteAny": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "ANY /",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "HttpApiIntegrationApi"
+              }
+            ]
+          ]
+        }
+      },
+      "DependsOn": "HttpApiIntegrationApi"
+    },
+    "ScreenshotsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": "pp-tracker-screenshots-dev",
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ServerlessDeploymentBucketName": {
+      "Value": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
+      "Export": {
+        "Name": "sls-pp-api-dev-ServerlessDeploymentBucketName"
+      }
+    },
+    "ApiLambdaFunctionQualifiedArn": {
+      "Description": "Current Lambda function version",
+      "Value": {
+        "Ref": "ApiLambdaVersionRseCUxEoR2Skt9kmsch0A9nF6M01Fe73SL55j7qv0"
+      },
+      "Export": {
+        "Name": "sls-pp-api-dev-ApiLambdaFunctionQualifiedArn"
+      }
+    },
+    "HttpApiId": {
+      "Description": "Id of the HTTP API",
+      "Value": {
+        "Ref": "HttpApi"
+      },
+      "Export": {
+        "Name": "sls-pp-api-dev-HttpApiId"
+      }
+    },
+    "HttpApiUrl": {
+      "Description": "URL of the HTTP API",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "https://",
+            {
+              "Ref": "HttpApi"
+            },
+            ".execute-api.",
+            {
+              "Ref": "AWS::Region"
+            },
+            ".",
+            {
+              "Ref": "AWS::URLSuffix"
+            }
+          ]
+        ]
+      },
+      "Export": {
+        "Name": "sls-pp-api-dev-HttpApiUrl"
+      }
+    },
+    "ScreenshotsBucketName": {
+      "Value": "pp-tracker-screenshots-dev",
+      "Export": {
+        "Name": "pp-api-dev-ScreenshotsBucketName"
+      }
+    }
+  }
+}

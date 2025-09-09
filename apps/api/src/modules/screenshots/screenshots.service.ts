@@ -23,9 +23,9 @@ export class ScreenshotsService {
   }
 
   async uploadToS3(file: Express.Multer.File, userId: string): Promise<{ fullUrl: string; thumbnailUrl: string }> {
-    const bucket = this.configService.get('AWS_S3_BUCKET');
+    const bucket = this.configService.get('SCREENSHOTS_BUCKET');
     const timestamp = Date.now();
-    const baseKey = `screenshots/${userId}/${timestamp}`;
+    const baseKey = `inzint/${userId}/${timestamp}`;
     
     // Create thumbnail (100px width, maintaining aspect ratio)
     const thumbnailBuffer = await sharp(file.buffer)

@@ -1,0 +1,104 @@
+service: pp-api
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  profile: pp-api
+  runtime: nodejs22.x
+  region: ap-south-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 20
+  logRetentionInDays: 14
+  httpApi:
+    cors: true
+  tracing:
+    lambda: true
+  environment:
+    NODE_OPTIONS: --enable-source-maps
+    STAGE: ${sls:stage}
+    SCREENSHOTS_BUCKET: ${self:custom.screenshotsBucket}
+
+  # Lambda execution role permissions (scoped to this stage's bucket)
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+          Resource:
+            - arn:aws:s3:::${self:custom.screenshotsBucket}
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            # (add s3:PutObjectAcl if you ever set ACLs)
+          Resource:
+            - arn:aws:s3:::${self:custom.screenshotsBucket}/*
+
+functions:
+  api:
+    handler: src/lambda.handler
+    events:
+      - httpApi:
+          method: ANY
+          path: "/{proxy+}"
+      - httpApi:
+          method: ANY
+          path: "/"
+
+plugins:
+  - serverless-offline
+  - serverless-dotenv-plugin
+
+# Built-in Serverless v4 builder
+build:
+  esbuild:
+    bundle: true
+    platform: node
+    format: cjs
+    target: node22
+    sourcemap: true
+    external:
+      - "@nestjs/websockets"
+      - "@nestjs/websockets/socket-module"
+      - "@nestjs/microservices"
+      - "@nestjs/microservices/microservices-module"
+
+custom:
+  screenshotsBucket: pp-tracker-screenshots-${sls:stage}
+
+  dotenv:
+    logging: false
+
+resources:
+  Resources:
+    ScreenshotsBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain # keep data if stack is removed
+      UpdateReplacePolicy: Retain
+      Properties:
+        BucketName: ${self:custom.screenshotsBucket}
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        # Optional CORS (enable if you upload directly from browsers)
+        # CorsConfiguration:
+        #   CorsRules:
+        #     - AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+        #       AllowedOrigins: ['*']   # tighten in prod
+        #       AllowedHeaders: ['*']
+        #       MaxAge: 3000
+
+  Outputs:
+    ScreenshotsBucketName:
+      Value: ${self:custom.screenshotsBucket}
+      Export:
+        Name: ${self:service}-${sls:stage}-ScreenshotsBucketName

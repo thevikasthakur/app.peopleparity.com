@@ -685,23 +685,24 @@ export class ActivityTrackerV2 extends EventEmitter {
     const mouseDistancePerMin = this.currentMetrics.mouseDistance / minutesPassed;
     
     // Calculate base score components (0-100 total)
+    // LIBERALIZED: All multipliers increased by 15% for easier scoring
     let baseScore = 0;
     
     // Keyboard activity (0-40 points)
-    baseScore += Math.min(40, keysPerMin * 2.2);
+    baseScore += Math.min(40, keysPerMin * 2.53); // Was 2.2, now +15%
     
     // Mouse clicks (0-20 points)
-    baseScore += Math.min(20, clicksPerMin * 6);
+    baseScore += Math.min(20, clicksPerMin * 6.9); // Was 6, now +15%
     
     // Mouse movement (0-15 points)
     // Normal mouse movement is 1000-5000 pixels per minute
-    baseScore += Math.min(15, mouseDistancePerMin / 200); // 3000px = 15 points
+    baseScore += Math.min(15, mouseDistancePerMin / 174); // Was 200, now -13% (lower divisor = higher score)
     
     // Scroll activity (0-10 points)
-    baseScore += Math.min(10, scrollsPerMin * 3);
+    baseScore += Math.min(10, scrollsPerMin * 3.45); // Was 3, now +15%
     
     // Key diversity (0-15 points)
-    baseScore += Math.min(15, uniqueKeysPerMin * 3);
+    baseScore += Math.min(15, uniqueKeysPerMin * 3.45); // Was 3, now +15%
     
     // Base score capped at 100
     baseScore = Math.min(100, baseScore);
@@ -712,16 +713,17 @@ export class ActivityTrackerV2 extends EventEmitter {
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
     
     // Apply graduated bonuses based on activity level (avoid suspicious levels > 50)
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
-      if (totalMouseActivity > 20) {
+    // LIBERALIZED: All thresholds reduced by 15% for easier bonuses
+    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 425)) { // Was 500
+      if (totalMouseActivity > 17) { // Was 20
         mouseBonus = 30; // Very high activity (30% bonus)
-      } else if (totalMouseActivity > 15) {
+      } else if (totalMouseActivity > 12.75) { // Was 15
         mouseBonus = 25; // High activity (25% bonus)
-      } else if (totalMouseActivity > 10) {
+      } else if (totalMouseActivity > 8.5) { // Was 10
         mouseBonus = 20; // Good activity (20% bonus)
-      } else if (totalMouseActivity > 5) {
+      } else if (totalMouseActivity > 4.25) { // Was 5
         mouseBonus = 15; // Moderate activity (15% bonus)
-      } else if (totalMouseActivity > 2) {
+      } else if (totalMouseActivity > 1.7) { // Was 2
         mouseBonus = 10; // Light activity (10% bonus)
       }
       

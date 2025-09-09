@@ -4,33 +4,28 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import serverless from 'serverless-http';
-import express from 'express';
+import { configureApp } from './configure-app';
 
 let cachedHandler: Handler | null = null;
 
 async function bootstrap(): Promise<Handler> {
-  const expressApp = express();
+  // No direct "import express from 'express'"
+  const adapter = new ExpressAdapter();
+  const app = await NestFactory.create(AppModule, adapter, { logger: ['error', 'warn', 'log'] });
 
-  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
-    logger: ['error', 'warn', 'log'],
-  });
+  await configureApp(app); // CORS, pipes, prefix
 
-  app.enableCors({ origin: true, credentials: true });
-  await app.init();
+  // Get the underlying Express instance from the adapter/Nest
+  const expressApp = app.getHttpAdapter().getInstance();
 
-  // NOTE: removed callbackWaitsForEmptyEventLoop here (not a valid option)
   return serverless(expressApp, {
     requestId: 'x-request-id',
     provider: 'aws',
-  })
+  }) as unknown as Handler;
 }
 
 export const handler: Handler = async (event, context: Context, callback: Callback) => {
-  // Correct place to set this flag
   context.callbackWaitsForEmptyEventLoop = false;
-
-  if (!cachedHandler) {
-    cachedHandler = await bootstrap();
-  }
+  if (!cachedHandler) cachedHandler = await bootstrap();
   return cachedHandler(event, context, callback);
 };
