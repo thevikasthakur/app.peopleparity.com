@@ -265,14 +265,36 @@ export class ProductiveHoursService {
   /**
    * Calculate attendance status for a day
    */
-  getDayAttendanceStatus(hours: number, isHolidayWeek: boolean, weekTotal: number = 0, isFuture: boolean = false): {
-    status: 'absent' | 'half' | 'good' | 'full' | 'extra' | 'future';
+  getDayAttendanceStatus(hours: number, isHolidayWeek: boolean, weekTotal: number = 0, isFuture: boolean = false, isCurrentDay: boolean = false): {
+    status: 'absent' | 'half' | 'good' | 'full' | 'extra' | 'future' | 'in-progress';
     label: string;
     color: string;
   } {
     // If it's a future day, return future status
     if (isFuture) {
       return { status: 'future', label: 'Upcoming', color: '#9ca3af' }; // gray
+    }
+    
+    // Special handling for current day
+    if (isCurrentDay) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      // Before 2 PM (14:00), show as "In Progress" unless they have good hours already
+      if (currentHour < 14) {
+        // If they already have significant hours, show actual status
+        if (hours >= 4.5) {
+          // Fall through to normal calculation
+        } else {
+          // Show as "In Progress" with current hours
+          return { 
+            status: 'in-progress', 
+            label: 'In Progress', 
+            color: '#6b7280' // neutral gray
+          };
+        }
+      }
+      // After 2 PM, use normal status calculation
     }
     
     // Apply 33.33% relaxation if week total >= 45 hours
@@ -318,12 +340,28 @@ export class ProductiveHoursService {
     let dailyStatuses: any[] = [];
     if (dailyData && dailyData.length === 5) {
       const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+      
+      // Get current day of week (0 = Sunday, 1 = Monday, ..., 5 = Friday)
+      const now = new Date();
+      const currentDayOfWeek = now.getUTCDay();
+      
       dailyStatuses = dailyData.map((data, index) => {
-        const dayStatus = this.getDayAttendanceStatus(data.hours, markers.hasHoliday, hours, data.isFuture);
+        // Monday = 1, Tuesday = 2, ..., Friday = 5
+        const dayOfWeek = index + 1;
+        const isCurrentDay = dayOfWeek === currentDayOfWeek && !data.isFuture;
+        
+        const dayStatus = this.getDayAttendanceStatus(
+          data.hours, 
+          markers.hasHoliday, 
+          hours, 
+          data.isFuture,
+          isCurrentDay
+        );
         return {
           day: dayLabels[index],
           hours: data.hours,
           isFuture: data.isFuture,
+          isCurrentDay,
           ...dayStatus
         };
       });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Award, Zap, Target, Calendar, Trophy, Star, Flag } from 'lucide-react';
+import { TrendingUp, Award, Zap, Target, Calendar, Trophy, Star, Flag, Clock } from 'lucide-react';
 import { getActivityMessage } from '../utils/activityMessages';
 
 interface WeeklyData {
@@ -181,11 +181,19 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           const statusLabel = dayStatus?.label || 'Absent';
           const statusColor = dayStatus?.color || '#ef4444';
           
+          // Check if this is the current day
+          const isCurrentDay = dayStatus?.isCurrentDay || false;
+          
           // Determine background and border colors based on status
           const getStatusClasses = () => {
+            if (isCurrentDay && attendanceStatus === 'in-progress') {
+              return 'bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-400 shadow-md animate-pulse-subtle';
+            }
             switch (attendanceStatus) {
               case 'future':
                 return 'bg-gray-50 border-gray-200';
+              case 'in-progress':
+                return 'bg-blue-50 border-2 border-blue-400 shadow-md';
               case 'extra':
                 return 'bg-purple-50 border-purple-300';
               case 'full':
@@ -202,9 +210,19 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           
           // Get icon based on status
           const getStatusIcon = () => {
+            if (isCurrentDay && attendanceStatus === 'in-progress') {
+              return (
+                <div className="relative">
+                  <Clock className="w-4 h-4 text-blue-500 animate-spin-slow" />
+                  <div className="absolute inset-0 w-4 h-4 bg-blue-400 opacity-30 rounded-full animate-ping" />
+                </div>
+              );
+            }
             switch (attendanceStatus) {
               case 'future':
                 return <Calendar className="w-4 h-4 text-gray-400" />;
+              case 'in-progress':
+                return <Clock className="w-4 h-4 text-blue-500" />;
               case 'extra':
                 return <Zap className="w-4 h-4 text-purple-500" />;
               case 'full':
@@ -222,18 +240,28 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           return (
             <div 
               key={label}
-              className={`p-2 rounded-lg border text-center transition-all ${getStatusClasses()}`}
+              className={`p-2 rounded-lg border text-center transition-all ${getStatusClasses()} ${isCurrentDay ? 'relative overflow-hidden' : ''}`}
+              style={isCurrentDay && attendanceStatus === 'in-progress' ? {
+                animation: 'subtle-pulse 3s ease-in-out infinite'
+              } : {}}
             >
               <div className="flex items-center justify-center mb-1">
                 {getStatusIcon()}
               </div>
-              <p className="text-xs font-bold text-gray-900">{label}</p>
+              <p className="text-xs font-bold text-gray-900">
+                {label}
+                {isCurrentDay && <span className="ml-1 text-[8px] text-blue-500">(Today)</span>}
+              </p>
               <p className="text-[10px] text-gray-600">
                 {attendanceStatus === 'future' ? '-' : `${dayHours.toFixed(1)}h`}
               </p>
               <p className="text-[10px] font-medium" style={{ color: statusColor }}>
                 {statusLabel}
               </p>
+              {isCurrentDay && attendanceStatus === 'in-progress' && (
+                <div className="absolute -bottom-1 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-400 opacity-60" 
+                     style={{ animation: 'shimmer 2s linear infinite' }} />
+              )}
             </div>
           );
         })}
