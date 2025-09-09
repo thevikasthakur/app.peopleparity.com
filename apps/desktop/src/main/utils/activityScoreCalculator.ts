@@ -53,3 +53,28 @@ export function calculateScreenshotScore(activityScores: number[]): number {
 export function calculateHourlyScore(activityScores: number[]): number {
   return calculateWeightedActivityScore(activityScores, { high: 48, medium: 24 });
 }
+
+/**
+ * Calculate average of top 80% of activity scores
+ * Excludes the lowest 20% of scores to filter out brief inactive periods
+ * @param scores Array of activity scores  
+ * @returns Average of top 80% scores
+ */
+export function calculateTop80Average(scores: number[]): number {
+  if (!scores || scores.length === 0) {
+    return 0;
+  }
+  
+  // Sort scores in descending order (best to worst)
+  const sortedScores = [...scores].sort((a, b) => b - a);
+  
+  // Calculate how many scores to include (top 80%)
+  const includeCount = Math.ceil(scores.length * 0.8);
+  
+  // Take top 80% of scores
+  const topScores = sortedScores.slice(0, includeCount);
+  
+  // Calculate average of top scores
+  const sum = topScores.reduce((acc, score) => acc + score, 0);
+  return sum / topScores.length;
+}

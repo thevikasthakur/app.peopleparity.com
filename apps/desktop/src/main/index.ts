@@ -7,7 +7,7 @@ import { DatabaseService } from './services/databaseService';
 import { ApiSyncService } from './services/apiSyncService';
 import { BrowserExtensionBridge } from './services/browserExtensionBridge';
 import { ProductiveHoursService } from './services/productiveHoursService';
-import { calculateScreenshotScore } from './utils/activityScoreCalculator';
+import { calculateScreenshotScore, calculateTop80Average } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
 
 // Load environment variables from .env file
@@ -96,6 +96,28 @@ app.whenReady().then(async () => {
   activityTracker = new ActivityTrackerV2(databaseService);
   databaseService.setActivityTracker(activityTracker as any); // Type cast for compatibility
   console.log('✅ Activity tracker V2 initialized');
+  
+  // Listen for inactivity detection
+  activityTracker.on('inactivity:detected', (message: { title: string; message: string }) => {
+    console.log('🚨 Inactivity detected, showing alert:', message.title);
+    
+    // Show dialog to user
+    const { dialog } = require('electron');
+    dialog.showMessageBox(mainWindow!, {
+      type: 'warning',
+      title: message.title,
+      message: message.message,
+      buttons: ['OK'],
+      defaultId: 0,
+      noLink: true
+    }).then(() => {
+      // Send event to renderer to update UI
+      mainWindow?.webContents.send('session-update', {
+        isTracking: false,
+        session: null
+      });
+    });
+  });
   
   // Initialize screenshot service V2 (BEFORE restoring session)
   screenshotService = new ScreenshotServiceV2(databaseService);
@@ -384,10 +406,23 @@ function setupIpcHandlers() {
     // Each valid (non-inactive) screenshot = 10 minutes of tracked time
     const trackedMinutes = validScreenshots * 10;
     
+    // Calculate top 80% average activity score across all screenshots
+    const allScores: number[] = [];
+    for (const detail of screenshotDetails) {
+      if (detail.uiScore > 0) {
+        allScores.push(detail.uiScore);
+      }
+    }
+    
+    const averageActivityScore = allScores.length > 0 
+      ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
+      : 0;
+    
     console.log('Tracked time calculation:', {
       totalScreenshots: screenshots.length,
       validScreenshots,
       trackedMinutes,
+      averageActivityScore,
       sessionId: session.id,
       details: screenshotDetails
     });
@@ -396,7 +431,9 @@ function setupIpcHandlers() {
       session,
       productiveMinutes: trackedMinutes, // Keep the same field name for compatibility
       validScreenshots,
-      totalScreenshots: screenshots.length
+      totalScreenshots: screenshots.length,
+      averageActivityScore,
+      screenshotDetails
     };
   });
   
@@ -494,16 +531,73 @@ function setupIpcHandlers() {
     const productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, today);
     console.log('Calculated productive hours:', productiveHours);
     
+    // Calculate average activity score for today
+    const db = (databaseService as any).localDb;
+    const startOfDay = new Date(today);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    // Get all screenshots for today
+    const screenshots = db.db.prepare(`
+      SELECT s.id, s.capturedAt
+      FROM screenshots s
+      WHERE s.userId = ?
+      AND s.capturedAt >= ?
+      AND s.capturedAt <= ?
+      ORDER BY s.capturedAt
+    `).all(currentUser.id, startOfDay.getTime(), endOfDay.getTime());
+    
+    const allScores: number[] = [];
+    
+    for (const screenshot of screenshots) {
+      // Get all activity periods for this screenshot
+      const activityPeriods = db.db.prepare(`
+        SELECT activityScore
+        FROM activity_periods
+        WHERE screenshotId = ?
+        ORDER BY activityScore DESC
+      `).all(screenshot.id);
+      
+      const scores = activityPeriods.map((p: any) => p.activityScore);
+      
+      if (scores.length > 0) {
+        // Calculate weighted average using the same function as session
+        const weightedScore = calculateScreenshotScore(scores);
+        const uiScore = weightedScore / 10; // Convert to UI scale
+        
+        if (uiScore > 0) {
+          allScores.push(uiScore);
+        }
+      }
+    }
+    
+    // Calculate top 80% average, excluding lowest 20% of scores
+    const averageActivityScore = allScores.length > 0 
+      ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
+      : 0;
+    
     // Get last activity score for context
     const currentActivity = await databaseService.getCurrentActivity();
     const lastActivityScore = currentActivity ? (currentActivity.activityScore / 10) : 5; // Convert to 0-10 scale
     
     const markers = productiveHoursService.getScaleMarkers(today);
     const message = productiveHoursService.getHustleMessage(productiveHours, markers, lastActivityScore);
-    const attendance = productiveHoursService.getAttendanceStatus(productiveHours, markers);
+    
+    // Modify attendance status color based on activity score
+    const baseAttendance = productiveHoursService.getAttendanceStatus(productiveHours, markers);
+    const attendance = {
+      ...baseAttendance,
+      color: averageActivityScore >= 8.5 ? '#10b981' : // green - Good activity
+             averageActivityScore >= 7.0 ? '#3b82f6' : // blue - Fair activity
+             averageActivityScore >= 5.5 ? '#f59e0b' : // amber - Low activity
+             averageActivityScore >= 4.0 ? '#ef4444' : // red - Poor activity
+             '#dc2626' // dark red - Critical/Inactive
+    };
 
     console.log('Returning productive hours data:', {
       productiveHours,
+      averageActivityScore,
       markers,
       message,
       attendance
@@ -511,6 +605,7 @@ function setupIpcHandlers() {
 
     return {
       productiveHours,
+      averageActivityScore,
       markers,
       message,
       attendance
@@ -526,11 +621,73 @@ function setupIpcHandlers() {
 
     const productiveHours = await productiveHoursService.calculateWeeklyHours(currentUser.id);
     const markers = productiveHoursService.getWeeklyMarkers();
-    const attendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers);
+    
+    // Calculate average activity score for the week
+    const db = (databaseService as any).localDb;
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(today);
+    endOfWeek.setHours(23, 59, 59, 999);
+    
+    // Get all screenshots for the week
+    const screenshots = db.db.prepare(`
+      SELECT s.id, s.capturedAt
+      FROM screenshots s
+      WHERE s.userId = ?
+      AND s.capturedAt >= ?
+      AND s.capturedAt <= ?
+      ORDER BY s.capturedAt
+    `).all(currentUser.id, startOfWeek.getTime(), endOfWeek.getTime());
+    
+    const allScores: number[] = [];
+    
+    for (const screenshot of screenshots) {
+      // Get all activity periods for this screenshot
+      const activityPeriods = db.db.prepare(`
+        SELECT activityScore
+        FROM activity_periods
+        WHERE screenshotId = ?
+        ORDER BY activityScore DESC
+      `).all(screenshot.id);
+      
+      const scores = activityPeriods.map((p: any) => p.activityScore);
+      
+      if (scores.length > 0) {
+        // Calculate weighted average using the same function as session
+        const weightedScore = calculateScreenshotScore(scores);
+        const uiScore = weightedScore / 10; // Convert to UI scale
+        
+        if (uiScore > 0) {
+          allScores.push(uiScore);
+        }
+      }
+    }
+    
+    // Calculate top 80% average, excluding lowest 20% of scores
+    const averageActivityScore = allScores.length > 0 
+      ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
+      : 0;
+    
+    // Calculate base attendance
+    const baseAttendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers);
+    
+    // Modify attendance color based on activity score
+    const attendance = {
+      ...baseAttendance,
+      color: averageActivityScore >= 8.5 ? '#10b981' : // green - Good activity
+             averageActivityScore >= 7.0 ? '#3b82f6' : // blue - Fair activity
+             averageActivityScore >= 5.5 ? '#f59e0b' : // amber - Low activity
+             averageActivityScore >= 4.0 ? '#ef4444' : // red - Poor activity
+             '#dc2626' // dark red - Critical/Inactive
+    };
+    
     const message = productiveHoursService.getWeeklyMessage(productiveHours, attendance, markers);
 
     return {
       productiveHours,
+      averageActivityScore,
       markers,
       attendance,
       message

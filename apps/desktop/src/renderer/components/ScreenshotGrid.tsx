@@ -279,6 +279,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [modalScreenshot, setModalScreenshot] = useState<Screenshot | null>(null);
+  const [modalScreenshotIndex, setModalScreenshotIndex] = useState<number>(-1);
   const [detailedMetrics, setDetailedMetrics] = useState<DetailedMetrics[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
@@ -383,22 +384,52 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
     return () => clearInterval(cleanupInterval);
   }, []);
 
-  // Handle Escape key to close screenshot modal
+  // Navigate to previous/next screenshot
+  const navigateScreenshot = (direction: 'prev' | 'next') => {
+    if (modalScreenshotIndex === -1) return;
+    
+    let newIndex = modalScreenshotIndex;
+    if (direction === 'prev') {
+      newIndex = modalScreenshotIndex > 0 ? modalScreenshotIndex - 1 : screenshots.length - 1;
+    } else {
+      newIndex = modalScreenshotIndex < screenshots.length - 1 ? modalScreenshotIndex + 1 : 0;
+    }
+    
+    setModalScreenshotIndex(newIndex);
+    setModalScreenshot(screenshots[newIndex]);
+    setSignedFullUrl(null); // Reset signed URL to fetch new one
+  };
+
+  // Handle keyboard navigation for screenshot modal
   useEffect(() => {
-    const handleEscapeKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && modalScreenshot) {
-        setModalScreenshot(null);
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (!modalScreenshot) return;
+      
+      switch(event.key) {
+        case 'Escape':
+          setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
+          setModalScreenshotIndex(-1);
+          break;
+        case 'ArrowLeft':
+          event.preventDefault();
+          navigateScreenshot('prev');
+          break;
+        case 'ArrowRight':
+          event.preventDefault();
+          navigateScreenshot('next');
+          break;
       }
     };
 
     if (modalScreenshot) {
-      document.addEventListener('keydown', handleEscapeKey);
+      document.addEventListener('keydown', handleKeyPress);
     }
 
     return () => {
-      document.removeEventListener('keydown', handleEscapeKey);
+      document.removeEventListener('keydown', handleKeyPress);
     };
-  }, [modalScreenshot]);
+  }, [modalScreenshot, modalScreenshotIndex, screenshots]);
 
   const loadRecentActivities = async () => {
     try {
@@ -687,6 +718,8 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     }
                   `}
                   onClick={() => {
+                    const index = screenshots.findIndex(s => s.id === screenshot.id);
+                    setModalScreenshotIndex(index);
                     setModalScreenshot(screenshot);
                     fetchDetailedMetrics(screenshot);
                   }}
@@ -1057,6 +1090,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                   console.log('Successfully retried sync');
                                   // Close modal and refresh
                                   setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
                                   if (onRefresh) {
                                     await onRefresh();
                                   }
@@ -1069,6 +1103,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                     // For partial uploads not in queue, still refresh to show updated status
                                     console.log('Item not in queue (likely already syncing), closing modal and refreshing...');
                                     setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
                                     if (onRefresh) {
                                       await onRefresh();
                                     }
@@ -1110,8 +1145,31 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               
               {/* Modal Body - Side by side layout */}
               <div className="h-[calc(100%-4rem)] flex">
-                {/* Left side - Large Screenshot Image */}
-                <div className="flex-1 bg-gray-100 p-6 flex items-center justify-center overflow-auto">
+                {/* Left side - Large Screenshot Image with Navigation */}
+                <div className="flex-1 bg-gray-100 p-6 flex items-center justify-center overflow-auto relative">
+                  {/* Previous Arrow */}
+                  <button
+                    onClick={() => navigateScreenshot('prev')}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg transition-all hover:scale-110 z-10"
+                    title="Previous screenshot (←)"
+                  >
+                    <ChevronLeft className="w-6 h-6 text-gray-700" />
+                  </button>
+                  
+                  {/* Next Arrow */}
+                  <button
+                    onClick={() => navigateScreenshot('next')}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg transition-all hover:scale-110 z-10"
+                    title="Next screenshot (→)"
+                  >
+                    <ChevronRight className="w-6 h-6 text-gray-700" />
+                  </button>
+                  
+                  {/* Screenshot Counter */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/50 text-white rounded-full text-sm">
+                    {modalScreenshotIndex + 1} / {screenshots.length}
+                  </div>
+                  
                   {loadingSignedUrl ? (
                     <div className="flex items-center justify-center">
                       <Loader className="w-8 h-8 animate-spin text-gray-400" />
@@ -1561,6 +1619,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                             
                             // Close modal
                             setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
                             
                             // Refresh the screenshots
                             if (onRefresh) {

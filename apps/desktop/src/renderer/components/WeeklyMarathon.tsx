@@ -3,6 +3,7 @@ import { TrendingUp, Award, Zap, Target, Calendar } from 'lucide-react';
 
 interface WeeklyData {
   productiveHours: number;
+  averageActivityScore: number;
   markers: {
     dailyTarget: number; // 9 or 10.5 based on holiday
     maxScale: number; // 45 hours
@@ -57,8 +58,18 @@ export const WeeklyMarathon: React.FC = () => {
     return null;
   }
 
-  const { productiveHours, markers, attendance, message } = weeklyData;
+  const { productiveHours, averageActivityScore, markers, attendance, message } = weeklyData;
   const percentage = Math.min((productiveHours / markers.maxScale) * 100, 100);
+  
+  // Get activity level label
+  const getActivityLevel = (score: number) => {
+    if (score >= 8.5) return 'Good';
+    if (score >= 7.0) return 'Fair';
+    if (score >= 5.5) return 'Low';
+    if (score >= 4.0) return 'Poor';
+    if (score >= 2.5) return 'Critical';
+    return 'Inactive';
+  };
   
   // Calculate marker positions
   const dayMarkers = [];
@@ -101,10 +112,24 @@ export const WeeklyMarathon: React.FC = () => {
             </span>
           )}
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="text-xl font-bold" style={{ color: attendance.color }}>
-            {productiveHours.toFixed(1)}h
-          </span>
+        <div className="flex items-center space-x-3">
+          <div className="flex flex-col items-end">
+            <span className="text-xl font-bold" style={{ color: attendance.color }}>
+              {productiveHours.toFixed(1)}h
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-medium" style={{ color: attendance.color }}>
+                {averageActivityScore.toFixed(1)}
+              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-medium" 
+                    style={{ 
+                      backgroundColor: `${attendance.color}20`,
+                      color: attendance.color
+                    }}>
+                {getActivityLevel(averageActivityScore)}
+              </span>
+            </div>
+          </div>
           {getIcon()}
         </div>
       </div>

@@ -6,6 +6,7 @@ interface SessionInfo {
   elapsedMinutes: number;
   trackedMinutes: number;
   mode: 'client' | 'command';
+  averageActivityScore: number;
 }
 
 interface CurrentSessionInfoProps {
@@ -74,7 +75,8 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
         startTime,
         elapsedMinutes,
         trackedMinutes,
-        mode: currentSession.mode
+        mode: currentSession.mode,
+        averageActivityScore: sessionData.averageActivityScore || 0
       });
     } catch (error) {
       console.error('Failed to load session info:', error);
@@ -188,11 +190,24 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
     ? Math.round((sessionInfo.trackedMinutes / sessionInfo.elapsedMinutes) * 100)
     : 0;
 
-  const getCoverageColor = () => {
-    if (coverageRate >= 80) return '#10b981'; // green
-    if (coverageRate >= 60) return '#3b82f6'; // blue
-    if (coverageRate >= 40) return '#f59e0b'; // amber
-    return '#ef4444'; // red
+  // Get color based on activity score (0-10 scale)
+  const getActivityColor = (score: number) => {
+    if (score >= 8.5) return '#10b981'; // green - Good
+    if (score >= 7.0) return '#3b82f6'; // blue - Fair  
+    if (score >= 5.5) return '#f59e0b'; // amber - Low
+    if (score >= 4.0) return '#ef4444'; // red - Poor
+    if (score >= 2.5) return '#dc2626'; // dark red - Critical
+    return '#7c2d12'; // brown - Inactive
+  };
+  
+  // Get activity level label
+  const getActivityLevel = (score: number) => {
+    if (score >= 8.5) return 'Good';
+    if (score >= 7.0) return 'Fair';
+    if (score >= 5.5) return 'Low';
+    if (score >= 4.0) return 'Poor';
+    if (score >= 2.5) return 'Critical';
+    return 'Inactive';
   };
 
   return (
@@ -225,8 +240,8 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
             <div className="flex items-center gap-2">
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <TrendingUp className="w-4 h-4" style={{ color: getCoverageColor() }} />
-                  <span className="text-lg font-bold" style={{ color: getCoverageColor() }}>
+                  <TrendingUp className="w-4 h-4" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }} />
+                  <span className="text-lg font-bold" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }}>
                     {formatTime(sessionInfo.trackedMinutes)}
                   </span>
                 </div>
@@ -246,13 +261,32 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
 
             <div className="text-gray-300">|</div>
 
+            {/* Activity Score */}
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <span className="text-lg font-bold" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }}>
+                  {sessionInfo.averageActivityScore.toFixed(1)}
+                </span>
+                <span className="text-xs font-medium px-1.5 py-0.5 rounded-full" 
+                      style={{ 
+                        backgroundColor: `${getActivityColor(sessionInfo.averageActivityScore)}20`,
+                        color: getActivityColor(sessionInfo.averageActivityScore)
+                      }}>
+                  {getActivityLevel(sessionInfo.averageActivityScore)}
+                </span>
+              </div>
+              <span className="text-xs text-gray-500">activity</span>
+            </div>
+
+            <div className="text-gray-300">|</div>
+
             {/* Coverage Rate */}
             <div className="flex flex-col">
               <div 
                 className="text-lg font-bold px-3 py-1 rounded-lg"
                 style={{ 
-                  backgroundColor: `${getCoverageColor()}15`,
-                  color: getCoverageColor()
+                  backgroundColor: `${getActivityColor(sessionInfo.averageActivityScore)}15`,
+                  color: getActivityColor(sessionInfo.averageActivityScore)
                 }}
               >
                 {coverageRate}%
@@ -263,8 +297,8 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
 
           {/* Message - Now takes remaining space */}
           <div className="flex items-start gap-2 flex-grow bg-gray-50 rounded-lg p-3 border-l-4" 
-               style={{ borderLeftColor: getCoverageColor() }}>
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: getCoverageColor() }} />
+               style={{ borderLeftColor: getActivityColor(sessionInfo.averageActivityScore) }}>
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }} />
             <p className="text-sm text-gray-800 font-medium leading-relaxed">{message}</p>
           </div>
         </div>

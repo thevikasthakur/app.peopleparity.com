@@ -69,6 +69,9 @@ export class ActivityTrackerV2 extends EventEmitter {
   private productiveKeys: Set<number> = new Set();
   private navigationKeys: Set<number> = new Set();
   
+  // Inactivity detection
+  private consecutiveZeroActivityCount: number = 0;
+  
   constructor(db: DatabaseService) {
     super();
     this.db = db;
@@ -129,6 +132,47 @@ export class ActivityTrackerV2 extends EventEmitter {
       console.log('\n📦 Window complete event received, saving to database...');
       
       try {
+        // Check for inactivity (0 activity score)
+        let hasZeroActivity = false;
+        let avgActivityScore = 0;
+        
+        if (windowData.activityPeriods.length > 0) {
+          const totalScore = windowData.activityPeriods.reduce((sum, p) => sum + p.activityScore, 0);
+          avgActivityScore = totalScore / windowData.activityPeriods.length;
+          hasZeroActivity = avgActivityScore === 0;
+        } else if (windowData.screenshot) {
+          // No activity periods but has screenshot = inactive
+          hasZeroActivity = true;
+        }
+        
+        // Track consecutive zero activity
+        if (hasZeroActivity) {
+          this.consecutiveZeroActivityCount++;
+          console.log(`⚠️ Zero activity detected! Consecutive count: ${this.consecutiveZeroActivityCount}`);
+          
+          // Check if we have 2 consecutive 0-activity screenshots
+          if (this.consecutiveZeroActivityCount >= 2) {
+            console.log('🚨 2 consecutive zero-activity screenshots detected! Stopping tracker...');
+            
+            // Import and show the message
+            const { getRandomInactivityMessage } = require('../utils/inactivityMessages');
+            const message = getRandomInactivityMessage();
+            
+            // Emit event to show alert in renderer
+            this.emit('inactivity:detected', message);
+            
+            // Stop the session
+            setTimeout(() => {
+              this.stopSession();
+            }, 100); // Small delay to ensure message is shown
+            
+            return; // Don't save this window's data
+          }
+        } else {
+          // Reset counter if activity detected
+          this.consecutiveZeroActivityCount = 0;
+        }
+        
         // Save screenshot first if exists
         let savedScreenshotId: string | null = null;
         
@@ -224,6 +268,7 @@ export class ActivityTrackerV2 extends EventEmitter {
     resetGlobalSpikeDetectorV2(); // Reset spike history for new session
     this.lastActivityTime = new Date();
     this.activeSeconds = 0;
+    this.consecutiveZeroActivityCount = 0; // Reset inactivity counter
     
     // Start the window manager
     this.windowManager.startSession(session.id, currentUser.id, mode);
