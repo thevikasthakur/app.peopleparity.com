@@ -6,6 +6,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { AuthCallback } from './pages/AuthCallback';
+import { TestSep7 } from './pages/TestSep7';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Toaster } from './components/ui/Toaster';
 import './styles/globals.css';
@@ -29,6 +30,7 @@ export function App() {
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/test-sep7" element={<TestSep7 />} />
                 <Route
                   path="/dashboard"
                   element={

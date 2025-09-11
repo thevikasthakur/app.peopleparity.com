@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Award, Zap, Target, Calendar, Trophy, Star, Flag, Clock, Lock, Info } from 'lucide-react';
 import { getActivityMessage } from '../utils/activityMessages';
+import { formatHoursToHM } from '../utils/timeFormatters';
 
 interface WeeklyData {
   productiveHours: number;
@@ -34,9 +35,10 @@ interface WeeklyData {
 interface WeeklyMarathonProps {
   selectedDate: Date;
   isToday: boolean;
+  onDayClick?: (date: Date) => void;
 }
 
-export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, isToday }) => {
+export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, isToday, onDayClick }) => {
   const [weeklyData, setWeeklyData] = useState<WeeklyData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -145,7 +147,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
             <div className="flex items-center gap-2">
               <Trophy className="w-4 h-4 text-gray-400" />
               <span className="text-2xl font-bold" style={{ color: attendance.color }}>
-                {productiveHours.toFixed(1)}h
+                {formatHoursToHM(productiveHours)}
               </span>
             </div>
             <span className="text-xs text-gray-500">tracked {isToday ? 'this week' : 'that week'}</span>
@@ -173,7 +175,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
       </div>
 
       {/* Day Milestones - Updated to 7 days */}
-      <div className="grid grid-cols-7 gap-1 mb-4 relative">
+      <div className="grid grid-cols-7 gap-1 mb-4 relative" style={{ zIndex: 1 }}>
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => {
           const dayStatus = weeklyData.dailyStatuses?.[index];
           const dayHours = dayStatus?.hours || 0;
@@ -187,10 +189,25 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           // Check if this is the current day
           const isCurrentDay = dayStatus?.isCurrentDay || false;
           
+          // Check if this day is selected
+          const dayDate = dayStatus?.date ? new Date(dayStatus.date) : null;
+          const isSelectedDay = dayDate && selectedDate && 
+            dayDate.toDateString() === selectedDate.toDateString();
+          
+          // Debug logging
+          if (index === 0) {
+            console.log('WeeklyMarathon dayStatus:', dayStatus);
+            console.log('dayDate:', dayDate);
+            console.log('onDayClick:', onDayClick);
+          }
+          
           // Determine background and border colors based on status
           const getStatusClasses = () => {
             if (isWeekend) {
               return 'bg-gray-100 border-gray-300 opacity-75';
+            }
+            if (isSelectedDay && !isCurrentDay) {
+              return 'bg-gradient-to-br from-purple-100 to-indigo-100 border-2 border-purple-500 shadow-lg ring-2 ring-purple-300';
             }
             if (isCurrentDay && attendanceStatus === 'in-progress') {
               return 'bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-400 shadow-md animate-pulse-subtle';
@@ -256,20 +273,26 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           return (
             <div 
               key={label}
-              className={`p-2 rounded-lg border text-center transition-all relative ${getStatusClasses()} ${isCurrentDay && !potentialStatus ? 'overflow-hidden' : ''}`}
+              className={`p-2 rounded-lg border text-center transition-all relative ${getStatusClasses()} ${!isWeekend && onDayClick ? 'cursor-pointer hover:shadow-lg hover:scale-105 transform' : ''}`}
               style={isCurrentDay && attendanceStatus === 'in-progress' ? {
                 animation: 'subtle-pulse 3s ease-in-out infinite'
               } : {}}
+              onClick={() => {
+                if (!isWeekend && onDayClick && dayDate) {
+                  onDayClick(dayDate);
+                }
+              }}
             >
               <div className="flex items-center justify-center mb-1">
                 {getStatusIcon()}
               </div>
-              <p className={`text-xs font-bold ${isWeekend ? 'text-gray-600' : 'text-gray-900'}`}>
+              <p className={`text-xs font-bold ${isWeekend ? 'text-gray-600' : isSelectedDay ? 'text-purple-700' : 'text-gray-900'}`}>
                 {label}
                 {isCurrentDay && !isWeekend && <span className="ml-1 text-[8px] text-blue-500">(Today)</span>}
+                {isSelectedDay && !isCurrentDay && !isWeekend && <span className="ml-1 text-[8px] text-purple-600">(Selected)</span>}
               </p>
               <p className="text-[10px] text-gray-600">
-                {isWeekend ? '-' : attendanceStatus === 'future' ? '-' : `${dayHours.toFixed(1)}h`}
+                {isWeekend ? '-' : attendanceStatus === 'future' ? '-' : formatHoursToHM(dayHours)}
               </p>
               <div className="flex items-center justify-center gap-1">
                 <p className="text-[10px] font-medium" style={{ color: isWeekend ? '#6b7280' : statusColor }}>
@@ -280,26 +303,30 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
                   (!isCurrentDay && potentialStatus)) && !isWeekend && (
                   <div className="relative group">
                     <Info className="w-3 h-3 text-blue-500 cursor-help animate-pulse" />
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-3 bg-white border-2 border-blue-200 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-50 w-64">
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-4 p-3 bg-white border-2 border-blue-200 rounded-lg shadow-2xl opacity-0 group-hover:opacity-100 transition-all duration-300 w-64 z-[99999]" 
+                         style={{ 
+                           zIndex: 999999,
+                           pointerEvents: 'none'
+                         }}>
                       <div className="text-xs space-y-1.5">
-                        <p className="font-bold text-blue-600">🎯 Manager's Tip</p>
+                        <p className="font-bold text-blue-600">🎪 The Pop Says 🔮</p>
                         <p className="text-gray-700 leading-relaxed">
                           {/* Messages for current day - encourage to complete today's target */}
                           {isCurrentDay && (
                             <>
                               {attendanceStatus === 'absent' && (
-                                <>Only {dayHours.toFixed(1)} hours so far today! 
-                                You need <span className="font-bold text-orange-600">{Math.max(0, 4.5 - dayHours).toFixed(1)} more hours</span> for Half Day attendance!
+                                <>Only {formatHoursToHM(dayHours)} so far today! 
+                                You need <span className="font-bold text-orange-600">{formatHoursToHM(Math.max(0, 4.5 - dayHours))} more</span> for Half Day attendance!
                                 <br/>Keep pushing - you can still make it! 💪</>
                               )}
                               {attendanceStatus === 'half' && (
-                                <>Good progress with {dayHours.toFixed(1)} hours! 
-                                Just <span className="font-bold text-orange-600">{Math.max(0, 7 - dayHours).toFixed(1)} more hours</span> for Good attendance, or <span className="font-bold text-green-600">{Math.max(0, 9 - dayHours).toFixed(1)} hours</span> for Full!
+                                <>Good progress with {formatHoursToHM(dayHours)}! 
+                                Just <span className="font-bold text-orange-600">{formatHoursToHM(Math.max(0, 7 - dayHours))} more</span> for Good attendance, or <span className="font-bold text-green-600">{formatHoursToHM(Math.max(0, 9 - dayHours))}</span> for Full!
                                 <br/>You're doing great - keep going! 🚀</>
                               )}
                               {attendanceStatus === 'good' && (
-                                <>Excellent work with {dayHours.toFixed(1)} hours! 
-                                Only <span className="font-bold text-green-600">{Math.max(0, 9 - dayHours).toFixed(1)} more hours</span> for Full attendance today!
+                                <>Excellent work with {formatHoursToHM(dayHours)}! 
+                                Only <span className="font-bold text-green-600">{formatHoursToHM(Math.max(0, 9 - dayHours))} more</span> for Full attendance today!
                                 <br/>Push for excellence! ⭐</>
                               )}
                             </>
@@ -309,22 +336,22 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
                           {!isCurrentDay && (
                             <>
                               {attendanceStatus === 'absent' && potentialStatus === 'half' && (
-                                <>Only {dayHours.toFixed(1)} hours that day? Don't worry! 
+                                <>Only {formatHoursToHM(dayHours)} that day? Don't worry! 
                                 If you complete 45 hours this week, this day will automatically upgrade to <span className="font-bold text-green-600">Half Day</span> attendance! 
                                 <br/>Just push harder this week! 💪</>
                               )}
                               {attendanceStatus === 'half' && potentialStatus === 'good' && (
-                                <>Good effort with {dayHours.toFixed(1)} hours! 
+                                <>Good effort with {formatHoursToHM(dayHours)}! 
                                 Hit the 45-hour weekly target, and this converts to <span className="font-bold text-green-600">Good Attendance</span>! 
                                 <br/>Keep up the momentum! 🚀</>
                               )}
                               {attendanceStatus === 'half' && potentialStatus === 'full' && (
-                                <>Solid {dayHours.toFixed(1)} hours logged! 
+                                <>Solid {formatHoursToHM(dayHours)} logged! 
                                 Achieve 45 hours this week to upgrade this to <span className="font-bold text-green-600">Full Attendance</span>! 
                                 <br/>You're on track! 🏆</>
                               )}
                               {attendanceStatus === 'good' && potentialStatus === 'full' && (
-                                <>Impressive {dayHours.toFixed(1)} hours! 
+                                <>Impressive {formatHoursToHM(dayHours)}! 
                                 Complete 45 hours this week and this becomes <span className="font-bold text-green-600">Full Attendance</span>! 
                                 <br/>Excellence awaits! ⭐</>
                               )}
@@ -341,10 +368,6 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
                   </div>
                 )}
               </div>
-              {isCurrentDay && attendanceStatus === 'in-progress' && !isWeekend && (
-                <div className="absolute -bottom-1 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-400 opacity-60" 
-                     style={{ animation: 'shimmer 2s linear infinite' }} />
-              )}
             </div>
           );
         })}
@@ -357,9 +380,9 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           <div className="flex items-center gap-3">
             <span className="text-xs">
               <span className="font-bold" style={{ color: attendance.color }}>
-                {productiveHours.toFixed(1)}h
+                {formatHoursToHM(productiveHours)}
               </span>
-              <span className="text-gray-500"> / {(markers.dailyTarget * markers.workingDays).toFixed(0)}h</span>
+              <span className="text-gray-500"> / {formatHoursToHM(markers.dailyTarget * markers.workingDays)}</span>
             </span>
             <span className="text-xs font-bold" style={{ color: attendance.color }}>
               {Math.round(percentage)}%
@@ -386,7 +409,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
             {percentage > 10 && (
               <div className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs font-bold shadow-sm"
                    style={{ color: attendance.color }}>
-                {productiveHours.toFixed(1)}h
+                {formatHoursToHM(productiveHours)}
               </div>
             )}
           </div>
@@ -408,7 +431,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
                 />
                 <div className="absolute -bottom-7 left-1/2 transform -translate-x-1/2 text-center">
                   <p className="text-[10px] font-bold text-gray-700">{marker.label}</p>
-                  <p className="text-[9px] text-gray-500">{marker.hours}h</p>
+                  <p className="text-[9px] text-gray-500">{formatHoursToHM(marker.hours)}</p>
                 </div>
               </div>
             ))}
@@ -419,7 +442,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
         <div className="flex justify-between mt-10 text-xs text-gray-500">
           <span className="font-medium">Week Start</span>
           <span className="font-medium text-center">
-            Target: {markers.dailyTarget}h × {markers.workingDays} = {(markers.dailyTarget * markers.workingDays).toFixed(0)}h
+            Target: {formatHoursToHM(markers.dailyTarget)} × {markers.workingDays} = {formatHoursToHM(markers.dailyTarget * markers.workingDays)}
           </span>
           <span className="font-medium">Week End</span>
         </div>
@@ -447,7 +470,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
             <div className="flex items-center gap-1 animate-bounce">
               <Zap className="w-4 h-4 text-yellow-500" />
               <span className="text-xs font-bold text-yellow-600">
-                +{attendance.extraHours.toFixed(1)}h Extra!
+                +{formatHoursToHM(attendance.extraHours)} Extra!
               </span>
             </div>
           )}

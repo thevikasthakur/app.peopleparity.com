@@ -90,7 +90,7 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
     const trackedHours = sessionInfo.trackedMinutes / 60;
     const elapsedHours = sessionInfo.elapsedMinutes / 60;
     const coverageRate = sessionInfo.elapsedMinutes > 0 
-      ? (sessionInfo.trackedMinutes / sessionInfo.elapsedMinutes) * 100 
+      ? Math.min(100, (sessionInfo.trackedMinutes / sessionInfo.elapsedMinutes) * 100)
       : 0;
 
     // Time-based and productivity-based messages
@@ -187,7 +187,7 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
   };
 
   const coverageRate = sessionInfo.elapsedMinutes > 0 
-    ? Math.round((sessionInfo.trackedMinutes / sessionInfo.elapsedMinutes) * 100)
+    ? Math.min(100, Math.round((sessionInfo.trackedMinutes / sessionInfo.elapsedMinutes) * 100))
     : 0;
 
   // Get color based on activity score (0-10 scale)
@@ -211,96 +211,92 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
   };
 
   return (
-    <div className="bg-white/70 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200/50 px-5 py-4">
-      <div className="flex flex-col gap-3">
-        {/* Header Row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-sm shadow-green-500/50"></div>
-            <span className="text-sm font-semibold text-gray-800">Current Session</span>
-            <span className="text-xs bg-gradient-to-r from-primary to-secondary text-white px-2 py-0.5 rounded-full">
-              {sessionInfo.mode === 'client' ? 'Client Mode' : 'Command Mode'}
+    <div className="bg-white/70 backdrop-blur-sm rounded-xl shadow-sm border border-gray-200/50 px-4 py-2.5">
+      <div className="flex items-center gap-3">
+        {/* Session Status */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-sm shadow-green-500/50"></div>
+          <span className="text-xs font-semibold text-gray-800">Current Session</span>
+          <span className="text-[10px] bg-gradient-to-r from-primary to-secondary text-white px-1.5 py-0.5 rounded-full">
+            {sessionInfo.mode === 'client' ? 'Client' : 'Command'}
+          </span>
+        </div>
+
+        <div className="h-8 w-px bg-gray-200"></div>
+
+        {/* Start Time */}
+        <div className="flex items-center gap-1 text-gray-600 flex-shrink-0">
+          <Clock className="w-3 h-3" />
+          <span className="text-xs font-medium">
+            {formatStartTime(sessionInfo.startTime)}
+          </span>
+        </div>
+
+        <div className="h-8 w-px bg-gray-200"></div>
+
+        {/* Tracked Time */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <TrendingUp className="w-3.5 h-3.5" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }} />
+          <div className="flex flex-col items-center">
+            <span className="text-sm font-bold leading-tight" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }}>
+              {formatTime(sessionInfo.trackedMinutes)}
             </span>
-          </div>
-          
-          {/* Start Time */}
-          <div className="flex items-center gap-1.5 text-gray-600">
-            <Clock className="w-3.5 h-3.5" />
-            <span className="text-sm font-medium">
-              Since {formatStartTime(sessionInfo.startTime)}
-            </span>
+            <span className="text-[9px] text-gray-500 leading-tight">tracked</span>
           </div>
         </div>
 
-        {/* Metrics and Message Row */}
-        <div className="flex items-start gap-6">
-          {/* Time Metrics */}
-          <div className="flex items-center gap-4 flex-shrink-0">
-            {/* Tracked Time */}
-            <div className="flex items-center gap-2">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1">
-                  <TrendingUp className="w-4 h-4" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }} />
-                  <span className="text-lg font-bold" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }}>
-                    {formatTime(sessionInfo.trackedMinutes)}
-                  </span>
-                </div>
-                <span className="text-xs text-gray-500 ml-5">tracked</span>
-              </div>
-            </div>
+        <div className="h-8 w-px bg-gray-200"></div>
 
-            <div className="text-gray-300">|</div>
+        {/* Elapsed Time */}
+        <div className="flex flex-col items-center flex-shrink-0">
+          <span className="text-sm font-semibold text-gray-700 leading-tight">
+            {formatTime(sessionInfo.elapsedMinutes)}
+          </span>
+          <span className="text-[9px] text-gray-500 leading-tight">elapsed</span>
+        </div>
 
-            {/* Elapsed Time */}
-            <div className="flex flex-col">
-              <span className="text-lg font-semibold text-gray-700">
-                {formatTime(sessionInfo.elapsedMinutes)}
-              </span>
-              <span className="text-xs text-gray-500">elapsed</span>
-            </div>
+        <div className="h-8 w-px bg-gray-200"></div>
 
-            <div className="text-gray-300">|</div>
-
-            {/* Activity Score */}
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                <span className="text-lg font-bold" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }}>
-                  {sessionInfo.averageActivityScore.toFixed(1)}
-                </span>
-                <span className="text-xs font-medium px-1.5 py-0.5 rounded-full" 
-                      style={{ 
-                        backgroundColor: `${getActivityColor(sessionInfo.averageActivityScore)}20`,
-                        color: getActivityColor(sessionInfo.averageActivityScore)
-                      }}>
-                  {getActivityLevel(sessionInfo.averageActivityScore)}
-                </span>
-              </div>
-              <span className="text-xs text-gray-500">activity</span>
-            </div>
-
-            <div className="text-gray-300">|</div>
-
-            {/* Coverage Rate */}
-            <div className="flex flex-col">
-              <div 
-                className="text-lg font-bold px-3 py-1 rounded-lg"
+        {/* Activity Score */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex flex-col items-center">
+            <span className="text-sm font-bold leading-tight" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }}>
+              {sessionInfo.averageActivityScore.toFixed(1)}
+            </span>
+            <span className="text-[9px] text-gray-500 leading-tight">activity</span>
+          </div>
+          <span className="text-[10px] font-medium px-1 py-0.5 rounded-full" 
                 style={{ 
-                  backgroundColor: `${getActivityColor(sessionInfo.averageActivityScore)}15`,
+                  backgroundColor: `${getActivityColor(sessionInfo.averageActivityScore)}20`,
                   color: getActivityColor(sessionInfo.averageActivityScore)
-                }}
-              >
-                {coverageRate}%
-              </div>
-              <span className="text-xs text-gray-500 text-center">coverage</span>
-            </div>
-          </div>
+                }}>
+            {getActivityLevel(sessionInfo.averageActivityScore)}
+          </span>
+        </div>
 
-          {/* Message - Now takes remaining space */}
-          <div className="flex items-start gap-2 flex-grow bg-gray-50 rounded-lg p-3 border-l-4" 
-               style={{ borderLeftColor: getActivityColor(sessionInfo.averageActivityScore) }}>
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }} />
-            <p className="text-sm text-gray-800 font-medium leading-relaxed">{message}</p>
+        <div className="h-8 w-px bg-gray-200"></div>
+
+        {/* Coverage Rate */}
+        <div className="flex flex-col items-center flex-shrink-0">
+          <div 
+            className="text-sm font-bold px-2 py-0.5 rounded leading-tight"
+            style={{ 
+              backgroundColor: `${getActivityColor(sessionInfo.averageActivityScore)}15`,
+              color: getActivityColor(sessionInfo.averageActivityScore)
+            }}
+          >
+            {coverageRate}%
           </div>
+          <span className="text-[9px] text-gray-500 leading-tight">coverage</span>
+        </div>
+
+        <div className="h-8 w-px bg-gray-200"></div>
+
+        {/* Message - Takes remaining space */}
+        <div className="flex items-center gap-1.5 flex-grow bg-gray-50 rounded-lg px-2.5 py-1.5 border-l-2" 
+             style={{ borderLeftColor: getActivityColor(sessionInfo.averageActivityScore) }}>
+          <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: getActivityColor(sessionInfo.averageActivityScore) }} />
+          <p className="text-[11px] text-gray-800 font-medium leading-tight line-clamp-2">{message}</p>
         </div>
       </div>
     </div>

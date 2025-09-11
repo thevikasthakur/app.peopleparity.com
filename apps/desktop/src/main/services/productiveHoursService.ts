@@ -114,10 +114,10 @@ export class ProductiveHoursService {
   getHustleMessage(hours: number, markers: any, lastActivityScore: number = 5): string {
     const now = new Date();
     const context = {
-      currentHour: now.getHours(),
-      dayOfWeek: now.getDay(),
-      dayOfMonth: now.getDate(),
-      month: now.getMonth() + 1,
+      currentHour: now.getUTCHours(),
+      dayOfWeek: now.getUTCDay(),
+      dayOfMonth: now.getUTCDate(),
+      month: now.getUTCMonth() + 1,
       trackedHoursToday: hours,
       trackedHoursWeek: 0, // Will be calculated separately for weekly
       lastActivityScore: lastActivityScore,
@@ -444,6 +444,10 @@ export class ProductiveHoursService {
         const isCurrentDay = isCurrentWeek && index === adjustedCurrentDay && !data.isFuture;
         const isWeekend = data.isWeekend || false;
         
+        // Calculate the actual date for this day
+        const dayDate = new Date(startOfViewedWeek);
+        dayDate.setUTCDate(startOfViewedWeek.getUTCDate() + index);
+        
         const dayStatus = this.getDayAttendanceStatus(
           data.hours, 
           markers.hasHoliday, 
@@ -454,6 +458,7 @@ export class ProductiveHoursService {
         );
         return {
           day: dayLabels[index],
+          date: dayDate.toISOString(),
           hours: data.hours,
           isFuture: data.isFuture,
           isCurrentDay,
@@ -501,10 +506,10 @@ export class ProductiveHoursService {
     const targetWeeklyHours = markers.dailyTarget * markers.workingDays;
     
     const context = {
-      currentHour: now.getHours(),
-      dayOfWeek: now.getDay(),
-      dayOfMonth: now.getDate(),
-      month: now.getMonth() + 1,
+      currentHour: now.getUTCHours(),
+      dayOfWeek: now.getUTCDay(),
+      dayOfMonth: now.getUTCDate(),
+      month: now.getUTCMonth() + 1,
       trackedHoursToday: 0, // Not relevant for weekly
       trackedHoursWeek: hours,
       lastActivityScore: 5, // Default

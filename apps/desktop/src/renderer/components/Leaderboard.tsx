@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Trophy, Medal, Award, TrendingUp, Crown, Star } from 'lucide-react';
+import { formatHoursToHM } from '../utils/timeFormatters';
 
 interface LeaderboardEntry {
   rank: number;
@@ -149,7 +150,7 @@ export function Leaderboard() {
                 
                 <div className="text-right">
                   <div className="font-bold text-lg">
-                    {entry.hours.toFixed(1)}h
+                    {formatHoursToHM(entry.hours)}
                   </div>
                   {entry.rank === 1 && (
                     <div className="text-xs text-amber-600 font-medium">
@@ -169,7 +170,7 @@ export function Leaderboard() {
           {view === 'today' 
             ? entries[0].name === 'You' 
               ? "You're the champion today! 🏆"
-              : `Only ${(entries[0].hours - entries.find(e => e.name === 'You')?.hours!).toFixed(1)}h behind the leader!`
+              : `Only ${formatHoursToHM(entries[0].hours - entries.find(e => e.name === 'You')?.hours!)} behind the leader!`
             : entries[0].name === 'You'
               ? "Weekly champion! Keep dominating! 💪"
               : "Great week so far! Keep pushing! 🚀"

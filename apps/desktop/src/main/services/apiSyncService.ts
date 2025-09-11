@@ -320,6 +320,77 @@ export class ApiSyncService {
     }
   }
 
+  async fetchDailyProductiveHours(date: Date) {
+    try {
+      console.log('Fetching daily productive hours from cloud for date:', date.toISOString());
+      
+      // Call the new productive hours endpoint
+      const dateStr = date.toISOString().split('T')[0];
+      const response = await this.api.get(`/analytics/productive-hours/daily?date=${dateStr}`);
+      
+      console.log('Cloud API response for daily productive hours:', response.data);
+      
+      // Return the productive hours data
+      if (response.data) {
+        return {
+          productiveHours: response.data.productiveHours || 0,
+          averageActivityScore: response.data.averageActivityScore || 0,
+          totalScreenshots: response.data.totalScreenshots || 0,
+          validScreenshots: response.data.validScreenshots || 0
+        };
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.error('Failed to fetch daily productive hours from cloud:', error.message);
+      
+      // Return null to indicate fallback to local calculation
+      return null;
+    }
+  }
+
+  async fetchWeeklyProductiveHours(date: Date) {
+    try {
+      console.log('Fetching weekly productive hours from cloud for date:', date.toISOString());
+      
+      // Call the new productive hours endpoint
+      const dateStr = date.toISOString().split('T')[0];
+      const response = await this.api.get(`/analytics/productive-hours/weekly?date=${dateStr}`);
+      
+      console.log('Cloud API response for weekly productive hours:', response.data);
+      
+      // Return the productive hours data
+      if (response.data) {
+        return {
+          productiveHours: response.data.productiveHours || 0,
+          averageActivityScore: response.data.averageActivityScore || 0,
+          dailyData: response.data.dailyData || [],
+          weekStart: response.data.weekStart,
+          weekEnd: response.data.weekEnd
+        };
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.error('Failed to fetch weekly productive hours from cloud:', error.message);
+      
+      // Return null to indicate fallback to local calculation
+      return null;
+    }
+  }
+
+  async fetchDashboardStats() {
+    try {
+      console.log('Fetching dashboard stats from cloud...');
+      const response = await this.api.get('/dashboard/stats');
+      console.log('Dashboard stats response:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Failed to fetch dashboard stats:', error.message);
+      return null;
+    }
+  }
+
   async fetchSignedUrl(screenshotId: string) {
     try {
       const response = await this.api.get(`/screenshots/${screenshotId}/signed-url`);
@@ -333,6 +404,32 @@ export class ApiSyncService {
         return { success: false, error: 'Unauthorized access' };
       }
       return { success: false, error: error.message || 'Failed to fetch signed URL' };
+    }
+  }
+
+  async deleteScreenshot(screenshotId: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    console.log(`[ApiSyncService] deleteScreenshot called for ID: ${screenshotId}`);
+    try {
+      console.log(`[ApiSyncService] Making DELETE request to: /screenshots/${screenshotId}`);
+      const response = await this.api.delete(`/screenshots/${screenshotId}`);
+      console.log(`[ApiSyncService] Screenshot ${screenshotId} deleted from cloud successfully, response:`, response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Failed to delete screenshot from cloud:', error.message);
+      if (error.response?.status === 404) {
+        // Screenshot not found in cloud, consider it already deleted
+        console.log(`Screenshot ${screenshotId} not found in cloud, treating as already deleted`);
+        return { success: true, message: 'Screenshot already deleted from cloud' };
+      }
+      if (error.response?.status === 403) {
+        return { success: false, error: 'Unauthorized to delete this screenshot' };
+      }
+      // For network errors, return success false but don't block local deletion
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+        console.log('Cloud API unavailable, will delete from cloud later during sync');
+        return { success: false, error: 'Cloud API unavailable' };
+      }
+      return { success: false, error: error.message || 'Failed to delete screenshot from cloud' };
     }
   }
 
@@ -950,11 +1047,11 @@ export class ApiSyncService {
         })
       ]);
       
-      // Step 4: Return the S3 URLs (construct from bucket and keys)
-      const bucket = process.env.SCREENSHOTS_BUCKET || 'pp-tracker-screenshots-dev';
-      const region = process.env.AWS_REGION || 'ap-south-1';
-      const fullUrl = `https://${bucket}.s3.${region}.amazonaws.com/${uploadUrls.fullKey}`;
-      const thumbnailUrl = `https://${bucket}.s3.${region}.amazonaws.com/${uploadUrls.thumbnailKey}`;
+
+      // Step 4: Return the S3 URLs by stripping query parameters from the upload URLs
+      // The presigned URLs contain the correct bucket and path, we just need to remove the auth params
+      const fullUrl = uploadUrls.fullUrl.split('?')[0];
+      const thumbnailUrl = uploadUrls.thumbnailUrl.split('?')[0];
       
       return { fullUrl, thumbnailUrl };
     } catch (error) {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog, Menu } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { ActivityTrackerV2 } from './services/activityTrackerV2';
@@ -11,17 +11,27 @@ import { PermissionsService } from './services/permissionsService';
 import { calculateScreenshotScore, calculateTop80Average } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
 
-// CRITICAL FIX: The issue is that 'force-device-scale-factor' = '1' was CAUSING the problem!
-// On Retina displays, we should NOT force scale factor to 1, we should let it be 2
-// Remove all the incorrect switches that were forcing low DPI
+// CRITICAL FIX for Electron 28+ Retina display bug
+// There's a known issue where Electron doesn't properly detect Retina displays
 if (process.platform === 'darwin') {
-  // For macOS, enable high DPI support WITHOUT forcing scale factor
-  app.commandLine.appendSwitch('high-dpi-support', 'true');
-  // Enable hardware acceleration
-  app.commandLine.appendSwitch('enable-features', 'HardwareAcceleration');
+  // Get the actual display scale factor
+  const { screen } = require('electron');
+  
+  app.whenReady().then(() => {
+    const display = screen.getPrimaryDisplay();
+    const scaleFactor = display.scaleFactor;
+    
+    if (scaleFactor === 2) {
+      // For Retina displays, we need to explicitly set the backing scale factor
+      // This is a workaround for Electron 28.x Retina rendering issues
+      app.commandLine.appendSwitch('use-angle', 'metal');
+      app.commandLine.appendSwitch('enable-features', 'MetalBackend');
+    }
+  });
+  
+  // Don't set any scale factor switches here - we'll handle it after app is ready
   app.commandLine.appendSwitch('enable-gpu-rasterization');
-  // Do NOT set force-device-scale-factor or device-scale-factor!
-  // Let Electron detect the correct scale factor automatically
+  app.commandLine.appendSwitch('enable-zero-copy');
 }
 
 // Try to load dotenv if available, but don't fail if it's not
@@ -75,136 +85,216 @@ let browserBridge: BrowserExtensionBridge;
 let productiveHoursService: ProductiveHoursService;
 let permissionsService: PermissionsService;
 
+// Create custom menu without zoom options
+const createApplicationMenu = () => {
+  const template: any[] = [
+    {
+      label: 'People Parity',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services', submenu: [] },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+        // Intentionally removed: zoomIn, zoomOut, resetZoom
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' }
+      ]
+    }
+  ];
+  
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+};
+
 const createWindow = () => {
   // Get the primary display's scale factor
   const primaryDisplay = screen.getPrimaryDisplay();
   const scaleFactor = primaryDisplay.scaleFactor;
   
-  mainWindow = new BrowserWindow({
+  // CRITICAL: For Retina displays, we need to handle the window size differently
+  const windowConfig: any = {
     width: 1400,
     height: 900,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Enable web features for better rendering
       webgl: true,
-      experimentalFeatures: true,
-      // Force default zoom level
-      zoomFactor: 1.0,
-      defaultFontSize: 16,
-      defaultMonospaceFontSize: 13,
-      minimumFontSize: 12
+      // Try enabling offscreen rendering for better Retina support
+      offscreen: false,
+      // Explicitly enable hardware acceleration
+      accelerated: true
     },
     titleBarStyle: 'hiddenInset',
     minWidth: 1200,
     minHeight: 800,
     backgroundColor: '#ffffff',
     show: false,
-    // Ensure window respects high DPI
-    useContentSize: true,
+    // Critical for Retina displays
+    useContentSize: false,
     enableLargerThanScreen: false
-  });
+  };
+  
+  // For Retina displays, set the backing scale factor explicitly
+  if (scaleFactor === 2) {
+    windowConfig.webPreferences.deviceScaleFactor = 2;
+    console.log('Retina display detected - setting deviceScaleFactor to 2');
+  }
+  
+  mainWindow = new BrowserWindow(windowConfig);
 
   // Handle window ready to show
   mainWindow.once('ready-to-show', () => {
     mainWindow!.show();
+    
+    // Set fixed zoom level to 67% (approximately -2.0 zoom level)
+    // Zoom level formula: percentage = 100 * Math.pow(1.2, zoomLevel)
+    // For 67%, zoomLevel ≈ -2.0
+    const fixedZoomLevel = -2.0; // This gives approximately 67% zoom
+    mainWindow!.webContents.setZoomLevel(fixedZoomLevel);
+    console.log(`Fixed zoom level set to ${fixedZoomLevel} (approximately 67%)`);
+    
     // Log DPI info for debugging
     console.log(`Display scale factor: ${scaleFactor}`);
     console.log(`Display size: ${primaryDisplay.size.width}x${primaryDisplay.size.height}`);
     console.log(`Display work area: ${primaryDisplay.workArea.width}x${primaryDisplay.workArea.height}`);
+    console.log(`Display bounds: ${JSON.stringify(primaryDisplay.bounds)}`);
+    console.log(`Is Retina: ${scaleFactor === 2 ? 'Yes' : 'No'}`);
+    
+    // If this is a Retina display, ensure window uses proper backing scale
+    if (scaleFactor === 2) {
+      console.log('Retina display detected - ensuring native resolution');
+    }
   });
 
   // Clear any stored zoom levels before loading
   mainWindow.webContents.session.setPermissionRequestHandler(() => {});
   
-  // Handle zoom settings properly for high DPI
-  mainWindow.webContents.on('did-finish-load', () => {
-    // CRITICAL FIX: Force reset ALL zoom settings
-    // This is the most aggressive approach to fix zoom issues
-    mainWindow!.webContents.setZoomFactor(1.0);
-    mainWindow!.webContents.setZoomLevel(0);
-    
-    // Clear stored zoom preferences
-    mainWindow!.webContents.session.clearStorageData({
-      storages: ['localstorage']
-    }).catch(() => {});
-    
-    // Prevent ANY zoom changes
-    mainWindow!.webContents.setVisualZoomLevelLimits(1, 1);
-    
-    // Force proper rendering with multiple approaches
-    mainWindow!.webContents.executeJavaScript(`
-      // Reset any CSS zoom
-      document.body.style.zoom = '100%';
-      document.documentElement.style.zoom = '100%';
-      
-      // Force browser zoom to 100%
-      if (typeof browser !== 'undefined' && browser.tabs && browser.tabs.setZoom) {
-        browser.tabs.setZoom(1.0);
+  // Prevent zoom changes via keyboard shortcuts
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Block zoom keyboard shortcuts
+    if (input.control || input.meta) {
+      if (input.key === '+' || input.key === '-' || input.key === '=' || input.key === '0') {
+        event.preventDefault();
+        // Reset to fixed zoom level if somehow changed
+        mainWindow!.webContents.setZoomLevel(-2.0);
       }
-      
-      // Log DPI info for debugging
-      console.log('Device Pixel Ratio:', window.devicePixelRatio);
-      console.log('Screen resolution:', window.screen.width, 'x', window.screen.height);
-      console.log('Window inner size:', window.innerWidth, 'x', window.innerHeight);
-      console.log('Document zoom:', document.body.style.zoom || '100%');
-      
-      // Force high-quality rendering
-      if (!document.getElementById('dpi-fixes')) {
-        const style = document.createElement('style');
-        style.id = 'dpi-fixes';
-        style.textContent = \`
-          * {
-            -webkit-font-smoothing: antialiased !important;
-            -moz-osx-font-smoothing: grayscale !important;
-            text-rendering: optimizeLegibility !important;
-            font-feature-settings: "kern" 1 !important;
-            -webkit-text-size-adjust: 100% !important;
-          }
-          html, body {
-            zoom: 100% !important;
-            transform: scale(1) !important;
-            transform-origin: 0 0 !important;
-          }
-          body {
-            transform: translateZ(0);
-            -webkit-transform: translateZ(0);
-            will-change: transform;
-          }
-          img, svg {
-            image-rendering: -webkit-optimize-contrast !important;
-            image-rendering: crisp-edges !important;
-            -webkit-backface-visibility: hidden !important;
-            backface-visibility: hidden !important;
-          }
-        \`;
-        document.head.appendChild(style);
-      }
-      
-      // Double-check and force pixel-perfect rendering
-      const actualZoom = Math.round(window.devicePixelRatio * 100);
-      if (actualZoom !== 100 && actualZoom !== 200) {
-        console.warn('Unusual zoom detected:', actualZoom + '%', 'Attempting to correct...');
-        document.body.style.transform = 'scale(' + (100 / actualZoom) + ')';
-        document.body.style.transformOrigin = '0 0';
-      }
-    `).catch(err => console.error('Error injecting DPI fixes:', err));
+    }
   });
   
-  // Also handle zoom changes to prevent them
+  // Also prevent zoom via mouse wheel with Ctrl/Cmd
   mainWindow.webContents.on('zoom-changed', (event, zoomDirection) => {
-    console.log('Zoom change detected and prevented:', zoomDirection);
     event.preventDefault();
-    mainWindow!.webContents.setZoomLevel(0);
-    mainWindow!.webContents.setZoomFactor(1.0);
+    // Force back to our fixed zoom level
+    mainWindow!.webContents.setZoomLevel(-2.0);
   });
+  
+  // Handle proper DPI rendering
+  mainWindow.webContents.on('did-finish-load', () => {
+    // Re-apply fixed zoom level on every page load
+    mainWindow!.webContents.setZoomLevel(-2.0);
+    // CRITICAL FIX: Force the window to redraw at correct resolution
+    if (scaleFactor === 2) {
+      // This forces Electron to recalculate the backing store
+      const currentSize = mainWindow!.getSize();
+      mainWindow!.setSize(currentSize[0] + 1, currentSize[1]);
+      mainWindow!.setSize(currentSize[0], currentSize[1]);
+      console.log('Forced window redraw for Retina display');
+    }
+    
+    // Log rendering information and apply DPI fixes
+    // CRITICAL FIX: Use a simpler approach to avoid serialization errors
+    mainWindow!.webContents.executeJavaScript(`
+      (function() {
+        try {
+          // Log DPI info for debugging
+          console.log('Device Pixel Ratio:', window.devicePixelRatio);
+          console.log('Screen resolution:', window.screen.width, 'x', window.screen.height);
+          console.log('Window inner size:', window.innerWidth, 'x', window.innerHeight);
+          console.log('Actual pixel resolution:', window.screen.width * window.devicePixelRatio, 'x', window.screen.height * window.devicePixelRatio);
+          console.log('Document element client size:', document.documentElement.clientWidth, 'x', document.documentElement.clientHeight);
+          
+          // Check if viewport meta tag exists
+          const viewport = document.querySelector('meta[name="viewport"]');
+          console.log('Viewport meta:', viewport ? viewport.content : 'Not found');
+          
+          // Try to force high DPI rendering
+          if (window.devicePixelRatio === 2) {
+            console.log('Attempting to force Retina rendering...');
+            // Force a repaint
+            document.body.style.display = 'none';
+            document.body.offsetHeight; // Trigger reflow
+            document.body.style.display = '';
+          }
+          
+          // Apply rendering optimizations
+          if (!document.getElementById('dpi-fixes')) {
+            const style = document.createElement('style');
+            style.id = 'dpi-fixes';
+            style.textContent = '*{-webkit-font-smoothing:antialiased!important;-moz-osx-font-smoothing:grayscale!important;text-rendering:optimizeLegibility!important}';
+            document.head.appendChild(style);
+          }
+          
+          // Return success
+          return 'DPI fixes applied successfully';
+        } catch (e) {
+          // Return error message as string (serializable)
+          return 'Error applying DPI fixes: ' + e.message;
+        }
+      })();
+    `).then(result => {
+      console.log('DPI injection result:', result);
+    }).catch(err => {
+      // Handle error outside of the injected script
+      console.error('Failed to execute DPI script:', err.message);
+    });
+  });
+  
+  // Don't interfere with zoom at all - let Electron handle it naturally
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5174');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    // Production - load the built HTML file
+    const indexPath = path.join(__dirname, '../renderer/index.html');
+    console.log('Loading production HTML from:', indexPath);
+    mainWindow.loadFile(indexPath);
   }
 
   // Handle window close event - prevent accidental closure during tracking
@@ -273,11 +363,8 @@ app.whenReady().then(() => {
 app.whenReady().then(async () => {
   console.log('\n🚀 Initializing application services...');
   
-  // CRITICAL: Clear all stored zoom data on app start
-  const session = require('electron').session;
-  await session.defaultSession.clearStorageData({
-    storages: ['localstorage', 'cookies']
-  }).catch(() => {});
+  // Create custom menu without zoom options
+  createApplicationMenu();
   
   // Initialize database
   databaseService = new DatabaseService();
@@ -663,10 +750,7 @@ function setupIpcHandlers() {
       ORDER BY capturedAt
     `).all(session.id);
     
-    // Count screenshots that are NOT inactive (activity score >= 25)
-    // UI uses 0-10 scale, DB uses 0-100 scale
-    // Inactive threshold: < 2.5 on UI scale = < 25 on DB scale
-    let validScreenshots = 0;
+    // First calculate weighted scores for all screenshots
     const screenshotDetails: any[] = [];
     
     for (const screenshot of screenshots) {
@@ -682,19 +766,15 @@ function setupIpcHandlers() {
       
       // Calculate weighted average using our new function
       const weightedScore = calculateScreenshotScore(scores);
-      
-      const isValid = weightedScore >= 25;  // 2.5 on UI scale
-      if (isValid) {
-        validScreenshots++;
-      }
-      
       const uiScore = weightedScore / 10; // Convert to UI scale
+      
       screenshotDetails.push({
+        id: screenshot.id,
         time: new Date(screenshot.capturedAt).toLocaleTimeString(),
         score: weightedScore,
         uiScore: Math.round(uiScore * 10) / 10, // Round to 1 decimal
         periodCount: scores.length,
-        valid: isValid,
+        valid: false, // Will be determined with neighbor rule
         classification: 
           uiScore >= 8.5 ? 'good' :
           uiScore >= 7.0 ? 'fair' :
@@ -704,7 +784,83 @@ function setupIpcHandlers() {
       });
     }
     
-    // Each valid (non-inactive) screenshot = 10 minutes of tracked time
+    // Now apply validity rules including neighbor check and hourly average
+    let validScreenshots = 0;
+    for (let i = 0; i < screenshotDetails.length; i++) {
+      const current = screenshotDetails[i];
+      const prev = i > 0 ? screenshotDetails[i - 1] : null;
+      const next = i < screenshotDetails.length - 1 ? screenshotDetails[i + 1] : null;
+      
+      let isValid = false;
+      
+      // Rule 1: Valid if score >= 4.0 (40 on DB scale)
+      if (current.score >= 40) {
+        isValid = true;
+      }
+      // Rule 2 & 3: Critical (2.5-4.0) has two validation paths
+      else if (current.score >= 25 && current.score < 40) {
+        // Check Rule 2: neighbor has score >= 4.0
+        if ((prev && prev.score >= 40) || (next && next.score >= 40)) {
+          isValid = true;
+        }
+        // Check Rule 3: hourly average condition
+        else {
+          // Parse the time to get the hour
+          const timeParts = current.time.match(/(\d+):(\d+):(\d+)\s*(AM|PM)/i);
+          if (timeParts) {
+            let hour = parseInt(timeParts[1]);
+            const isPM = timeParts[4].toUpperCase() === 'PM';
+            if (isPM && hour !== 12) hour += 12;
+            if (!isPM && hour === 12) hour = 0;
+            
+            // Find all screenshots in the same hour
+            const hourScreenshots = screenshotDetails.filter(s => {
+              const sParts = s.time.match(/(\d+):(\d+):(\d+)\s*(AM|PM)/i);
+              if (sParts) {
+                let sHour = parseInt(sParts[1]);
+                const sIsPM = sParts[4].toUpperCase() === 'PM';
+                if (sIsPM && sHour !== 12) sHour += 12;
+                if (!sIsPM && sHour === 12) sHour = 0;
+                return sHour === hour;
+              }
+              return false;
+            });
+            
+            // Check if hour has 6+ screenshots
+            if (hourScreenshots.length >= 6) {
+              // Get all activity periods for screenshots in this hour
+              const hourPeriodScores: number[] = [];
+              for (const hs of hourScreenshots) {
+                const periods = db.db.prepare(`
+                  SELECT activityScore
+                  FROM activity_periods
+                  WHERE screenshotId = ?
+                `).all(hs.id) as any[];
+                hourPeriodScores.push(...periods.map((p: any) => p.activityScore));
+              }
+              
+              // Calculate top 80% average
+              if (hourPeriodScores.length > 0) {
+                const avgScore = calculateTop80Average(hourPeriodScores);
+                
+                // Check if average >= 4.0 (40 on DB scale)
+                if (avgScore >= 40) {
+                  isValid = true;
+                }
+              }
+            }
+          }
+        }
+      }
+      // Rule 4: Inactive (< 2.5) is never valid
+      
+      current.valid = isValid;
+      if (isValid) {
+        validScreenshots++;
+      }
+    }
+    
+    // Each valid screenshot = 10 minutes of tracked time
     const trackedMinutes = validScreenshots * 10;
     
     // Calculate top 80% average activity score across all screenshots
@@ -777,9 +933,37 @@ function setupIpcHandlers() {
   
   ipcMain.handle('screenshots:delete', async (_, screenshotIds: string[]) => {
     console.log('[IPC] screenshots:delete handler called with IDs:', screenshotIds);
+    console.log('[IPC] apiSyncService available:', !!apiSyncService);
     try {
+      // Delete from cloud first (if online)
+      console.log('[IPC] About to call apiSyncService.deleteScreenshot for each ID...');
+      const cloudResults = await Promise.allSettled(
+        screenshotIds.map(id => {
+          console.log(`[IPC] Calling apiSyncService.deleteScreenshot for ID: ${id}`);
+          return apiSyncService.deleteScreenshot(id);
+        })
+      );
+      
+      // Log cloud deletion results
+      cloudResults.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          if (result.value.success) {
+            console.log(`[IPC] Screenshot ${screenshotIds[index]} deleted from cloud`);
+          } else {
+            console.warn(`[IPC] Failed to delete ${screenshotIds[index]} from cloud:`, result.value.error);
+          }
+        } else {
+          // Promise was rejected
+          console.warn(`[IPC] Failed to delete ${screenshotIds[index]} from cloud:`, result.reason);
+        }
+      });
+      
+      // Always delete from local database (even if cloud deletion fails)
       const result = await databaseService.deleteScreenshots(screenshotIds);
-      console.log('[IPC] Delete operation result:', result);
+      console.log('[IPC] Local delete operation result:', result);
+      
+      // Consider operation successful if local deletion succeeded
+      // Cloud deletion failures will be handled during next sync
       return result;
     } catch (error) {
       console.error('[IPC] Error in delete handler:', error);
@@ -834,6 +1018,21 @@ function setupIpcHandlers() {
     return databaseService.getLeaderboard();
   });
 
+  // Dashboard stats handler (fetches from cloud)
+  ipcMain.handle('dashboard:stats', async () => {
+    try {
+      const stats = await apiSyncService.fetchDashboardStats();
+      if (stats) {
+        console.log('Returning cloud dashboard stats:', stats);
+        return { ...stats, source: 'cloud' };
+      }
+    } catch (error) {
+      console.error('Failed to fetch dashboard stats from cloud:', error);
+    }
+    // Fallback to local calculation if cloud fails
+    return null;
+  });
+
   // Productive hours handler
   ipcMain.handle('productive-hours:get', async (_event, dateString?: string) => {
     const currentUser = databaseService.getCurrentUser();
@@ -847,7 +1046,24 @@ function setupIpcHandlers() {
     console.log('[productive-hours:get] Date from frontend:', dateString, '-> parsed as:', selectedDate.toISOString());
     console.log('[productive-hours:get] Local representation:', selectedDate.toString());
     
-    const productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, selectedDate);
+    // Try to fetch from cloud API first (now with proper validation logic)
+    let productiveHours;
+    let isCloudData = false;
+    try {
+      const cloudData = await apiSyncService.fetchDailyProductiveHours(selectedDate);
+      if (cloudData && cloudData.productiveHours !== undefined) {
+        console.log('Using productive hours from cloud:', cloudData);
+        productiveHours = cloudData.productiveHours;
+        isCloudData = true;
+      }
+    } catch (error) {
+      console.log('Failed to fetch from cloud, using local calculation:', error);
+    }
+    
+    // Fallback to local calculation if cloud data not available
+    if (!isCloudData) {
+      productiveHours = await productiveHoursService.calculateProductiveHours(currentUser.id, selectedDate);
+    }
     console.log('Calculated productive hours:', productiveHours, 'for date:', selectedDate);
     
     // Calculate average activity score for selected date
@@ -928,7 +1144,8 @@ function setupIpcHandlers() {
       averageActivityScore,
       markers,
       message,
-      attendance
+      attendance,
+      source: isCloudData ? 'cloud' : 'local'
     };
   });
 
@@ -940,8 +1157,47 @@ function setupIpcHandlers() {
     }
 
     const selectedDate = dateString ? new Date(dateString) : new Date();
-    const productiveHours = await productiveHoursService.calculateWeeklyHours(currentUser.id, selectedDate);
-    const dailyData = await productiveHoursService.getDailyHoursForWeek(currentUser.id, selectedDate);
+    
+    // Try to fetch from cloud API first (now with proper validation logic)
+    let productiveHours;
+    let dailyData;
+    let isCloudData = false;
+    try {
+      const cloudData = await apiSyncService.fetchWeeklyProductiveHours(selectedDate);
+      if (cloudData && cloudData.productiveHours !== undefined) {
+        console.log('Using weekly productive hours from cloud:', cloudData);
+        productiveHours = cloudData.productiveHours;
+        
+        // Transform cloud dailyData to match expected format
+        const today = new Date();
+        const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999));
+        
+        dailyData = cloudData.dailyData?.map((day: any, index: number) => {
+          const dayDate = new Date(day.date);
+          const isFuture = dayDate > todayUTC;
+          const isWeekend = index >= 5; // Saturday and Sunday are indices 5 and 6
+          
+          return {
+            hours: day.hours || 0,
+            isFuture,
+            isWeekend,
+            date: day.date, // Keep the date for reference
+            averageActivityScore: day.averageActivityScore || 0
+          };
+        }) || [];
+        
+        isCloudData = true;
+      }
+    } catch (error) {
+      console.log('Failed to fetch weekly data from cloud, using local calculation:', error);
+    }
+    
+    // Fallback to local calculation if cloud data not available
+    if (!isCloudData) {
+      productiveHours = await productiveHoursService.calculateWeeklyHours(currentUser.id, selectedDate);
+      dailyData = await productiveHoursService.getDailyHoursForWeek(currentUser.id, selectedDate);
+    }
+    
     const markers = productiveHoursService.getWeeklyMarkers();
     
     // Calculate average activity score for the week of selected date (Monday as first day)
@@ -1016,7 +1272,8 @@ function setupIpcHandlers() {
       attendance,
       message,
       dailyData: dailyData || [],
-      dailyStatuses: baseAttendance.dailyStatuses || []
+      dailyStatuses: baseAttendance.dailyStatuses || [],
+      source: isCloudData ? 'cloud' : 'local'
     };
   });
   
@@ -1088,6 +1345,68 @@ function setupIpcHandlers() {
   
   ipcMain.handle('permissions:request-all', async () => {
     return permissionsService.requestAllPermissions();
+  });
+  
+  // Debug handler for testing Sep 7 validation
+  ipcMain.handle('debug:test-sep7', async () => {
+    const currentUser = await databaseService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No user found');
+    }
+    const testDate = new Date('2025-09-07');
+    console.log('\n=== DEBUG: Testing Sep 7, 2025 validation ===');
+    const stats = databaseService.getDateStats(currentUser.id, testDate);
+    return {
+      date: testDate.toDateString(),
+      clientHours: stats.clientHours,
+      commandHours: stats.commandHours,
+      totalHours: stats.totalHours
+    };
+  });
+  
+  // Debug handler for testing today's validation
+  ipcMain.handle('debug:test-today', async () => {
+    const currentUser = await databaseService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No user found');
+    }
+    
+    // Get today's date in UTC
+    const now = new Date();
+    const testDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    
+    console.log('\n=== DEBUG: Testing Today validation ===');
+    console.log('Date:', testDate.toISOString());
+    
+    // Get screenshots from database
+    const screenshots = await databaseService.getScreenshotsByDate(testDate);
+    console.log(`Found ${screenshots.length} screenshots for today`);
+    
+    // Log each screenshot with its activity score
+    screenshots.forEach((shot: any, index: number) => {
+      const activityScore = shot.metadata?.activityScore || 0;
+      console.log(`Screenshot ${index + 1}: Time=${new Date(shot.capturedAt).toLocaleTimeString()}, Activity=${activityScore.toFixed(1)}`);
+    });
+    
+    // Count how many have activity < 2.5
+    const lowActivityCount = screenshots.filter((s: any) => (s.metadata?.activityScore || 0) < 2.5).length;
+    console.log(`Screenshots with activity < 2.5: ${lowActivityCount}`);
+    
+    // Get the stats with validation
+    const stats = databaseService.getDateStats(currentUser.id, testDate);
+    
+    return {
+      date: testDate.toDateString(),
+      totalScreenshots: screenshots.length,
+      lowActivityScreenshots: lowActivityCount,
+      clientHours: stats.clientHours,
+      commandHours: stats.commandHours,
+      totalHours: stats.totalHours,
+      screenshots: screenshots.map((s: any) => ({
+        time: new Date(s.capturedAt).toLocaleTimeString(),
+        activityScore: s.metadata?.activityScore || 0
+      }))
+    };
   });
   
   ipcMain.handle('system:open-preferences', async (_, pane: string) => {

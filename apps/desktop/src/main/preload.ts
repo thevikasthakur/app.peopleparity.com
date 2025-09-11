@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('productive-hours:get', dateString),
   getWeeklyMarathon: (dateString?: string) =>
     ipcRenderer.invoke('weekly-marathon:get', dateString),
+  getDashboardStats: () =>
+    ipcRenderer.invoke('dashboard:stats'),
   debug: {
     clearSyncQueue: () => 
       ipcRenderer.invoke('debug:clear-sync-queue'),

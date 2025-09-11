@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { TimeDisplay } from '../components/TimeDisplay';
 import { CurrentSessionDisplay } from '../components/CurrentSessionDisplay';
@@ -16,6 +16,7 @@ import { PermissionsWizard } from '../components/PermissionsWizard';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
 import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight, Minus, AlertCircle } from 'lucide-react';
+import logoImage from '../tiny-logo.png';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",
@@ -72,20 +73,26 @@ export function Dashboard() {
     ));
     return todayUTC;
   });
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [customScreenshots, setCustomScreenshots] = useState<any[]>([]);
   const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false);
+  const [isChangingDate, setIsChangingDate] = useState(false);
   const [todaySessions, setTodaySessions] = useState<any[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    // Skip if we're in the middle of changing dates
+    if (isChangingDate) return;
+    
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
     loadTodaySessions();
-  }, [selectedDate]);
+  }, [selectedDate, isChangingDate]);
   
   useEffect(() => {
     // Reload sessions when current session changes
-    loadTodaySessions();
-  }, [currentSession]);
+    if (!isChangingDate) {
+      loadTodaySessions();
+    }
+  }, [currentSession, isChangingDate]);
   
   // Check permissions on mount only
   useEffect(() => {
@@ -141,10 +148,8 @@ export function Dashboard() {
     };
   }, [queryClient]);
 
-  // Load screenshots for selected date when it changes
-  useEffect(() => {
-    // Compare dates in UTC to match backend logic
-  const isToday = (() => {
+  // Compare dates in UTC to match backend logic - memoized for performance
+  const isToday = useMemo(() => {
     const now = new Date();
     const selectedUTC = new Date(Date.UTC(
       selectedDate.getFullYear(),
@@ -157,11 +162,15 @@ export function Dashboard() {
       now.getUTCDate()
     ));
     return selectedUTC.getTime() === todayUTC.getTime();
-  })();
-    if (!isToday) {
-      loadScreenshotsForDate(selectedDate);
-    }
   }, [selectedDate]);
+  
+  // Load screenshots for selected date when it changes
+  useEffect(() => {
+    // Skip if it's today (we use real-time screenshots)
+    if (isToday) return;
+    
+    loadScreenshotsForDate(selectedDate);
+  }, [selectedDate, isToday]);
 
   const loadScreenshotsForDate = async (date: Date) => {
     setIsLoadingScreenshots(true);
@@ -176,7 +185,17 @@ export function Dashboard() {
     }
   };
 
-  const handleDateChange = (date: Date) => {
+  const handleDateChange = async (date: Date) => {
+    // Prevent multiple date changes while loading
+    if (isChangingDate) return;
+    
+    // Show loading immediately for better UX
+    setIsChangingDate(true);
+    
+    // Disable body scroll
+    document.body.style.overflow = 'hidden';
+    document.body.style.pointerEvents = 'none';
+    
     // Convert the input date to UTC midnight
     const newDate = new Date(Date.UTC(
       date.getFullYear(),
@@ -184,53 +203,21 @@ export function Dashboard() {
       date.getDate(),
       0, 0, 0, 0
     ));
-    setSelectedDate(newDate);
-    setShowDatePicker(false);
-  };
-
-  const handlePreviousDay = () => {
-    const newDate = new Date(selectedDate);
-    newDate.setUTCDate(newDate.getUTCDate() - 1);
-    setSelectedDate(newDate);
-  };
-
-  const handleNextDay = () => {
-    const newDate = new Date(selectedDate);
-    newDate.setUTCDate(newDate.getUTCDate() + 1);
     
-    // Check if future in UTC
-    const now = new Date();
-    const newDateUTC = new Date(Date.UTC(
-      newDate.getFullYear(),
-      newDate.getMonth(),
-      newDate.getDate()
-    ));
-    const todayUTC = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate()
-    ));
+    // Update selected date
+    setSelectedDate(newDate);
     
-    if (newDateUTC <= todayUTC) {
-      setSelectedDate(newDate);
-    }
+    // Give React time to process the update and prevent UI hanging
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Keep loading overlay for 4 seconds to ensure all data is loaded
+    setTimeout(() => {
+      setIsChangingDate(false);
+      // Re-enable body scroll and interactions
+      document.body.style.overflow = '';
+      document.body.style.pointerEvents = '';
+    }, 4000);
   };
-
-  // Compare dates in UTC to match backend logic
-  const isToday = (() => {
-    const now = new Date();
-    const selectedUTC = new Date(Date.UTC(
-      selectedDate.getFullYear(),
-      selectedDate.getMonth(),
-      selectedDate.getDate()
-    ));
-    const todayUTC = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate()
-    ));
-    return selectedUTC.getTime() === todayUTC.getTime();
-  })();
   const displayScreenshots = isToday ? screenshots : customScreenshots;
 
   // Client mode disabled - always use command mode
@@ -380,7 +367,7 @@ export function Dashboard() {
       
       {/* Fixed Draggable Title Bar */}
       <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center gap-2 z-50">
-        <img src="/tiny-logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+        <img src={logoImage} alt="Logo" className="w-4 h-4 object-contain" />
         <span className="text-xs text-gray-500 font-medium">People Parity Tracker</span>
       </div>
       
@@ -404,86 +391,9 @@ export function Dashboard() {
           <div className="glass-card p-4 bounce-in shadow-lg">
             <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
-              <img src="/tiny-logo.png" alt="People Parity Logo" className="w-12 h-12 object-contain" />
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                  People Parity
-                </h1>
-                <p className="sarcastic-text mt-1">{randomMessage}</p>
-              </div>
-              
-              {/* Date Selector - Moved from screenshots section */}
-              <div className="flex items-center gap-2 ml-4">
-                <button
-                  onClick={handlePreviousDay}
-                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                  title="Previous day"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                
-                <button
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary/10 to-secondary/10 hover:from-primary/20 hover:to-secondary/20 rounded-lg transition-all relative border border-primary/20"
-                >
-                  <Calendar className="w-5 h-5 text-primary" />
-                  <span className="font-medium">
-                    {isToday ? 'Today' : `${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`}
-                  </span>
-                  
-                  {/* Date Picker Dropdown */}
-                  {showDatePicker && (
-                    <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
-                      <input
-                        type="date"
-                        value={selectedDate.toISOString().split('T')[0]}
-                        max={(() => {
-                          const now = new Date();
-                          const todayUTC = new Date(Date.UTC(
-                            now.getUTCFullYear(),
-                            now.getUTCMonth(),
-                            now.getUTCDate()
-                          ));
-                          return todayUTC.toISOString().split('T')[0];
-                        })()}
-                        onChange={(e) => handleDateChange(new Date(e.target.value))}
-                        className="px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleNextDay}
-                  className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${
-                    isToday 
-                      ? 'opacity-50 cursor-not-allowed' 
-                      : ''
-                  }`}
-                  disabled={isToday}
-                  title="Next day"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-                
-                {!isToday && (
-                  <button
-                    onClick={() => {
-                      // Get current UTC date
-                      const now = new Date();
-                      const todayUTC = new Date(Date.UTC(
-                        now.getUTCFullYear(),
-                        now.getUTCMonth(),
-                        now.getUTCDate(),
-                        0, 0, 0, 0
-                      ));
-                      setSelectedDate(todayUTC);
-                    }}
-                    className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium"
-                  >
-                    Today
-                  </button>
-                )}
+              <div className="flex flex-col items-center">
+                <img src={logoImage} alt="People Parity Logo" className="w-12 h-12 object-contain" />
+                <span className="text-xs text-gray-600 mt-1">People Parity</span>
               </div>
             </div>
             
@@ -520,8 +430,13 @@ export function Dashboard() {
 
         {/* Time Stats - Today's Hustle and Weekly Marathon */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TodaysHustle selectedDate={selectedDate} isToday={isToday} />
-          <WeeklyMarathon selectedDate={selectedDate} isToday={isToday} />
+          <TodaysHustle key={`hustle-${refreshKey}`} selectedDate={selectedDate} isToday={isToday} />
+          <WeeklyMarathon 
+            key={`marathon-${refreshKey}`} 
+            selectedDate={selectedDate} 
+            isToday={isToday}
+            onDayClick={handleDateChange}
+          />
         </div>
 
         {/* Info Cards Row - Activity, Analytics, Leaderboard */}
@@ -763,6 +678,7 @@ export function Dashboard() {
               onScreenshotClick={(id) => console.log('Screenshot clicked:', id)}
               onSelectionChange={(ids) => console.log('Selection changed:', ids)}
               onRefresh={async () => {
+                console.log('Refreshing after screenshot deletion...');
                 if (isToday) {
                   // Invalidate the screenshots query to refetch the data
                   await queryClient.invalidateQueries({ queryKey: ['screenshots'] });
@@ -771,6 +687,10 @@ export function Dashboard() {
                   await loadScreenshotsForDate(selectedDate);
                 }
                 console.log('Screenshots refreshed');
+                
+                // Force refresh of TodaysHustle and WeeklyMarathon by changing their key
+                setRefreshKey(prev => prev + 1);
+                console.log('Triggered refresh of productive hours displays');
               }}
             />
           )}
@@ -804,6 +724,27 @@ export function Dashboard() {
         onActivityChange={handleActivitySelected}
         recentActivities={recentActivities}
       />
+      
+      {/* Loading overlay when changing dates - blocks all interactions */}
+      {isChangingDate && (
+        <div 
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999]" 
+          style={{ 
+            backdropFilter: 'blur(2px)',
+            cursor: 'wait'
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+          onMouseUp={(e) => e.preventDefault()}
+          onClick={(e) => e.preventDefault()}
+          onContextMenu={(e) => e.preventDefault()}
+          onWheel={(e) => e.preventDefault()}
+        >
+          <div className="bg-white rounded-xl p-5 shadow-xl flex flex-col items-center pointer-events-none">
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-300 border-t-primary mb-2"></div>
+            <p className="text-gray-600 text-sm">Loading...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

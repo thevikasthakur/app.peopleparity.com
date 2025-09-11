@@ -93,7 +93,7 @@ export function getManagerMessage(context: MessageContext): string {
     const salaryMessages = [
       "Salary credited last night! But don't think you can slack off today, beta!",
       "Money in bank, but where is productivity on desk? Show me some real work!",
-      "Paisa आ गया? Good! Now earn it properly with 9 hours today!",
+      "Money in bank? Good! Now earn it properly with 9 hours today!",
       "Salary day celebration? First complete your hours, then party!",
       "ATM visit done? Now visit your desk for full 9 hours!",
       "New month, fresh salary, same old expectations - 45 WORKING HOURS!"
@@ -115,8 +115,8 @@ export function getManagerMessage(context: MessageContext): string {
       'Holi': [
         `Holi week hai! Complete your hours before playing with colors!`,
         `Festival coming! But first make your timesheet colorful with GREEN hours!`,
-        `होली है भाई! But productivity should not take holiday!`,
-        `Pre-Holi targets: 45 hours minimum! Then enjoy gulal-gulaal!`,
+        `Holi week! But productivity should not take holiday!`,
+        `Pre-Holi targets: 45 hours minimum! Then enjoy the colors!`,
         `Colors can wait, work cannot! Complete daily 10.5 hours first!`
       ],
       'Independence Day': [
@@ -160,7 +160,7 @@ export function getManagerMessage(context: MessageContext): string {
       return getRandomMessage([
         `FRIDAY ALERT! ${remainingHoursWeek.toFixed(1)} hours pending! Weekend plans CANCELLED if hours not complete!`,
         `Timesheet deadline TODAY! Missing ${remainingHoursWeek.toFixed(1)} hours. HR email draft ready!`,
-        `Friday है boss, but ${remainingHoursWeek.toFixed(1)} hours कहाँ है? No timesheet, no weekend!`,
+        `Friday is here boss, but where are the ${remainingHoursWeek.toFixed(1)} hours? No timesheet, no weekend!`,
         `Last chance! Complete ${remainingHoursWeek.toFixed(1)} hours or Monday meeting with HR!`,
         `Timesheet submission in few hours! You're SHORT by ${remainingHoursWeek.toFixed(1)} hours!`
       ]);
@@ -191,10 +191,10 @@ export function getManagerMessage(context: MessageContext): string {
     // Early morning
     if (lastActivityScore < 3) {
       return getRandomMessage([
-        "सुबह-सुबह ही नींद आ रही है? चाय पियो and START WORKING!",
+        "Feeling sleepy in the early morning? Have some tea and START WORKING!",
         "Good morning! Or is it? Activity score telling different story!",
         "Early bird catches the worm, but you're catching sleep only!",
-        "Yoga कर लिया? Good! Now do finger yoga on keyboard!",
+        "Finished your yoga? Good! Now do finger yoga on keyboard!",
         "Breakfast done? Feed some data to the system also!"
       ]);
     } else {
@@ -208,11 +208,11 @@ export function getManagerMessage(context: MessageContext): string {
     // Morning work hours
     if (trackedHoursToday < 1 && currentHour > 10) {
       return getRandomMessage([
-        "11 बज गए! Not even 1 hour logged? Excuses ready?",
+        "It's already 11 AM! Not even 1 hour logged? Excuses ready?",
         "Half day gone, zero productivity shown! What's happening?",
         "Morning meeting missed because you were missing from desk?",
         "Client asking for update, what should I tell? You're on vacation?",
-        "Tea break since morning? चाय बंद, काम शुरू!"
+        "Tea break since morning? Stop the tea, start the work!"
       ]);
     } else if (lastActivityScore < 4) {
       return getRandomMessage([
@@ -229,13 +229,13 @@ export function getManagerMessage(context: MessageContext): string {
       return getRandomMessage([
         "Lunch break over! Back to desk NOW!",
         "1 hour lunch break, not 2 hours gossip session!",
-        "खाना हज़म हो गया? Time to digest some work!",
+        "Food digested? Time to digest some work!",
         "Lunch done? Good! Dinner depends on afternoon productivity!"
       ]);
     } else if (trackedHoursToday < 3) {
       return getRandomMessage([
         "Half day, half work? Full salary expectation?",
-        "Lunch break allowed ONLY after 4 hours work! Rules याद है न?",
+        "Lunch break allowed ONLY after 4 hours work! Remember the rules?",
         "Empty stomach or empty timesheet? Both not acceptable!"
       ]);
     }
@@ -247,13 +247,13 @@ export function getManagerMessage(context: MessageContext): string {
         "Afternoon sleepiness is not a medical condition! WORK!",
         "Coffee break every 30 minutes? You're not in Europe!",
         "3 PM slump? Your salary doesn't slump! Neither should work!",
-        "Siesta culture Spain mein hai, India mein nahi!"
+        "Siesta culture is in Spain, not in India!"
       ]);
     } else if (remainingHoursToday > 4 && currentHour > 15) {
       return getRandomMessage([
         `${remainingHoursToday.toFixed(1)} hours pending! Planning overnight shift?`,
         `Daily target missing by ${remainingHoursToday.toFixed(1)} hours! Explanation?`,
-        `Client billing ${targetDailyHours} hours, you worked ${trackedHoursToday.toFixed(1)}! Gap कौन fill करेगा?`,
+        `Client billing ${targetDailyHours} hours, you worked ${trackedHoursToday.toFixed(1)}! Who will fill the gap?`,
         `HR notification: ${remainingHoursToday.toFixed(1)} hours short! Salary deduction warning!`
       ]);
     }
@@ -300,7 +300,7 @@ export function getManagerMessage(context: MessageContext): string {
         "Monday blues? Your salary doesn't have blues!",
         "Weekend over! Vacation mode OFF, work mode ON!",
         "Monday morning meeting in 30 mins! Where are you?",
-        "Sunday को सोये नहीं? Monday को काम  नहीं? Plan क्या है?"
+        "Didn't sleep on Sunday? Not working on Monday? What's the plan?"
       ]);
     }
   }

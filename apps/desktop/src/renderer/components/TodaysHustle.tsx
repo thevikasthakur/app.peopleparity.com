@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, TrendingUp, Award, Zap, Coffee, Target, Flag, CheckCircle, AlertCircle } from 'lucide-react';
 import { getActivityMessage } from '../utils/activityMessages';
+import { formatHoursToHM } from '../utils/timeFormatters';
 
 interface HustleData {
   productiveHours: number;
@@ -135,7 +136,7 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-gray-400" />
               <span className="text-2xl font-bold" style={{ color: attendance.color }}>
-                {productiveHours.toFixed(1)}h
+                {formatHoursToHM(productiveHours)}
               </span>
             </div>
             <span className="text-xs text-gray-500">tracked {isToday ? 'today' : `on ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}</span>
@@ -288,7 +289,7 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
             {/* Current value indicator */}
             <div className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs font-bold shadow-sm"
                  style={{ color: attendance.color }}>
-              {productiveHours.toFixed(1)}h
+              {formatHoursToHM(productiveHours)}
             </div>
           </div>
 
@@ -358,7 +359,7 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
             <div className="flex items-center gap-1 animate-bounce">
               <Zap className="w-4 h-4 text-yellow-500" />
               <span className="text-xs font-bold text-yellow-600">
-                +{(productiveHours - markers.fullAttendance).toFixed(1)}h Extra!
+                +{formatHoursToHM(productiveHours - markers.fullAttendance)} Extra!
               </span>
             </div>
           )}

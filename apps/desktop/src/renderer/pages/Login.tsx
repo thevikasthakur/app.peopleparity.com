@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Eye, EyeOff, Loader2, Coffee, Code2, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
+import logoImage from '../tiny-logo.png';
 
 const funnyLoadingMessages = [
   "Waking up the hamsters... 🐹",
@@ -72,7 +73,7 @@ export function Login() {
               transition={{ type: "spring", stiffness: 260, damping: 20 }}
               className="w-20 h-20 mx-auto mb-4 flex items-center justify-center"
             >
-              <img src="/tiny-logo.png" alt="People Parity Logo" className="w-20 h-20 object-contain" />
+              <img src={logoImage} alt="People Parity Logo" className="w-20 h-20 object-contain" />
             </motion.div>
             
             <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">

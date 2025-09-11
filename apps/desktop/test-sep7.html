@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Sep 7 Validation</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        pre { background: #f0f0f0; padding: 10px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Test Sep 7, 2025 Validation</h1>
+    <button onclick="testValidation()">Run Test</button>
+    <div id="results"></div>
+    
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        async function testValidation() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>Running test...</p>';
+            
+            try {
+                const result = await ipcRenderer.invoke('debug:test-sep7');
+                resultsDiv.innerHTML = `
+                    <h2>Results for ${result.date}:</h2>
+                    <pre>
+Client Hours: ${result.clientHours.toFixed(2)}
+Command Hours: ${result.commandHours.toFixed(2)}
+Total Hours: ${result.totalHours.toFixed(2)}
+                    </pre>
+                    <p>Check the console for detailed validation logs.</p>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

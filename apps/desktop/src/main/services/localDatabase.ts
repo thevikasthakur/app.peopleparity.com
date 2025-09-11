@@ -953,15 +953,21 @@ export class LocalDatabase {
       }
     }
     
-    console.log(`[deleteScreenshots] Found ${periodsToUpdate.length} activity periods to update`);
+    console.log(`[deleteScreenshots] Found ${periodsToUpdate.length} `);
     
     // Start transaction for all database operations
     let deletedCount = 0;
+    let periodsUpdated = 0;
     const deleteTransaction = this.db.transaction((ids: string[]) => {
       // First, update activity periods to remove screenshot reference
+      // We keep the periods but set screenshotId to NULL
       const updatePeriodStmt = this.db.prepare('UPDATE activity_periods SET screenshotId = NULL WHERE screenshotId = ?');
       for (const id of ids) {
-        updatePeriodStmt.run(id);
+        const result = updatePeriodStmt.run(id);
+        if (result.changes > 0) {
+          periodsUpdated += result.changes;
+          console.log(`[deleteScreenshots] Updated ${result.changes} activity period(s) to remove screenshot ${id}`);
+        }
       }
       
       // Delete screenshots from database
@@ -1014,13 +1020,13 @@ export class LocalDatabase {
       }
     }
     
-    console.log(`[deleteScreenshots] Operation complete. Deleted ${deletedCount} screenshots from database and ${filesDeleted} files from disk`);
-    return { success: true, deletedCount, filesDeleted };
+    console.log(`[deleteScreenshots] Operation complete. Deleted ${deletedCount} screenshots, updated ${periodsUpdated} activity periods and deleted ${filesDeleted} files from disk`);
+    return { success: true, deletedCount, periodsUpdated, filesDeleted };
   }
   
   // Analytics operations
   getDateStats(userId: string, date: Date) {
-    // Get all periods for specified date using UTC
+    // Get all screenshots for specified date (10 min per valid screenshot rule)
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -1029,85 +1035,163 @@ export class LocalDatabase {
     console.log('[getDateStats] Input date:', date.toISOString());
     console.log('[getDateStats] UTC range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
     console.log('[getDateStats] Timestamps:', startOfDay.getTime(), 'to', endOfDay.getTime());
+    console.log('[getDateStats] DEBUG: Starting validation for date', date.toDateString());
     
-    const periodsStmt = this.db.prepare(`
-      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
-      FROM activity_periods
-      WHERE userId = ? 
-        AND periodStart >= ?
-        AND periodStart <= ?
-        AND isValid = 1
-      ORDER BY periodStart ASC
+    // Get all screenshots for the date
+    const screenshotsStmt = this.db.prepare(`
+      SELECT s.id, s.capturedAt, s.mode
+      FROM screenshots s
+      WHERE s.userId = ? 
+        AND s.capturedAt >= ?
+        AND s.capturedAt <= ?
+      ORDER BY s.capturedAt ASC
     `);
     
-    const allPeriods = periodsStmt.all(userId, startOfDay.getTime(), endOfDay.getTime()) as any[];
-    console.log('[getDateStats] Found', allPeriods.length, 'activity periods for user', userId);
+    const screenshots = screenshotsStmt.all(userId, startOfDay.getTime(), endOfDay.getTime()) as any[];
+    console.log('[getDateStats] Found', screenshots.length, 'screenshots for user', userId);
     
-    // Debug: Show some sample periods
-    if (allPeriods.length > 0) {
-      console.log('[getDateStats] First period:', new Date(allPeriods[0].periodStart).toISOString());
-      console.log('[getDateStats] Last period:', new Date(allPeriods[allPeriods.length - 1].periodStart).toISOString());
-      console.log('[getDateStats] Sample scores:', allPeriods.slice(0, 5).map(p => p.activityScore));
-    }
+    // First, calculate weighted scores for all screenshots
+    const screenshotScores: { screenshot: any, weightedScore: number, uiScore: number }[] = [];
     
-    // Filter periods that should be counted (same logic as getTodayStats)
-    const countablePeriods = allPeriods.filter(period => {
-      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
-      if (period.activityScore >= 4.0) {
-        return true;
+    for (const screenshot of screenshots) {
+      // Get activity periods for this screenshot to calculate weighted score
+      const periodsStmt = this.db.prepare(`
+        SELECT activityScore
+        FROM activity_periods
+        WHERE screenshotId = ?
+        ORDER BY activityScore DESC
+      `);
+      
+      const periods = periodsStmt.all(screenshot.id) as any[];
+      
+      if (periods.length === 0) {
+        console.log('[getDateStats] No activity periods for screenshot', screenshot.id);
+        continue;
       }
       
-      // Check if it's Critical (2.5-4.0)
-      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
-        // Check condition 1: Either neighbor is better (>= 4.0)
-        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
-        
-        // Check previous neighbor
-        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
-          return true;
+      const scores = periods.map((p: any) => p.activityScore);
+      
+      // Calculate weighted average using the same logic as session:productive-info
+      const { calculateScreenshotScore } = require('../utils/activityScoreCalculator');
+      const weightedScore = calculateScreenshotScore(scores);
+      const uiScore = weightedScore / 10; // Convert to UI scale (0-10)
+      
+      screenshotScores.push({ screenshot, weightedScore, uiScore });
+    }
+    
+    // Now determine validity based on score, neighbor rule, and hourly average
+    let clientMinutes = 0;
+    let commandMinutes = 0;
+    let validCount = 0;
+    
+    for (let i = 0; i < screenshotScores.length; i++) {
+      const current = screenshotScores[i];
+      const prev = i > 0 ? screenshotScores[i - 1] : null;
+      const next = i < screenshotScores.length - 1 ? screenshotScores[i + 1] : null;
+      
+      let isValid = false;
+      
+      // Rule 1: Valid if score >= 4.0 (40 on DB scale)
+      if (current.weightedScore >= 40) {
+        isValid = true;
+        console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Score ${current.uiScore.toFixed(1)} >= 4.0 -> VALID`);
+      }
+      // Rule 2 & 3: Critical (2.5-4.0) has two possible validation paths
+      else if (current.weightedScore >= 25 && current.weightedScore < 40) {
+        // Check Rule 2: if previous or next screenshot has score >= 4.0
+        if ((prev && prev.weightedScore >= 40) || (next && next.weightedScore >= 40)) {
+          isValid = true;
+          const neighborInfo = prev && prev.weightedScore >= 40 ? `prev=${prev.uiScore.toFixed(1)}` : `next=${next?.uiScore.toFixed(1)}`;
+          console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Critical score ${current.uiScore.toFixed(1)} with neighbor >= 4.0 (${neighborInfo}) -> VALID`);
         }
-        
-        // Check next neighbor
-        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check condition 2: Average activity for the hour is >= 4.0
-        const periodHourStart = new Date(period.periodStart);
-        periodHourStart.setMinutes(0, 0, 0);
-        const periodHourEnd = new Date(periodHourStart);
-        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
-        
-        const hourPeriods = allPeriods.filter(p => 
-          p.periodStart >= periodHourStart.getTime() && 
-          p.periodStart < periodHourEnd.getTime()
-        );
-        
-        if (hourPeriods.length > 0) {
-          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
-          if (avgScore >= 4.0) {
-            return true;
+        // Check Rule 3: hourly average condition
+        else {
+          // Get the hour of this screenshot
+          const screenshotTime = new Date(current.screenshot.capturedAt);
+          const hourStart = new Date(screenshotTime);
+          hourStart.setMinutes(0, 0, 0);
+          const hourEnd = new Date(hourStart);
+          hourEnd.setHours(hourEnd.getHours() + 1);
+          
+          // Find all screenshots in this hour
+          const hourScreenshots = screenshotScores.filter(s => {
+            const time = s.screenshot.capturedAt;
+            return time >= hourStart.getTime() && time < hourEnd.getTime();
+          });
+          
+          // Check if hour has 6+ screenshots
+          if (hourScreenshots.length >= 6) {
+            // Get all activity periods for screenshots in this hour
+            const hourPeriodScores: number[] = [];
+            for (const hs of hourScreenshots) {
+              const periodsStmt = this.db.prepare(`
+                SELECT activityScore
+                FROM activity_periods
+                WHERE screenshotId = ?
+              `);
+              const periods = periodsStmt.all(hs.screenshot.id) as any[];
+              hourPeriodScores.push(...periods.map((p: any) => p.activityScore));
+            }
+            
+            // Calculate top 80% average
+            if (hourPeriodScores.length > 0) {
+              const { calculateTop80Average } = require('../utils/activityScoreCalculator');
+              const avgScore = calculateTop80Average(hourPeriodScores);
+              const avgUI = avgScore / 10;
+              
+              // Check if average >= 4.0 (40 on DB scale)
+              if (avgScore >= 40) {
+                isValid = true;
+                console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Critical score ${current.uiScore.toFixed(1)} with hourly avg ${avgUI.toFixed(1)} >= 4.0 (${hourScreenshots.length} screenshots in hour) -> VALID`);
+              } else {
+                console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Critical score ${current.uiScore.toFixed(1)} with hourly avg ${avgUI.toFixed(1)} < 4.0 (${hourScreenshots.length} screenshots in hour) -> INVALID`);
+              }
+            } else {
+              console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Critical score ${current.uiScore.toFixed(1)} but no period scores in hour -> INVALID`);
+            }
+          } else {
+            console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Critical score ${current.uiScore.toFixed(1)} with only ${hourScreenshots.length} screenshots in hour (< 6 required) -> INVALID`);
           }
         }
       }
-      
-      // Don't count Inactive (< 2.5)
-      return false;
-    });
-    
-    // Calculate total minutes for each mode
-    let clientMinutes = 0;
-    let commandMinutes = 0;
-    
-    countablePeriods.forEach(period => {
-      const duration = (period.periodEnd - period.periodStart) / (1000 * 60); // in minutes
-      
-      if (period.mode === 'client_hours') {
-        clientMinutes += duration;
-      } else {
-        commandMinutes += duration;
+      // Rule 4: Inactive (< 2.5) is never valid
+      else {
+        console.log(`[VALIDATION] Screenshot ${i+1}/${screenshotScores.length} at ${new Date(current.screenshot.capturedAt).toLocaleString()}: Score ${current.uiScore.toFixed(1)} < 2.5 -> INVALID`);
       }
-    });
+      
+      if (isValid) {
+        validCount++;
+        // Each valid screenshot = 10 minutes
+        if (current.screenshot.mode === 'client_hours') {
+          clientMinutes += 10;
+        } else if (current.screenshot.mode === 'command_hours') {
+          commandMinutes += 10;
+        }
+      }
+      
+      let validationReason = '';
+      if (isValid) {
+        if (current.weightedScore >= 40) {
+          validationReason = 'score >= 4.0';
+        } else if ((prev && prev.weightedScore >= 40) || (next && next.weightedScore >= 40)) {
+          validationReason = 'neighbor >= 4.0';
+        } else {
+          validationReason = 'hourly avg >= 4.0';
+        }
+      }
+      
+      console.log('[getDateStats] Screenshot', current.screenshot.id, 
+        'weighted score:', current.uiScore.toFixed(1), 
+        'valid:', isValid, 
+        validationReason ? `(${validationReason})` : '',
+        'mode:', current.screenshot.mode,
+        'prev:', prev ? prev.uiScore.toFixed(1) : 'none',
+        'next:', next ? next.uiScore.toFixed(1) : 'none');
+    }
+    
+    console.log('[getDateStats] Valid screenshots:', validCount, 
+      'Client minutes:', clientMinutes, 
+      'Command minutes:', commandMinutes);
     
     return {
       clientHours: clientMinutes / 60,
@@ -1117,264 +1201,43 @@ export class LocalDatabase {
   }
   
   getTodayStats(userId: string) {
-    // Get all periods for today
-    const periodsStmt = this.db.prepare(`
-      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
-      FROM activity_periods
-      WHERE userId = ? 
-        AND date(periodStart / 1000, 'unixepoch', 'localtime') = date('now', 'localtime')
-        AND isValid = 1
-      ORDER BY periodStart ASC
-    `);
-    
-    const allPeriods = periodsStmt.all(userId) as any[];
-    
-    // Filter periods that should be counted
-    const countablePeriods = allPeriods.filter(period => {
-      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
-      if (period.activityScore >= 4.0) {
-        return true;
-      }
-      
-      // Check if it's Critical (2.5-4.0)
-      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
-        // Check condition 1: Either neighbor is better (>= 4.0)
-        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
-        
-        // Check previous neighbor
-        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check next neighbor
-        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check condition 2: Average activity for the hour is >= 4.0
-        const periodHourStart = new Date(period.periodStart);
-        periodHourStart.setMinutes(0, 0, 0);
-        const periodHourEnd = new Date(periodHourStart);
-        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
-        
-        const hourPeriods = allPeriods.filter(p => 
-          p.periodStart >= periodHourStart.getTime() && 
-          p.periodStart < periodHourEnd.getTime()
-        );
-        
-        if (hourPeriods.length > 0) {
-          const scores = hourPeriods.map(p => p.activityScore);
-          const weightedScore = calculateHourlyScore(scores);
-          if (weightedScore >= 4.0) {
-            return true;
-          }
-        }
-      }
-      
-      // Don't count Inactive periods (< 2.5)
-      return false;
-    });
-    
-    // Calculate stats from countable periods
-    let clientMinutes = 0;
-    let commandMinutes = 0;
-    
-    countablePeriods.forEach(period => {
-      const minutes = (period.periodEnd - period.periodStart) / 60000;
-      if (period.mode === 'client_hours') {
-        clientMinutes += minutes;
-      } else if (period.mode === 'command_hours') {
-        commandMinutes += minutes;
-      }
-    });
-    
-    const result = {
-      clientHours: clientMinutes / 60,
-      commandHours: commandMinutes / 60,
-      totalHours: (clientMinutes + commandMinutes) / 60
-    };
-    
-    console.log('[getDateStats] Results:', result, 'from', countablePeriods.length, 'countable periods');
-    return result;
+    // Use the same date-based stats as getDateStats but for today
+    const today = new Date();
+    return this.getDateStats(userId, today);
   }
   
   getWeekStatsForDate(userId: string, date: Date) {
-    // Get all periods for the week containing the specified date using UTC (Monday as first day)
+    // Get stats for each day of the week and sum them up
     const startOfWeek = new Date(date);
     const dayOfWeek = date.getUTCDay();
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     startOfWeek.setUTCDate(date.getUTCDate() - daysToMonday);
     startOfWeek.setUTCHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);
-    endOfWeek.setUTCHours(23, 59, 59, 999);
     
-    const periodsStmt = this.db.prepare(`
-      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
-      FROM activity_periods
-      WHERE userId = ? 
-        AND periodStart >= ?
-        AND periodStart <= ?
-        AND isValid = 1
-      ORDER BY periodStart ASC
-    `);
+    // Sum up stats for each day of the week
+    let totalClientHours = 0;
+    let totalCommandHours = 0;
     
-    const allPeriods = periodsStmt.all(userId, startOfWeek.getTime(), endOfWeek.getTime()) as any[];
-    
-    // Filter periods that should be counted (same logic as getWeekStats)
-    const countablePeriods = allPeriods.filter(period => {
-      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
-      if (period.activityScore >= 4.0) {
-        return true;
-      }
+    for (let i = 0; i < 7; i++) {
+      const currentDay = new Date(startOfWeek);
+      currentDay.setUTCDate(startOfWeek.getUTCDate() + i);
       
-      // Check if it's Critical (2.5-4.0)
-      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
-        // Check condition 1: Either neighbor is better (>= 4.0)
-        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
-        
-        // Check previous neighbor
-        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check next neighbor
-        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check condition 2: Average activity for the hour is >= 4.0
-        const periodHourStart = new Date(period.periodStart);
-        periodHourStart.setMinutes(0, 0, 0);
-        const periodHourEnd = new Date(periodHourStart);
-        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
-        
-        const hourPeriods = allPeriods.filter(p => 
-          p.periodStart >= periodHourStart.getTime() && 
-          p.periodStart < periodHourEnd.getTime()
-        );
-        
-        if (hourPeriods.length > 0) {
-          const avgScore = hourPeriods.reduce((sum, p) => sum + p.activityScore, 0) / hourPeriods.length;
-          if (avgScore >= 4.0) {
-            return true;
-          }
-        }
-      }
-      
-      // Don't count Inactive (< 2.5)
-      return false;
-    });
-    
-    // Calculate total minutes for each mode
-    let clientMinutes = 0;
-    let commandMinutes = 0;
-    
-    countablePeriods.forEach(period => {
-      const duration = (period.periodEnd - period.periodStart) / (1000 * 60); // in minutes
-      
-      if (period.mode === 'client_hours') {
-        clientMinutes += duration;
-      } else {
-        commandMinutes += duration;
-      }
-    });
+      const dayStats = this.getDateStats(userId, currentDay);
+      totalClientHours += dayStats.clientHours;
+      totalCommandHours += dayStats.commandHours;
+    }
     
     return {
-      clientHours: clientMinutes / 60,
-      commandHours: commandMinutes / 60,
-      totalHours: (clientMinutes + commandMinutes) / 60
+      clientHours: totalClientHours,
+      commandHours: totalCommandHours,
+      totalHours: totalClientHours + totalCommandHours
     };
   }
   
   getWeekStats(userId: string) {
-    // Get all periods for the current week in UTC (Monday as first day)
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    const dayOfWeek = now.getUTCDay();
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
-    startOfWeek.setUTCDate(now.getUTCDate() - daysToMonday);
-    startOfWeek.setUTCHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setUTCDate(startOfWeek.getUTCDate() + 6);
-    endOfWeek.setUTCHours(23, 59, 59, 999);
-    
-    const periodsStmt = this.db.prepare(`
-      SELECT id, sessionId, periodStart, periodEnd, mode, activityScore
-      FROM activity_periods
-      WHERE userId = ? 
-        AND periodStart >= ?
-        AND periodStart <= ?
-        AND isValid = 1
-      ORDER BY periodStart ASC
-    `);
-    
-    const allPeriods = periodsStmt.all(userId, startOfWeek.getTime(), endOfWeek.getTime()) as any[];
-    
-    // Filter periods that should be counted
-    const countablePeriods = allPeriods.filter(period => {
-      // Count if activity score is 4.0 or higher (Poor, Fair, Good)
-      if (period.activityScore >= 4.0) {
-        return true;
-      }
-      
-      // Check if it's Critical (2.5-4.0)
-      if (period.activityScore >= 2.5 && period.activityScore < 4.0) {
-        // Check condition 1: Either neighbor is better (>= 4.0)
-        const periodIndex = allPeriods.findIndex(p => p.id === period.id);
-        
-        // Check previous neighbor
-        if (periodIndex > 0 && allPeriods[periodIndex - 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check next neighbor
-        if (periodIndex < allPeriods.length - 1 && allPeriods[periodIndex + 1].activityScore >= 4.0) {
-          return true;
-        }
-        
-        // Check condition 2: Average activity for the hour is >= 4.0
-        const periodHourStart = new Date(period.periodStart);
-        periodHourStart.setMinutes(0, 0, 0);
-        const periodHourEnd = new Date(periodHourStart);
-        periodHourEnd.setHours(periodHourEnd.getHours() + 1);
-        
-        const hourPeriods = allPeriods.filter(p => 
-          p.periodStart >= periodHourStart.getTime() && 
-          p.periodStart < periodHourEnd.getTime()
-        );
-        
-        if (hourPeriods.length > 0) {
-          const scores = hourPeriods.map(p => p.activityScore);
-          const weightedScore = calculateHourlyScore(scores);
-          if (weightedScore >= 4.0) {
-            return true;
-          }
-        }
-      }
-      
-      // Don't count Inactive periods (< 2.5)
-      return false;
-    });
-    
-    // Calculate stats from countable periods
-    let clientMinutes = 0;
-    let commandMinutes = 0;
-    
-    countablePeriods.forEach(period => {
-      const minutes = (period.periodEnd - period.periodStart) / 60000;
-      if (period.mode === 'client_hours') {
-        clientMinutes += minutes;
-      } else if (period.mode === 'command_hours') {
-        commandMinutes += minutes;
-      }
-    });
-    
-    return {
-      clientHours: clientMinutes / 60,
-      commandHours: commandMinutes / 60,
-      totalHours: (clientMinutes + commandMinutes) / 60
-    };
+    // Use the same week-based stats as getWeekStatsForDate but for current week
+    const today = new Date();
+    return this.getWeekStatsForDate(userId, today);
   }
   
   // Activity metrics operations
@@ -1699,6 +1562,7 @@ export class LocalDatabase {
       WHERE sessionId = ? 
         AND isValid = 1
         AND activityScore >= 4.0
+        AND screenshotId IS NOT NULL
       ORDER BY periodStart ASC
     `);
     

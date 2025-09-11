@@ -2,6 +2,7 @@ import {
   Controller, 
   Post,
   Get,
+  Delete,
   Query,
   Param,
   UseGuards, 
@@ -71,7 +72,7 @@ export class ScreenshotsController {
     return {
       success: true,
       signedUrl,
-      expiresIn: 300 // 1 hour
+      expiresIn: 300
     };
   }
 
@@ -212,6 +213,43 @@ export class ScreenshotsController {
       
       throw error;
     }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  async deleteScreenshot(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    console.log(`Request to delete screenshot ${id} by user ${req.user.userId}`);
+    // Get the screenshot to verify it exists and user has access
+    const screenshot = await this.screenshotsService.findById(id);
+    
+    if (!screenshot) {
+      console.log(`Screenshot ${id} not found`);
+      throw new HttpException('Screenshot not found', HttpStatus.NOT_FOUND);
+    }
+    
+    // Verify the user owns this screenshot
+    if (screenshot.userId !== req.user.userId) {
+      console.log
+      throw new HttpException('Unauthorized to delete this screenshot', HttpStatus.FORBIDDEN);
+    }
+    console.log(`Deleting screenshot ${id} for user ${req.user.userId}`);
+    // Delete the screenshot (soft delete by marking as deleted)
+    await this.screenshotsService.softDelete(id);
+
+    console.log('Deleting activity periods associated with the screenshot');
+    
+    // Also delete associated activity periods
+    await this.screenshotsService.deleteActivityPeriods(id);
+    
+    console.log(`Screenshot ${id} deleted successfully by user ${req.user.userId}`);
+    
+    return {
+      success: true,
+      message: 'Screenshot deleted successfully'
+    };
   }
 
   @UseGuards(JwtAuthGuard)

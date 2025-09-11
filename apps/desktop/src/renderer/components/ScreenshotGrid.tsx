@@ -992,7 +992,12 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               const screenshotIdsToDelete = Array.from(selectedIds);
               console.log('[UI] Delete button clicked for screenshots:', screenshotIdsToDelete);
               
-              if (confirm(`Are you sure you want to delete ${selectedIds.size} screenshot(s)? This action cannot be undone.`)) {
+              const totalMinutes = selectedIds.size * 10;
+              const hours = Math.floor(totalMinutes / 60);
+              const minutes = totalMinutes % 60;
+              const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} minutes`;
+              
+              if (confirm(`Are you sure you want to delete ${selectedIds.size} screenshot(s)?\n\n⚠️ WARNING: This will permanently reduce your logged time by ${timeString}.\n\nThis action cannot be undone and will affect both local and cloud records.`)) {
                 console.log('[UI] User confirmed deletion');
                 try {
                   console.log('[UI] Calling electronAPI.screenshots.delete with IDs:', screenshotIdsToDelete);
@@ -1048,14 +1053,14 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
             onClick={() => setModalScreenshot(null)}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-[calc(100vw-20px)] max-w-[calc(100vw-20px)] h-[94vh] bg-white rounded-xl overflow-hidden shadow-2xl"
+              className="relative w-full h-full bg-white overflow-hidden shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -1177,23 +1182,23 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               {/* Modal Body - Side by side layout */}
               <div className="h-[calc(100%-4rem)] flex">
                 {/* Left side - Large Screenshot Image with Navigation */}
-                <div className="flex-1 bg-gray-100 p-6 flex items-center justify-center overflow-auto relative">
-                  {/* Previous Arrow */}
+                <div className="flex-1 bg-gray-100 flex items-center justify-center overflow-auto relative">
+                  {/* Previous Arrow - Overlay on image */}
                   <button
                     onClick={() => navigateScreenshot('prev')}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg transition-all hover:scale-110 z-10"
+                    className="absolute left-6 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-black/70 backdrop-blur-sm rounded-full shadow-lg transition-all hover:scale-110 z-10"
                     title="Previous screenshot (←)"
                   >
-                    <ChevronLeft className="w-6 h-6 text-gray-700" />
+                    <ChevronLeft className="w-6 h-6 text-white" />
                   </button>
                   
-                  {/* Next Arrow */}
+                  {/* Next Arrow - Overlay on image */}
                   <button
                     onClick={() => navigateScreenshot('next')}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg transition-all hover:scale-110 z-10"
+                    className="absolute right-6 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-black/70 backdrop-blur-sm rounded-full shadow-lg transition-all hover:scale-110 z-10"
                     title="Next screenshot (→)"
                   >
-                    <ChevronRight className="w-6 h-6 text-gray-700" />
+                    <ChevronRight className="w-6 h-6 text-white" />
                   </button>
                   
                   {/* Screenshot Counter */}
@@ -1209,8 +1214,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     <img
                       src={signedFullUrl || getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl)}
                       alt="Full size screenshot"
-                      className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                      style={{ maxHeight: 'calc(94vh - 8rem)' }}
+                      className="w-full h-full object-contain"
                       onError={(e) => {
                         const img = e.target as HTMLImageElement;
                         // If signed URL fails, try regular full URL
