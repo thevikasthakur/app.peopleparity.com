@@ -29,6 +29,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getData: () => 
       ipcRenderer.invoke('dashboard:get-data'),
   },
+  projects: {
+    fetch: () => 
+      ipcRenderer.invoke('projects:fetch'),
+  },
+  permissions: {
+    check: () => 
+      ipcRenderer.invoke('permissions:check'),
+    request: (permissionId: string) => 
+      ipcRenderer.invoke('permissions:request', permissionId),
+    requestAll: () => 
+      ipcRenderer.invoke('permissions:request-all'),
+  },
+  system: {
+    openPreferences: (pane: string) => 
+      ipcRenderer.invoke('system:open-preferences', pane),
+  },
   screenshots: {
     getToday: () => 
       ipcRenderer.invoke('screenshots:get-today'),

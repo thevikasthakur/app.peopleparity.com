@@ -1,17 +1,69 @@
 import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog } from 'electron';
 import path from 'path';
-import * as dotenv from 'dotenv';
+import fs from 'fs';
 import { ActivityTrackerV2 } from './services/activityTrackerV2';
 import { ScreenshotServiceV2 } from './services/screenshotServiceV2';
 import { DatabaseService } from './services/databaseService';
 import { ApiSyncService } from './services/apiSyncService';
 import { BrowserExtensionBridge } from './services/browserExtensionBridge';
 import { ProductiveHoursService } from './services/productiveHoursService';
+import { PermissionsService } from './services/permissionsService';
 import { calculateScreenshotScore, calculateTop80Average } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
 
-// Load environment variables from .env file
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+// CRITICAL FIX: The issue is that 'force-device-scale-factor' = '1' was CAUSING the problem!
+// On Retina displays, we should NOT force scale factor to 1, we should let it be 2
+// Remove all the incorrect switches that were forcing low DPI
+if (process.platform === 'darwin') {
+  // For macOS, enable high DPI support WITHOUT forcing scale factor
+  app.commandLine.appendSwitch('high-dpi-support', 'true');
+  // Enable hardware acceleration
+  app.commandLine.appendSwitch('enable-features', 'HardwareAcceleration');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  // Do NOT set force-device-scale-factor or device-scale-factor!
+  // Let Electron detect the correct scale factor automatically
+}
+
+// Try to load dotenv if available, but don't fail if it's not
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: path.join(__dirname, '../../.env') });
+} catch (e) {
+  // dotenv not available, continue without it
+  console.log('dotenv not available, continuing without environment variables from .env file');
+}
+
+// Set up logging to file for packaged app
+if (app.isPackaged) {
+  const logFile = path.join(app.getPath('userData'), 'main-process.log');
+  const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+  
+  // Override console methods to also write to file
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  
+  console.log = function(...args: any[]) {
+    const message = `[${new Date().toISOString()}] LOG: ${args.join(' ')}\n`;
+    logStream.write(message);
+    originalLog.apply(console, args);
+  };
+  
+  console.error = function(...args: any[]) {
+    const message = `[${new Date().toISOString()}] ERROR: ${args.join(' ')}\n`;
+    logStream.write(message);
+    originalError.apply(console, args);
+  };
+  
+  console.warn = function(...args: any[]) {
+    const message = `[${new Date().toISOString()}] WARN: ${args.join(' ')}\n`;
+    logStream.write(message);
+    originalWarn.apply(console, args);
+  };
+  
+  console.log('\n=== New app session started ===');
+  console.log('Log file:', logFile);
+}
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
@@ -21,19 +73,131 @@ let databaseService: DatabaseService;
 let apiSyncService: ApiSyncService;
 let browserBridge: BrowserExtensionBridge;
 let productiveHoursService: ProductiveHoursService;
+let permissionsService: PermissionsService;
 
 const createWindow = () => {
+  // Get the primary display's scale factor
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const scaleFactor = primaryDisplay.scaleFactor;
+  
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Enable web features for better rendering
+      webgl: true,
+      experimentalFeatures: true,
+      // Force default zoom level
+      zoomFactor: 1.0,
+      defaultFontSize: 16,
+      defaultMonospaceFontSize: 13,
+      minimumFontSize: 12
     },
     titleBarStyle: 'hiddenInset',
     minWidth: 1200,
-    minHeight: 800
+    minHeight: 800,
+    backgroundColor: '#ffffff',
+    show: false,
+    // Ensure window respects high DPI
+    useContentSize: true,
+    enableLargerThanScreen: false
+  });
+
+  // Handle window ready to show
+  mainWindow.once('ready-to-show', () => {
+    mainWindow!.show();
+    // Log DPI info for debugging
+    console.log(`Display scale factor: ${scaleFactor}`);
+    console.log(`Display size: ${primaryDisplay.size.width}x${primaryDisplay.size.height}`);
+    console.log(`Display work area: ${primaryDisplay.workArea.width}x${primaryDisplay.workArea.height}`);
+  });
+
+  // Clear any stored zoom levels before loading
+  mainWindow.webContents.session.setPermissionRequestHandler(() => {});
+  
+  // Handle zoom settings properly for high DPI
+  mainWindow.webContents.on('did-finish-load', () => {
+    // CRITICAL FIX: Force reset ALL zoom settings
+    // This is the most aggressive approach to fix zoom issues
+    mainWindow!.webContents.setZoomFactor(1.0);
+    mainWindow!.webContents.setZoomLevel(0);
+    
+    // Clear stored zoom preferences
+    mainWindow!.webContents.session.clearStorageData({
+      storages: ['localstorage']
+    }).catch(() => {});
+    
+    // Prevent ANY zoom changes
+    mainWindow!.webContents.setVisualZoomLevelLimits(1, 1);
+    
+    // Force proper rendering with multiple approaches
+    mainWindow!.webContents.executeJavaScript(`
+      // Reset any CSS zoom
+      document.body.style.zoom = '100%';
+      document.documentElement.style.zoom = '100%';
+      
+      // Force browser zoom to 100%
+      if (typeof browser !== 'undefined' && browser.tabs && browser.tabs.setZoom) {
+        browser.tabs.setZoom(1.0);
+      }
+      
+      // Log DPI info for debugging
+      console.log('Device Pixel Ratio:', window.devicePixelRatio);
+      console.log('Screen resolution:', window.screen.width, 'x', window.screen.height);
+      console.log('Window inner size:', window.innerWidth, 'x', window.innerHeight);
+      console.log('Document zoom:', document.body.style.zoom || '100%');
+      
+      // Force high-quality rendering
+      if (!document.getElementById('dpi-fixes')) {
+        const style = document.createElement('style');
+        style.id = 'dpi-fixes';
+        style.textContent = \`
+          * {
+            -webkit-font-smoothing: antialiased !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            text-rendering: optimizeLegibility !important;
+            font-feature-settings: "kern" 1 !important;
+            -webkit-text-size-adjust: 100% !important;
+          }
+          html, body {
+            zoom: 100% !important;
+            transform: scale(1) !important;
+            transform-origin: 0 0 !important;
+          }
+          body {
+            transform: translateZ(0);
+            -webkit-transform: translateZ(0);
+            will-change: transform;
+          }
+          img, svg {
+            image-rendering: -webkit-optimize-contrast !important;
+            image-rendering: crisp-edges !important;
+            -webkit-backface-visibility: hidden !important;
+            backface-visibility: hidden !important;
+          }
+        \`;
+        document.head.appendChild(style);
+      }
+      
+      // Double-check and force pixel-perfect rendering
+      const actualZoom = Math.round(window.devicePixelRatio * 100);
+      if (actualZoom !== 100 && actualZoom !== 200) {
+        console.warn('Unusual zoom detected:', actualZoom + '%', 'Attempting to correct...');
+        document.body.style.transform = 'scale(' + (100 / actualZoom) + ')';
+        document.body.style.transformOrigin = '0 0';
+      }
+    `).catch(err => console.error('Error injecting DPI fixes:', err));
+  });
+  
+  // Also handle zoom changes to prevent them
+  mainWindow.webContents.on('zoom-changed', (event, zoomDirection) => {
+    console.log('Zoom change detected and prevented:', zoomDirection);
+    event.preventDefault();
+    mainWindow!.webContents.setZoomLevel(0);
+    mainWindow!.webContents.setZoomFactor(1.0);
   });
 
   if (process.env.NODE_ENV === 'development') {
@@ -84,8 +248,36 @@ const createWindow = () => {
   });
 };
 
+// Set up basic IPC handlers immediately when app is ready
+// These will return safe defaults until services are initialized
+app.whenReady().then(() => {
+  console.log('🔧 Setting up basic IPC handlers...');
+  
+  // Set up a basic auth:check-session handler immediately
+  ipcMain.handle('auth:check-session', async () => {
+    console.log('auth:check-session called, apiSyncService:', !!apiSyncService);
+    if (!apiSyncService) {
+      return { user: null };
+    }
+    try {
+      return await apiSyncService.checkSession();
+    } catch (error) {
+      console.error('Error in checkSession:', error);
+      return { user: null };
+    }
+  });
+  
+  console.log('✅ Basic IPC handlers registered');
+});
+
 app.whenReady().then(async () => {
   console.log('\n🚀 Initializing application services...');
+  
+  // CRITICAL: Clear all stored zoom data on app start
+  const session = require('electron').session;
+  await session.defaultSession.clearStorageData({
+    storages: ['localstorage', 'cookies']
+  }).catch(() => {});
   
   // Initialize database
   databaseService = new DatabaseService();
@@ -128,11 +320,12 @@ app.whenReady().then(async () => {
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
   productiveHoursService = new ProductiveHoursService(databaseService);
-  console.log('✅ API sync, browser bridge, and productive hours service initialized');
+  permissionsService = new PermissionsService();
+  console.log('✅ API sync, browser bridge, productive hours, and permissions service initialized');
   
-  // Setup IPC handlers BEFORE creating window
+  // Setup ALL IPC handlers now that services are ready
   setupIpcHandlers();
-  console.log('✅ IPC handlers registered');
+  console.log('✅ All IPC handlers registered');
   
   // Create window AFTER handlers are registered
   createWindow();
@@ -171,15 +364,20 @@ app.whenReady().then(async () => {
   });
   
   // Listen for session start events to start screenshot service
-  activityTracker.on('session:started', async (session: any) => {
+  console.log('🎯 Setting up session:started event listener on activityTracker');
+  const sessionStartedListener = async (session: any) => {
     console.log('📷 Session started event received, starting screenshot service for new session:', session.id);
+    console.log('📷 Screenshot service instance exists:', !!screenshotService);
+    
     try {
       // Re-enable auto session creation in case it was disabled
       screenshotService.enableAutoSessionCreation();
+      console.log('📷 About to call screenshotService.start()...');
       await screenshotService.start();
       console.log('✅ Screenshot service started successfully for session:', session.id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to start screenshot service:', error);
+      console.error('Error stack:', error.stack);
     }
     
     // Notify renderer that session has started
@@ -189,7 +387,10 @@ app.whenReady().then(async () => {
         session: session 
       });
     }
-  });
+  };
+  
+  activityTracker.on('session:started', sessionStartedListener);
+  console.log('✅ session:started listener attached, total listeners:', activityTracker.listenerCount('session:started'));
   
   // Listen for concurrent session detection
   app.on('concurrent-session-detected' as any, async (event: any) => {
@@ -255,7 +456,31 @@ app.on('activate', () => {
 function setupIpcHandlers() {
   // Auth handlers
   ipcMain.handle('auth:login', async (_, email: string, password: string) => {
-    return apiSyncService.login(email, password);
+    console.log('🔐 auth:login handler called with email:', email);
+    if (!apiSyncService) {
+      console.error('❌ ApiSyncService not initialized');
+      return { success: false, message: 'Service not initialized' };
+    }
+    try {
+      const result = await apiSyncService.login(email, password);
+      console.log('📤 Login result:', { success: result.success, hasUser: !!result.user });
+      
+      // If login successful, fetch projects
+      if (result.success) {
+        console.log('📦 Fetching projects after successful login...');
+        try {
+          const projects = await apiSyncService.fetchProjects();
+          console.log(`✅ Fetched ${projects?.length || 0} projects`);
+        } catch (error) {
+          console.error('❌ Failed to fetch projects:', error);
+        }
+      }
+      
+      return result;
+    } catch (error: any) {
+      console.error('❌ Login handler error:', error);
+      return { success: false, message: error.message || 'Login failed' };
+    }
   });
   
   ipcMain.handle('auth:get-api-url', async () => {
@@ -272,14 +497,28 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('auth:logout', async () => {
+    if (!apiSyncService) {
+      console.error('ApiSyncService not initialized');
+      return { success: false };
+    }
     return apiSyncService.logout();
   });
   
-  ipcMain.handle('auth:check-session', async () => {
-    return apiSyncService.checkSession();
-  });
+  // auth:check-session is already set up earlier for immediate availability
+  // Re-registering it here would override the earlier handler
+  // ipcMain.handle('auth:check-session', async () => {
+  //   if (!apiSyncService) {
+  //     console.log('ApiSyncService not initialized, returning empty session');
+  //     return { user: null };
+  //   }
+  //   return apiSyncService.checkSession();
+  // });
 
   ipcMain.handle('auth:verify-token', async (_, token: string) => {
+    if (!apiSyncService) {
+      console.error('ApiSyncService not initialized');
+      return { success: false, error: 'Service not initialized' };
+    }
     return apiSyncService.verifyToken(token);
   });
   
@@ -317,7 +556,59 @@ function setupIpcHandlers() {
   
   // Session handlers
   ipcMain.handle('session:start', async (_, mode: 'client_hours' | 'command_hours', task?: string, projectId?: string) => {
-    return activityTracker.startSession(mode, projectId, task);
+    try {
+      // Check permissions first
+      const permissions = await permissionsService.checkPermissions();
+      const hasAllPermissions = permissions['screen-recording'] === 'granted' && 
+                               permissions['accessibility'] === 'granted';
+      
+      if (!hasAllPermissions) {
+        console.log('🔐 Missing permissions, requesting...');
+        
+        // Request permissions if not granted
+        const granted = await permissionsService.requestAllPermissions();
+        
+        if (!granted) {
+          // Check again after request
+          const newPermissions = await permissionsService.checkPermissions();
+          const nowHasPermissions = newPermissions['screen-recording'] === 'granted' && 
+                                   newPermissions['accessibility'] === 'granted';
+          
+          if (!nowHasPermissions) {
+            throw new Error('Required permissions not granted. Please grant Screen Recording and Accessibility permissions in System Preferences and restart the app.');
+          }
+        }
+      }
+      
+      // Now start the session with permissions granted
+      console.log('🚀 Starting session via activityTracker.startSession with mode:', mode, 'task:', task, 'projectId:', projectId);
+      const sessionResult = await activityTracker.startSession(mode, projectId, task);
+      console.log('📊 Session started, result:', sessionResult?.id);
+      
+      // Also manually start screenshot service just in case the event doesn't fire
+      console.log('📸 Manually starting screenshot service after session start');
+      try {
+        screenshotService.enableAutoSessionCreation();
+        await screenshotService.start();
+        console.log('✅ Screenshot service started manually');
+      } catch (error: any) {
+        console.error('❌ Failed to manually start screenshot service:', error);
+      }
+      
+      return sessionResult;
+    } catch (error: any) {
+      console.error('❌ Failed to start session:', error);
+      
+      // Check if it's a permissions error
+      if (error.message?.includes('Operation not permitted') || 
+          error.message?.includes('accessibility') ||
+          error.message?.includes('not trusted') ||
+          error.message?.includes('permissions')) {
+        throw new Error(error.message || 'Permission denied. Please grant Screen Recording and Accessibility permissions in System Preferences.');
+      }
+      
+      throw error;
+    }
   });
   
   ipcMain.handle('session:stop', async () => {
@@ -450,6 +741,21 @@ function setupIpcHandlers() {
   // Dashboard handlers
   ipcMain.handle('dashboard:get-data', async () => {
     return databaseService.getDashboardData();
+  });
+  
+  // Projects handler
+  ipcMain.handle('projects:fetch', async () => {
+    if (!apiSyncService) {
+      console.error('ApiSyncService not initialized');
+      return [];
+    }
+    try {
+      const projects = await apiSyncService.fetchProjects();
+      return projects || [];
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+      return databaseService.getCachedProjects() || [];
+    }
   });
   
   // Screenshot handlers
@@ -769,6 +1075,23 @@ function setupIpcHandlers() {
   
   ipcMain.handle('users:reset-password', async (_, userId: string, newPassword: string) => {
     return databaseService.resetUserPassword(userId, newPassword);
+  });
+  
+  // Permissions handlers
+  ipcMain.handle('permissions:check', async () => {
+    return permissionsService.checkPermissions();
+  });
+  
+  ipcMain.handle('permissions:request', async (_, permissionId: string) => {
+    return permissionsService.requestPermission(permissionId);
+  });
+  
+  ipcMain.handle('permissions:request-all', async () => {
+    return permissionsService.requestAllPermissions();
+  });
+  
+  ipcMain.handle('system:open-preferences', async (_, pane: string) => {
+    return permissionsService.openSystemPreferences(pane);
   });
   
   // Debug/admin handlers

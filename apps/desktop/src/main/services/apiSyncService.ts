@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import { DatabaseService } from './databaseService';
 import Store from 'electron-store';
+import { app } from 'electron';
 import path from 'path';
 import crypto from 'crypto';
 
@@ -30,11 +31,15 @@ export class ApiSyncService {
     private db: DatabaseService,
     private store: Store
   ) {
-    // Force IPv4 by using 127.0.0.1 instead of localhost
-    const envUrl = process.env.API_URL || 'http://localhost:3001';
-    // Replace localhost with 127.0.0.1 to ensure IPv4
+    // Use production API URL for packaged app, local for development
+    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+    const envUrl = process.env.API_URL || (isDev ? 'http://localhost:3001' : 'https://efr76g502g.execute-api.ap-south-1.amazonaws.com');
+    // Replace localhost with 127.0.0.1 to ensure IPv4 in development
     const baseUrl = envUrl.replace('localhost', '127.0.0.1');
     const apiUrl = `${baseUrl}/api`;
+    
+    console.log('🔗 API Service initialized with URL:', apiUrl);
+    console.log('📦 App packaged:', app.isPackaged, 'Dev mode:', isDev);
     
     this.api = axios.create({
       baseURL: apiUrl,
@@ -116,6 +121,17 @@ export class ApiSyncService {
         projects
       };
     } catch (error: any) {
+      console.error('Login error details:', {
+        code: error.code,
+        message: error.message,
+        response: error.response?.data,
+        config: {
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          method: error.config?.method
+        }
+      });
+      
       // Check if we have cached credentials for offline mode
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
         const cachedUser = this.db.getCurrentUser();

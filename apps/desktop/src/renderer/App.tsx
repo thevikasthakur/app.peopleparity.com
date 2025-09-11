@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
@@ -24,7 +24,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <BrowserRouter>
+          <HashRouter>
             <div className="app-container">
               <Routes>
                 <Route path="/login" element={<Login />} />
@@ -41,7 +41,7 @@ export function App() {
               </Routes>
               <Toaster />
             </div>
-          </BrowserRouter>
+          </HashRouter>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

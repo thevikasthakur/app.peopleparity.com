@@ -12,9 +12,10 @@ import { ProfileDropdown } from '../components/ProfileDropdown';
 import { TodaysHustle } from '../components/TodaysHustle';
 import { WeeklyMarathon } from '../components/WeeklyMarathon';
 import { CurrentSessionInfo } from '../components/CurrentSessionInfo';
+import { PermissionsWizard } from '../components/PermissionsWizard';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight, Minus } from 'lucide-react';
+import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight, Minus, AlertCircle } from 'lucide-react';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",
@@ -43,6 +44,9 @@ export function Dashboard() {
   
   const [showTaskSelector, setShowTaskSelector] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showPermissionsWizard, setShowPermissionsWizard] = useState(false);
+  const [permissionsChecked, setPermissionsChecked] = useState(false);
+  const [hasAllPermissions, setHasAllPermissions] = useState(false);
   const [randomMessage, setRandomMessage] = useState('');
   const [pendingMode, setPendingMode] = useState<'client' | 'command' | null>(null);
   // Load activity and recent activities from localStorage
@@ -82,6 +86,35 @@ export function Dashboard() {
     // Reload sessions when current session changes
     loadTodaySessions();
   }, [currentSession]);
+  
+  // Check permissions on mount only
+  useEffect(() => {
+    const checkPermissions = async () => {
+      if (window.electronAPI?.permissions) {
+        try {
+          const permissions = await window.electronAPI.permissions.check();
+          const allGranted = permissions['screen-recording'] === 'granted' && 
+                           permissions['accessibility'] === 'granted';
+          setHasAllPermissions(allGranted);
+          setPermissionsChecked(true);
+          
+          // Show wizard if this is first time or permissions missing
+          const wizardShown = localStorage.getItem('permissionsWizardShown');
+          if (!wizardShown && !allGranted) {
+            setShowPermissionsWizard(true);
+          }
+        } catch (error) {
+          console.error('Failed to check permissions:', error);
+          setPermissionsChecked(true);
+        }
+      } else {
+        setPermissionsChecked(true);
+      }
+    };
+    
+    // Only check once on mount, not periodically
+    checkPermissions();
+  }, []);
   
   const loadTodaySessions = async () => {
     try {
@@ -286,6 +319,48 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen" data-mode={mode}>
+      {/* Permissions Wizard */}
+      {showPermissionsWizard && (
+        <PermissionsWizard
+          onComplete={() => {
+            setShowPermissionsWizard(false);
+            localStorage.setItem('permissionsWizardShown', 'true');
+            // Re-check permissions after wizard completes
+            if (window.electronAPI?.permissions) {
+              window.electronAPI.permissions.check().then(permissions => {
+                const allGranted = permissions['screen-recording'] === 'granted' && 
+                                 permissions['accessibility'] === 'granted';
+                setHasAllPermissions(allGranted);
+              });
+            }
+          }}
+          onSkip={() => {
+            setShowPermissionsWizard(false);
+            localStorage.setItem('permissionsWizardShown', 'true');
+          }}
+        />
+      )}
+      
+      {/* Permissions Warning Banner */}
+      {permissionsChecked && !hasAllPermissions && !showPermissionsWizard && (
+        <div className="fixed top-0 left-0 right-0 bg-amber-50 border-b border-amber-200 px-4 py-3 z-50">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              <p className="text-sm text-amber-800">
+                <strong>Permissions Required:</strong> Some features may not work correctly without Screen Recording and Accessibility permissions.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowPermissionsWizard(true)}
+              className="text-sm font-medium text-amber-700 hover:text-amber-900 underline"
+            >
+              Setup Permissions
+            </button>
+          </div>
+        </div>
+      )}
+      
       {/* Full-screen Processing Overlay */}
       {isOperationInProgress && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
@@ -304,7 +379,8 @@ export function Dashboard() {
       )}
       
       {/* Fixed Draggable Title Bar */}
-      <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center z-50">
+      <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center gap-2 z-50">
+        <img src="/tiny-logo.png" alt="Logo" className="w-4 h-4 object-contain" />
         <span className="text-xs text-gray-500 font-medium">People Parity Tracker</span>
       </div>
       
@@ -328,6 +404,7 @@ export function Dashboard() {
           <div className="glass-card p-4 bounce-in shadow-lg">
             <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
+              <img src="/tiny-logo.png" alt="People Parity Logo" className="w-12 h-12 object-contain" />
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                   People Parity

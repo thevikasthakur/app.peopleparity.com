@@ -21,6 +21,7 @@ export class ScreenshotServiceV2 {
   
   constructor(private db: DatabaseService) {
     this.screenshotDir = path.join(app.getPath('userData'), 'screenshots');
+    console.log('📂 Screenshot directory:', this.screenshotDir);
     this.ensureScreenshotDir();
   }
   
@@ -38,7 +39,11 @@ export class ScreenshotServiceV2 {
     console.log('📷 Auto session creation enabled:', this.autoSessionCreationEnabled);
     this.isCapturing = true;
     
-    // Schedule screenshots immediately
+    // Capture initial screenshot immediately when starting
+    console.log('📸 Taking initial screenshot on session start...');
+    await this.captureScreenshot(0);
+    
+    // Then schedule regular screenshots
     this.scheduleNextScreenshot();
     
     console.log('✅ Screenshot service started - will capture screenshots every 10 minutes');
@@ -243,7 +248,20 @@ export class ScreenshotServiceV2 {
     
     try {
       // Capture the screenshot
-      const img = await screenshot();
+      console.log('📷 Calling screenshot-desktop to capture screen...');
+      let img;
+      try {
+        img = await screenshot();
+      } catch (screenshotError: any) {
+        console.error('❌ screenshot-desktop error:', screenshotError.message);
+        console.error('Error details:', screenshotError);
+        throw screenshotError;
+      }
+      console.log('📷 Screenshot captured, buffer size:', img ? img.length : 0);
+      
+      if (!img || img.length === 0) {
+        throw new Error('Screenshot buffer is empty');
+      }
       
       // Generate filenames
       const filename = `${captureTime.getTime()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
@@ -251,17 +269,42 @@ export class ScreenshotServiceV2 {
       const thumbnailFilename = `thumb_${filename}`;
       const thumbnailPath = path.join(this.screenshotDir, thumbnailFilename);
       
+      console.log('📷 Saving screenshot to:', localPath);
+      console.log('🔍 Debug - localPath type:', typeof localPath, 'value:', localPath);
+      console.log('🔍 Debug - img type:', typeof img, 'isBuffer:', Buffer.isBuffer(img), 'length:', img?.length);
+      
       // Save full size image
-      await sharp(img)
-        .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toFile(localPath);
+      try {
+        // Ensure localPath is a string
+        const pathStr = String(localPath);
+        console.log('🔍 Debug - Using pathStr:', pathStr);
+        
+        await sharp(img)
+          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toFile(pathStr);
+      } catch (sharpError: any) {
+        console.error('❌ Sharp error (full size):', sharpError.message);
+        throw sharpError;
+      }
+      
+      console.log('📷 Saving thumbnail to:', thumbnailPath);
       
       // Save thumbnail
-      await sharp(img)
-        .resize(320, 180, { fit: 'cover' })
-        .jpeg({ quality: 70 })
-        .toFile(thumbnailPath);
+      try {
+        // Ensure thumbnailPath is a string
+        const thumbPathStr = String(thumbnailPath);
+        
+        await sharp(img)
+          .resize(320, 180, { fit: 'cover' })
+          .jpeg({ quality: 70 })
+          .toFile(thumbPathStr);
+      } catch (sharpError: any) {
+        console.error('❌ Sharp error (thumbnail):', sharpError.message);
+        throw sharpError;
+      }
+      
+      console.log('📷 Screenshot and thumbnail saved successfully');
       
       // Get the current activity directly from the database service
       const currentActivity = (this.db as any).getCurrentActivityNote?.() || session?.task || 'Working';

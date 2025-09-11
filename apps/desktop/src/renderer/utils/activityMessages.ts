@@ -16,9 +16,9 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 9, max: 10 },
     hours: { min: 7, max: 24 },
     messages: [
-      "🔥🔥 Arre waah! Client will be SO HAPPY! You are on FIRE today! But don't burnout ha, we need same performance tomorrow also! 💪",
-      "👏 OUTSTANDING! This is what we call DEDICATION! Onsite opportunity pakka for you! Keep it up champion! 🏆",
-      "🌟 Superb yaar! You're making entire team look good! Manager's manager also noticed your work today! Promotion loading... 📈",
+      "🔥🔥 Excellent! Client will be SO HAPPY! You are on FIRE today! But don't burnout, we need same performance tomorrow also! 💪",
+      "👏 OUTSTANDING! This is what we call DEDICATION! Onsite opportunity likely for you! Keep it up champion! 🏆",
+      "🌟 Superb work! You're making entire team look good! Manager's manager also noticed your work today! Promotion in sight... 📈",
       "💯 BRILLIANT performance! This is why we hired you! Other team members should learn from you! Bonus guaranteed! 🎯",
       "🚀 What a ROCKSTAR! Client specifically asked about you in today's call! You're our STAR performer! Keep shining! ⭐",
     ]
@@ -40,10 +40,10 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 8.5, max: 10 },
     hours: { min: 4, max: 6 },
     messages: [
-      "⚡ Quality over quantity - PERFECT example! But thoda time aur doge to client khush ho jayega! 🎯",
-      "💎 Excellent productivity! But only half day? Family function tha kya? Tomorrow full day expected! 😅",
-      "🔥 Superb intensity! Par time kam hai boss! Stretch thoda, appraisal is coming! Rating depends on hours also! ⏰",
-      "👌 High quality work! But competitors are putting more hours! Don't let them win! Tomorrow full day pakka? 💪",
+      "⚡ Quality over quantity - PERFECT example! But more time commitment will make client happier! 🎯",
+      "💎 Excellent productivity! But only half day? Was there a personal commitment? Tomorrow full day expected! 😅",
+      "🔥 Superb intensity! But time is less! Stretch a bit more, appraisal is coming! Rating depends on hours also! ⏰",
+      "👌 High quality work! But competitors are putting more hours! Don't let them win! Tomorrow full day confirmed? 💪",
       "🌟 Brilliant efficiency! But management wants to see more commitment! Visibility matter karta hai na! 📈",
     ]
   },
@@ -54,7 +54,7 @@ export const dailyActivityMessages: ActivityMessage[] = [
     messages: [
       "👍 Good work! But I know you can do better! Remember your interview promises? Time to show that potential! 💪",
       "✅ Decent performance! But 'decent' doesn't get onsite! Push harder! Competition is tough this quarter! 🎯",
-      "😊 Not bad! But client expects MORE from our team! Don't be satisfied with 'good enough'! Excellence chahiye! 🚀",
+      "😊 Not bad! But client expects MORE from our team! Don't be satisfied with 'good enough'! Excellence is needed! 🚀",
       "🎯 Fair job! But your colleague did better today! Healthy competition hai, but you should win na! 😤",
       "📈 Satisfactory! But satisfactory means average only! You want to be average or EXCEPTIONAL? Think! 🤔",
     ]
@@ -64,11 +64,11 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 5.5, max: 7 },
     hours: { min: 0, max: 24 },
     messages: [
-      "😐 Mediocre performance! This is not why we pay you salary! Client noticed the drop! Explanation needed in standup! 😤",
-      "🙄 Average day matlab problem! We don't hire for average performance! Tomorrow better hona chahiye! WARNING ⚠️",
+      "😐 Mediocre performance! This affects our team metrics! Client noticed the drop! Explanation needed in standup! 😤",
+      "🙄 Average day means there's a problem! We don't hire for average performance! Tomorrow must be better! WARNING ⚠️",
       "😑 Disappointing! Your resume said 'self-motivated'! Where is that motivation? Show me tomorrow! 😠",
       "😒 Not acceptable! Team reputation is going down! You want to be the reason for team's failure? IMPROVE! 🔴",
-      "😤 Below expectations! HR asking about your performance! You want to explain to them or improve? Your choice! ⚡",
+      "😤 Below expectations! HR is tracking your performance! Need immediate improvement to avoid escalation! ⚡",
     ]
   },
   // POOR: Low activity (4-5.5), high hours (7+ hours) - Time waster
@@ -76,11 +76,11 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 4, max: 5.5 },
     hours: { min: 7, max: 24 },
     messages: [
-      "😡 Long hours but NO OUTPUT! Timepass kar rahe ho? YouTube/Instagram band karo! This is OFFICE hours! 🔴🔴",
-      "🤬 PATHETIC! Sitting whole day doing what? Chair pe paisa nahi milta! WORK karo! Last warning! ⚠️⚠️",
-      "😠 Waste of company resources! 8 hours me kya kiya? Personal work? This will go in your record! 📝",
-      "💢 UNACCEPTABLE! Attendance se salary nahi milti! Performance chahiye! PIP discussion hoga iske liye! 🚨",
-      "🔥 Time theft kar rahe ho! Client is paying for WORK not attendance! Improve or find another job! 😤",
+      "😡 Long hours but NO OUTPUT! Are you doing personal work? Focus on office tasks! This is OFFICE hours! 🔴🔴",
+      "🤬 Very poor productivity! Sitting whole day with minimal output! We need WORK not just attendance! This is concerning! ⚠️⚠️",
+      "😠 Inefficient use of time! 8 hours with this output? This will affect your performance review! 📝",
+      "💢 UNACCEPTABLE! Attendance alone doesn't justify salary! Performance is needed! This may affect your appraisal! 🚨",
+      "🔥 Time not well utilized! Client is paying for WORK not just presence! Immediate improvement needed! 😤",
     ]
   },
   // BAD: Low activity (4-5.5), low hours (<7 hours)
@@ -88,11 +88,11 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 4, max: 5.5 },
     hours: { min: 0, max: 7 },
     messages: [
-      "🚨 DISASTER! Low hours AND low work! You think this is government job? Tomorrow se serious ho jao! 😡",
-      "💀 Are you even working? Or just login karke so gaye? This is going straight to HR! Explain tomorrow! 📧",
-      "🔴 TERRIBLE! Client escalation aa jayega! Your casual attitude will affect whole team's appraisal! 😤",
-      "⛔ Completely unacceptable! Probation extend hoga aise performance se! Want to continue or resign? 😠",
-      "🚫 WORST day! Even freshers are better! You have experience but no responsibility! Shameful! 😒",
+      "🚨 DISASTER! Low hours AND low work! This is not acceptable in our work culture! Need immediate improvement! 😡",
+      "💀 Are you even working? Or just logged in without working? This will be discussed with your manager! Explain tomorrow! 📧",
+      "🔴 TERRIBLE! Client may escalate this! Your casual attitude will affect whole team's appraisal! 😤",
+      "⛔ Completely unacceptable! This performance may affect your confirmation! Serious improvement needed! 😠",
+      "🚫 WORST day! Even freshers are performing better! You have experience but where's the output? Very disappointing! 😒",
     ]
   },
   // CRITICAL: Very low activity (2.5-4), any hours
@@ -100,11 +100,11 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 2.5, max: 4 },
     hours: { min: 0, max: 24 },
     messages: [
-      "🚨🚨 CRITICAL ALERT! Performance Review meeting scheduled! Start updating resume if this continues! 💀",
-      "☠️ Career suicide kar rahe ho! Manager's manager is asking about you! Not in good way! Fix it NOW! 🔴",
-      "💣 BOMB performance! Project se remove kar denge! Bench pe jaoge! No salary revision! Think! 😱",
-      "🔥🔥 Emergency! Client wants to replace you! Last chance to save your job! Tomorrow is make or break! ⚠️",
-      "📉 Rock bottom! Even interns are laughing! Self respect hai ya nahi? Prove yourself tomorrow! 😤",
+      "🚨🚨 CRITICAL ALERT! Performance Review meeting scheduled! This will seriously impact your appraisal! 💀",
+      "☠️ This is damaging your career! Manager's manager is asking about you! Not in good way! Fix it NOW! 🔴",
+      "💣 Extremely poor performance! May affect your project allocation! Could impact salary revision! Think seriously! 😱",
+      "🔥🔥 Emergency! Client is concerned about your performance! This needs immediate correction! Tomorrow is crucial! ⚠️",
+      "📉 Rock bottom performance! Even interns are outperforming! Where is your professional pride? Prove yourself tomorrow! 😤",
     ]
   },
   // INACTIVE: Near zero activity (0-2.5), any hours
@@ -112,11 +112,11 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 0, max: 2.5 },
     hours: { min: 0, max: 24 },
     messages: [
-      "💀💀 Are you DEAD? Should I inform HR you're on unauthorized leave? This is JOB ABANDONMENT! 🚨🚨",
-      "🔴🔴🔴 ZERO work! Salary charity me de rahe hai kya? Pack your bags! Exit process initiate kar dun? 😡",
-      "⚰️ RIP your career! Even office boy has better productivity! Resignation letter ready hai? Submit karo! 📝",
-      "🚫🚫 Ghost employee! Payroll se naam katwa dun? Parents ko bataya job lose karne wala ho? 😤",
-      "☠️☠️ Professional suicide! LinkedIn pe 'unemployed' update karo! Company me place nahi hai tumhare liye! 🔥",
+      "💀💀 Are you present? Should I inform HR about this unauthorized absence? This looks like abandonment of duties! 🚨🚨",
+      "🔴🔴🔴 ZERO work detected! This is unacceptable! Your position in the team is at serious risk! 😡",
+      "⚰️ Career-damaging performance! Productivity is non-existent! This will have serious consequences on your appraisal! 📝",
+      "🚫🚫 No activity detected! This will affect your monthly variable pay! Management will be informed! 😤",
+      "☠️☠️ Professional disaster! This performance is grounds for serious disciplinary action! Immediate improvement required! 🔥",
     ]
   },
   // ABSENT: Zero everything
@@ -124,11 +124,11 @@ export const dailyActivityMessages: ActivityMessage[] = [
     score: { min: 0, max: 1 },
     hours: { min: 0, max: 1 },
     messages: [
-      "❌❌❌ ABSENT without intimation! Directly HR escalation! Termination letter draft ho raha hai! 📧💀",
-      "🚨🚨🚨 AWOL! Security ko bol dun ID card block karne? Tomorrow don't need to come! We'll courier your stuff! 🔴",
-      "💀💀💀 Job chod diya kya? Good decision! You weren't fit anyway! Clearance process start kar dete hai! 📋",
-      "🔥🔥🔥 FIRED! No questions! No explanations! Security will escort you out! Your desk is already cleared! 🚫",
-      "⛔⛔⛔ Contract TERMINATED! Blacklisted from company! No recommendation letter! Good luck finding new job! 😤",
+      "❌❌❌ ABSENT without intimation! HR will be notified! This will severely impact your attendance record! 📧💀",
+      "🚨🚨🚨 Absence Without Leave! This is a serious violation! Disciplinary action will be initiated! 🔴",
+      "💀💀💀 Complete absence from work! This shows lack of commitment! Will be escalated to senior management! 📋",
+      "🔥🔥🔥 Unauthorized absence! This is grounds for serious action! Your performance rating will be severely impacted! 🚫",
+      "⛔⛔⛔ No work record found! This will result in loss of variable pay and affect your annual review! 😤",
     ]
   }
 ];
@@ -140,11 +140,11 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 9, max: 10 },
     hours: { min: 40, max: 168 },
     messages: [
-      "🏆🏆 LEGENDARY WEEK! CEO knows your name now! Onsite CONFIRMED! You're the FUTURE LEADER of this company! 🚀",
-      "💎💎 DIAMOND performer! Whole organization is talking about you! Fast-track promotion guaranteed! Stock options coming! 🌟",
-      "🔥🔥 UNSTOPPABLE! Client wants you PERMANENTLY on their account! 30% hike minimum! You're a MACHINE! 💪",
-      "👑 KING/QUEEN of productivity! Your photo will go on Wall of Fame! Inspiration for whole company! Superstar! ⭐⭐",
-      "🚀🚀 ROCKET performance! Singapore office wants you! Visa ready hai? This is CAREER-DEFINING week! 🌏",
+      "🏆🏆 LEGENDARY WEEK! CEO knows your name now! Onsite opportunity very likely! You're showing leadership potential! 🚀",
+      "💎💎 DIAMOND performer! Whole organization is talking about you! Fast-track promotion being considered! Great work! 🌟",
+      "🔥🔥 UNSTOPPABLE! Client wants you on critical projects! Excellent hike expected! You're a top performer! 💪",
+      "👑 CHAMPION of productivity! Your work will be showcased as best practice! Inspiration for whole company! Superstar! ⭐⭐",
+      "🚀🚀 ROCKET performance! International opportunities opening up! Are you ready? This is CAREER-DEFINING week! 🌏",
     ]
   },
   // OUTSTANDING: Excellent week (8.5-9 score, 35+ hours)
@@ -152,7 +152,7 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 8.5, max: 9 },
     hours: { min: 35, max: 168 },
     messages: [
-      "⭐ Outstanding week! Management is IMPRESSED! Your name came up in board meeting! Bonus pakka! 💰",
+      "⭐ Outstanding week! Management is IMPRESSED! Your name came up in leadership meeting! Bonus very likely! 💰",
       "🎯 Brilliant consistency! Five days of excellence! Role model for team! Promotion discussion started! 📈",
       "💪 Superb week! Client gave special appreciation! Your manager's manager called to congratulate! 🏅",
       "🌟 Exceptional performance! You saved the project this week! Hero of the sprint! Celebration party! 🎉",
@@ -188,7 +188,7 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 5.5, max: 7 },
     hours: { min: 0, max: 168 },
     messages: [
-      "😤 MEDIOCRE week! This is not startup mentality! We need WARRIORS not 9-to-5 mindset! Wake up! 🔴",
+      "😤 MEDIOCRE week! This is not the right approach! We need go-getters not 9-to-5 mindset! Step up! 🔴",
       "😐 Average performance AGAIN! How many warnings you need? Client is losing confidence! Fix it! ⚠️",
       "🙄 Disappointing week! Your interview feedback said 'highly motivated'! Where is that person? 😠",
       "😑 Not acceptable! Whole week wasted! What will you show in sprint review? Prepare explanations! 📝",
@@ -200,11 +200,11 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 4.5, max: 5.5 },
     hours: { min: 35, max: 168 },
     messages: [
-      "😡 Long hours but ZERO productivity! Office me timepass? This is THEFT of company time! Warning letter coming! 🔴",
-      "🤬 PATHETIC efficiency! 40 hours me kya kiya? Facebook? WhatsApp? Personal projects? You're CAUGHT! 📧",
-      "💢 Worst ROI! Company is losing money on you! Cost center ban gaye ho! Profit center bano! 😤",
-      "🔥 Time waster! Whole week in office but no output! Even WFH people are better! Shameful! 😠",
-      "⚠️ Inefficient! Hours don't matter, OUTPUT matters! PIP discussion scheduled! Prepare yourself! 📋",
+      "😡 Long hours but minimal productivity! Were you doing personal work in office? This affects team metrics! Warning issued! 🔴",
+      "🤬 Very poor efficiency! 45 hours with this output? Were you distracted? This is concerning! 📧",
+      "💢 Poor return on investment! You're becoming a liability! Need to become an asset! 😤",
+      "🔥 Time not utilized well! Whole week in office but minimal output! Even remote workers are more productive! 😠",
+      "⚠️ Inefficient! Hours don't matter, OUTPUT matters! Performance improvement needed! Review scheduled! 📋",
     ]
   },
   // BAD: Poor week (4-5.5 score, low hours <35)
@@ -212,11 +212,11 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 4, max: 5.5 },
     hours: { min: 0, max: 35 },
     messages: [
-      "💀 DISASTER week! Are you on secret vacation? This is professional SUICIDE! HR informed! 🚨",
-      "🔴 Terrible! Even interns have better stats! 3 years experience and this output? Joke hai kya? 😡",
-      "☠️ Career ending week! Client asking for replacement! Your reputation is DESTROYED! Fix it or quit! 💣",
-      "😤 WORST performance! Team's average going down because of you! Dragging everyone! Selfish! 🔥",
-      "⛔ Unacceptable! Probation extension confirmed! No confirmation until improvement! Last chance! ⚠️",
+      "💀 DISASTER week! Were you on leave without informing? This is highly unprofessional! HR will be informed! 🚨",
+      "🔴 Terrible! Even interns have better stats! With your experience, this output is unacceptable! 😡",
+      "☠️ Career-damaging week! Client is dissatisfied! Your reputation is at stake! Immediate improvement needed! 💣",
+      "😤 WORST performance! Team's average dropping because of you! This affects everyone's appraisal! 🔥",
+      "⛔ Unacceptable! This may affect your confirmation! Significant improvement needed immediately! ⚠️",
     ]
   },
   // CRITICAL: Terrible week (2.5-4 score, any hours)
@@ -224,11 +224,11 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 2.5, max: 4 },
     hours: { min: 0, max: 168 },
     messages: [
-      "🚨🚨 CRITICAL FAILURE! Exit interview scheduled? Start job hunting! LinkedIn premium le lo! 💀",
-      "💣💣 Week from HELL! Even ChatGPT can do better job! You're getting REPLACED by AI! 🤖",
-      "🔥🔥 Emergency meeting with HR! Termination discussion! One foot out of door already! Save yourself! ⚠️",
-      "☠️☠️ Professional death! No project wants you! Bench confirmation! Zero hike! Think about career change! 📉",
-      "🚫🚫 Red alert! Company suffering losses because of you! Legal action possible! Improve or perish! 🔴",
+      "🚨🚨 CRITICAL FAILURE! Performance review scheduled urgently! This will severely impact your career! 💀",
+      "💣💣 Worst week on record! Even automated systems perform better! Your role is under review! 🤖",
+      "🔥🔥 Emergency meeting with management! Serious discussion about your performance! Immediate action required! ⚠️",
+      "☠️☠️ Professional crisis! Project allocation at risk! No increment possible! Serious introspection needed! 📉",
+      "🚫🚫 Red alert! Your performance is impacting team deliverables! Immediate improvement mandatory! 🔴",
     ]
   },
   // DEAD: Almost no activity (1-2.5 score)
@@ -236,11 +236,11 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 1, max: 2.5 },
     hours: { min: 0, max: 168 },
     messages: [
-      "💀💀💀 DEAD week! Ghost employee confirmed! Salary stopping next month! Find new job TODAY! 🚨",
-      "⚰️⚰️ Career OBITUARY writing! 'Here lies a failed employee'! Parents ko bataya job gone? 😤",
-      "🔴🔴🔴 TERMINATED! Clear your desk! Security waiting outside! ID card blocked! Game over! 🚫",
-      "☠️☠️☠️ Professionally DEAD! Blacklisted from IT industry! Uber driver bano ab! No options left! 💣",
-      "❌❌❌ FIRED! No notice period! No settlement! No recommendation! Nothing! You're DONE! 🔥",
+      "💀💀💀 Zero productivity week! This confirms lack of commitment! Variable pay will be severely impacted! 🚨",
+      "⚰️⚰️ Career at serious risk! This performance is unacceptable at any level! Immediate correction needed! 😤",
+      "🔴🔴🔴 Complete failure! This will be escalated to senior leadership! Your position is under serious review! 🚫",
+      "☠️☠️☠️ Professional disaster! This will affect your entire appraisal cycle! No recovery without drastic improvement! 💣",
+      "❌❌❌ Critical performance failure! All benefits and incentives at risk! Immediate action required! 🔥",
     ]
   },
   // ABSENT: Zero activity week
@@ -248,11 +248,11 @@ export const weeklyActivityMessages: ActivityMessage[] = [
     score: { min: 0, max: 1 },
     hours: { min: 0, max: 168 },
     messages: [
-      "🚨🚨🚨 ABSENT ENTIRE WEEK! Police complaint for fraud? Salary fraud case! Legal action initiated! 💀",
-      "⛔⛔⛔ ABSCONDER! Company property recovery team dispatched! Laptop, ID, everything! You're FINISHED! 🔴",
-      "💀💀💀 Missing person report filed! Job abandonment confirmed! Blacklisted forever! Career DESTROYED! 🚫",
-      "🔥🔥🔥 CRIMINAL! Stealing salary without work! Cyber crime complaint! Your career is OVER! ☠️",
-      "❌❌❌ FRAUD EMPLOYEE! Legal notice sent! Recovery of salary initiated! Industry ban! You're DOOMED! 💣",
+      "🚨🚨🚨 ABSENT ENTIRE WEEK! This is abandonment of duties! HR and legal team will be involved! 💀",
+      "⛔⛔⛔ No attendance record! Company assets need to be returned! This is a serious violation! 🔴",
+      "💀💀💀 Complete absence from work! This is grounds for disciplinary action! Your record will be permanently affected! 🚫",
+      "🔥🔥🔥 Zero work for entire week! This is breach of employment terms! Serious consequences will follow! ☠️",
+      "❌❌❌ Unauthorized absence for full week! This will result in loss of all benefits and severe action! 💣",
     ]
   }
 ];
@@ -276,7 +276,7 @@ export function getActivityMessage(
   if (!category || category.messages.length === 0) {
     // Fallback messages
     const fallbacks = isWeekly 
-      ? ["📊 Week is over! Now prepare explanation for standup! Manager is waiting! 😤"]
+      ? ["📊 Week is over! Prepare your excuses! Manager will review performance! 😤"]
       : ["📅 Day is ending! Tomorrow better performance expected! No excuses! 😠"];
     return fallbacks[0];
   }

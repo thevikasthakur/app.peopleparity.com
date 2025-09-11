@@ -114,3 +114,4 @@ site/
 .turbo/
 
 test.html
+apps/desktop/dist-electron

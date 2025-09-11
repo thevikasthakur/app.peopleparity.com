@@ -6,20 +6,36 @@
     "output": "dist-electron",
     "buildResources": "build"
   },
+  "asar": {
+    "smartUnpack": false
+  },
   "files": [
     "dist/**/*",
     "!dist/main/*.map",
     "!dist/renderer/*.map",
     "package.json",
-    "!node_modules/uiohook-napi/build/**/*",
-    "node_modules/uiohook-napi/build/Release/uiohook.node"
+    "node_modules/**/*",
+    "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+    "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+    "!node_modules/**/*.d.ts",
+    "!node_modules/.bin",
+    "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+    "!.editorconfig",
+    "!**/._*",
+    "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+    "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+    "!**/{appveyor.yml,.travis.yml,circle.yml}",
+    "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
   ],
   "asarUnpack": [
     "node_modules/better-sqlite3/**/*",
     "node_modules/uiohook-napi/**/*",
     "node_modules/sharp/**/*",
+    "node_modules/@img/**/*",
     "node_modules/screenshot-desktop/**/*"
   ],
+  "npmRebuild": true,
+  "buildDependenciesFromSource": false,
   "mac": {
     "category": "public.app-category.productivity",
     "icon": "build/icon.icns",
@@ -27,10 +43,7 @@
     "gatekeeperAssess": false,
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
-    "extendInfo": {
-      "NSAppleEventsUsageDescription": "People Parity needs to monitor your activity to track productive time.",
-      "NSScreenCaptureUsageDescription": "People Parity needs to capture screenshots to verify work activity."
-    },
+    "extendInfo": "build/Info.plist",
     "target": [
       {
         "target": "dmg",
@@ -72,7 +85,6 @@
       }
     ],
     "icon": "build/icon.ico",
-    "publisherName": "People Parity Inc.",
     "requestedExecutionLevel": "requireAdministrator"
   },
   "nsis": {
@@ -96,12 +108,7 @@
       }
     ],
     "category": "Utility",
-    "icon": "build/icons",
-    "desktop": {
-      "Name": "People Parity",
-      "Comment": "Time tracking and productivity monitoring",
-      "Categories": "Utility;Office;"
-    }
+    "icon": "build/icons"
   },
   "publish": [
     {

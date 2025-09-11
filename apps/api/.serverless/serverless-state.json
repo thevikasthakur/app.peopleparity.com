@@ -1,17 +1,17 @@
 {
   "service": {
-    "service": "pp-api",
+    "service": "ppv1",
     "serviceObject": {
-      "name": "pp-api"
+      "name": "ppv1"
     },
     "provider": {
       "name": "aws",
       "profile": "pp-api",
       "runtime": "nodejs22.x",
       "region": "ap-south-1",
-      "stage": "dev",
-      "memorySize": 512,
-      "timeout": 20,
+      "stage": "prod",
+      "memorySize": 3008,
+      "timeout": 31,
       "logRetentionInDays": 14,
       "httpApi": {
         "cors": true
@@ -21,8 +21,8 @@
       },
       "environment": {
         "NODE_OPTIONS": "--enable-source-maps",
-        "STAGE": "dev",
-        "SCREENSHOTS_BUCKET": "pp-tracker-screenshots-dev",
+        "STAGE": "prod",
+        "SCREENSHOTS_BUCKET": "ppv1-screenshots-prod",
         "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
         "DATABASE_PORT": "6543",
         "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
@@ -49,7 +49,7 @@
               "Action": [
                 "s3:ListBucket"
               ],
-              "Resource": "arn:aws:s3:::pp-tracker-screenshots-dev"
+              "Resource": "arn:aws:s3:::ppv1-screenshots-prod"
             },
             {
               "Effect": "Allow",
@@ -58,7 +58,7 @@
                 "s3:PutObject",
                 "s3:DeleteObject"
               ],
-              "Resource": "arn:aws:s3:::pp-tracker-screenshots-dev/*"
+              "Resource": "arn:aws:s3:::ppv1-screenshots-prod/*"
             }
           ]
         }
@@ -71,7 +71,7 @@
           "ApiLogGroup": {
             "Type": "AWS::Logs::LogGroup",
             "Properties": {
-              "LogGroupName": "/aws/lambda/pp-api-dev-api",
+              "LogGroupName": "/aws/lambda/ppv1-prod-api",
               "RetentionInDays": 14
             }
           },
@@ -100,8 +100,8 @@
                     "Fn::Join": [
                       "-",
                       [
-                        "pp-api",
-                        "dev",
+                        "ppv1",
+                        "prod",
                         "lambda"
                       ]
                     ]
@@ -118,7 +118,7 @@
                         ],
                         "Resource": [
                           {
-                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/pp-api-dev*:*"
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ppv1-prod*:*"
                           }
                         ]
                       },
@@ -129,7 +129,7 @@
                         ],
                         "Resource": [
                           {
-                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/pp-api-dev*:*:*"
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ppv1-prod*:*:*"
                           }
                         ]
                       },
@@ -158,8 +158,8 @@
                 "Fn::Join": [
                   "-",
                   [
-                    "pp-api",
-                    "dev",
+                    "ppv1",
+                    "prod",
                     {
                       "Ref": "AWS::Region"
                     },
@@ -174,21 +174,21 @@
             "Properties": {
               "Code": {
                 "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
-                "S3Key": "serverless/pp-api/dev/1757357675363-2025-09-08T18:54:35.363Z/pp-api.zip"
+                "S3Key": "serverless/ppv1/prod/1757454197166-2025-09-09T21:43:17.166Z/ppv1.zip"
               },
               "Handler": "src/lambda.handler",
               "Runtime": "nodejs22.x",
-              "FunctionName": "pp-api-dev-api",
-              "MemorySize": 512,
-              "Timeout": 20,
+              "FunctionName": "ppv1-prod-api",
+              "MemorySize": 3008,
+              "Timeout": 31,
               "TracingConfig": {
                 "Mode": "Active"
               },
               "Environment": {
                 "Variables": {
                   "NODE_OPTIONS": "--enable-source-maps",
-                  "STAGE": "dev",
-                  "SCREENSHOTS_BUCKET": "pp-tracker-screenshots-dev",
+                  "STAGE": "prod",
+                  "SCREENSHOTS_BUCKET": "ppv1-screenshots-prod",
                   "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
                   "DATABASE_PORT": "6543",
                   "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
@@ -219,20 +219,20 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersionRseCUxEoR2Skt9kmsch0A9nF6M01Fe73SL55j7qv0": {
+          "ApiLambdaVersionKX1NI27or8YSegMP5N87d639ChBWVQHOpiUUalpQ": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "OpCiCQotOBSOm+oRtZUBg6AZSdtWf1xx3Dd1KVWoKRM="
+              "CodeSha256": "h4F0q6dFA8Fx6MsUP/GMRCzLXKiYy2AzStn2KB6QrFU="
             }
           },
           "HttpApi": {
             "Type": "AWS::ApiGatewayV2::Api",
             "Properties": {
-              "Name": "dev-pp-api",
+              "Name": "prod-ppv1",
               "ProtocolType": "HTTP",
               "CorsConfiguration": {
                 "AllowHeaders": [
@@ -367,15 +367,13 @@
           },
           "ScreenshotsBucket": {
             "Type": "AWS::S3::Bucket",
-            "DeletionPolicy": "Retain",
-            "UpdateReplacePolicy": "Retain",
             "Properties": {
-              "BucketName": "pp-tracker-screenshots-dev",
+              "BucketName": "ppv1-screenshots-prod",
               "PublicAccessBlockConfiguration": {
                 "BlockPublicAcls": true,
-                "BlockPublicPolicy": true,
+                "BlockPublicPolicy": false,
                 "IgnorePublicAcls": true,
-                "RestrictPublicBuckets": true
+                "RestrictPublicBuckets": false
               },
               "BucketEncryption": {
                 "ServerSideEncryptionConfiguration": [
@@ -387,22 +385,46 @@
                 ]
               }
             }
+          },
+          "ScreenshotsBucketPolicy": {
+            "Type": "AWS::S3::BucketPolicy",
+            "Properties": {
+              "Bucket": {
+                "Ref": "ScreenshotsBucket"
+              },
+              "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "PublicReadThumbs",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": [
+                      {
+                        "Fn::Sub": "arn:aws:s3:::ppv1-screenshots-prod/inzint/*/thumb/*"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
           }
         },
         "Outputs": {
           "ServerlessDeploymentBucketName": {
             "Value": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
             "Export": {
-              "Name": "sls-pp-api-dev-ServerlessDeploymentBucketName"
+              "Name": "sls-ppv1-prod-ServerlessDeploymentBucketName"
             }
           },
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersionRseCUxEoR2Skt9kmsch0A9nF6M01Fe73SL55j7qv0"
+              "Ref": "ApiLambdaVersionKX1NI27or8YSegMP5N87d639ChBWVQHOpiUUalpQ"
             },
             "Export": {
-              "Name": "sls-pp-api-dev-ApiLambdaFunctionQualifiedArn"
+              "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
             }
           },
           "HttpApiId": {
@@ -411,7 +433,7 @@
               "Ref": "HttpApi"
             },
             "Export": {
-              "Name": "sls-pp-api-dev-HttpApiId"
+              "Name": "sls-ppv1-prod-HttpApiId"
             }
           },
           "HttpApiUrl": {
@@ -436,13 +458,13 @@
               ]
             },
             "Export": {
-              "Name": "sls-pp-api-dev-HttpApiUrl"
+              "Name": "sls-ppv1-prod-HttpApiUrl"
             }
           },
           "ScreenshotsBucketName": {
-            "Value": "pp-tracker-screenshots-dev",
+            "Value": "ppv1-screenshots-prod",
             "Export": {
-              "Name": "pp-api-dev-ScreenshotsBucketName"
+              "Name": "ppv1-prod-ScreenshotsBucketName"
             }
           }
         }
@@ -450,9 +472,16 @@
       "vpc": {}
     },
     "custom": {
-      "screenshotsBucket": "pp-tracker-screenshots-dev",
+      "screenshotsBucket": "ppv1-screenshots-prod",
       "dotenv": {
         "logging": false
+      },
+      "serverless-offline": {
+        "httpPort": 3001,
+        "lambdaPort": 3002,
+        "noPrependStageInUrl": true,
+        "timeout": 60,
+        "host": "0.0.0.0"
       }
     },
     "plugins": [
@@ -481,31 +510,29 @@
             "resolvedPath": "/"
           }
         ],
-        "name": "pp-api-dev-api",
+        "name": "ppv1-prod-api",
         "environment": {
           "NODE_OPTIONS": "--enable-source-maps"
         },
         "package": {},
-        "memory": 512,
-        "timeout": 20,
+        "memory": 3008,
+        "timeout": 31,
         "runtime": "nodejs22.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersionRseCUxEoR2Skt9kmsch0A9nF6M01Fe73SL55j7qv0"
+        "versionLogicalId": "ApiLambdaVersionKX1NI27or8YSegMP5N87d639ChBWVQHOpiUUalpQ"
       }
     },
     "resources": {
       "Resources": {
         "ScreenshotsBucket": {
           "Type": "AWS::S3::Bucket",
-          "DeletionPolicy": "Retain",
-          "UpdateReplacePolicy": "Retain",
           "Properties": {
-            "BucketName": "pp-tracker-screenshots-dev",
+            "BucketName": "ppv1-screenshots-prod",
             "PublicAccessBlockConfiguration": {
               "BlockPublicAcls": true,
-              "BlockPublicPolicy": true,
+              "BlockPublicPolicy": false,
               "IgnorePublicAcls": true,
-              "RestrictPublicBuckets": true
+              "RestrictPublicBuckets": false
             },
             "BucketEncryption": {
               "ServerSideEncryptionConfiguration": [
@@ -517,13 +544,37 @@
               ]
             }
           }
+        },
+        "ScreenshotsBucketPolicy": {
+          "Type": "AWS::S3::BucketPolicy",
+          "Properties": {
+            "Bucket": {
+              "Ref": "ScreenshotsBucket"
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "PublicReadThumbs",
+                  "Effect": "Allow",
+                  "Principal": "*",
+                  "Action": "s3:GetObject",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::ppv1-screenshots-prod/inzint/*/thumb/*"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
         }
       },
       "Outputs": {
         "ScreenshotsBucketName": {
-          "Value": "pp-tracker-screenshots-dev",
+          "Value": "ppv1-screenshots-prod",
           "Export": {
-            "Name": "pp-api-dev-ScreenshotsBucketName"
+            "Name": "ppv1-prod-ScreenshotsBucketName"
           }
         }
       }
@@ -531,7 +582,7 @@
     "configValidationMode": "warn",
     "serviceFilename": "serverless",
     "initialServerlessConfig": {
-      "service": "pp-api",
+      "service": "ppv1",
       "frameworkVersion": "4",
       "provider": {
         "$ref": "$[\"service\"][\"provider\"]"
@@ -549,12 +600,9 @@
           "format": "cjs",
           "target": "node22",
           "sourcemap": true,
-          "external": [
-            "@nestjs/websockets",
-            "@nestjs/websockets/socket-module",
-            "@nestjs/microservices",
-            "@nestjs/microservices/microservices-module"
-          ]
+          "keepNames": true,
+          "minify": false,
+          "packages": "external"
         }
       },
       "custom": {
@@ -572,7 +620,7 @@
     "layers": {}
   },
   "package": {
-    "artifactDirectoryName": "serverless/pp-api/dev/1757357675363-2025-09-08T18:54:35.363Z",
-    "artifact": "pp-api.zip"
+    "artifactDirectoryName": "serverless/ppv1/prod/1757454197166-2025-09-09T21:43:17.166Z",
+    "artifact": "ppv1.zip"
   }
 }
