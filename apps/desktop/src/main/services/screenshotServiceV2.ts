@@ -17,9 +17,11 @@ export class ScreenshotServiceV2 {
   private captureTimers: Map<number, NodeJS.Timeout> = new Map();
   private activityTracker: ActivityTrackerV2 | null = null;
   private lastScreenshotWindow: number = -1; // Track the last window we took a screenshot in
+  private autoSessionCreationEnabled = true; // Flag to control auto session creation
   
   constructor(private db: DatabaseService) {
     this.screenshotDir = path.join(app.getPath('userData'), 'screenshots');
+    console.log('📂 Screenshot directory:', this.screenshotDir);
     this.ensureScreenshotDir();
   }
   
@@ -34,12 +36,17 @@ export class ScreenshotServiceV2 {
     }
     
     console.log('📷 Starting screenshot service...');
+    console.log('📷 Auto session creation enabled:', this.autoSessionCreationEnabled);
     this.isCapturing = true;
     
-    // Schedule screenshots immediately
+    // Capture initial screenshot immediately when starting
+    console.log('📸 Taking initial screenshot on session start...');
+    await this.captureScreenshot(0);
+    
+    // Then schedule regular screenshots
     this.scheduleNextScreenshot();
     
-    console.log('✅ Screenshot service started');
+    console.log('✅ Screenshot service started - will capture screenshots every 10 minutes');
   }
   
   stop() {
@@ -71,30 +78,49 @@ export class ScreenshotServiceV2 {
     const currentMinute = now.getMinutes();
     const windowStartMinute = Math.floor(currentMinute / 10) * 10;
     const windowEndMinute = windowStartMinute + 10;
+    const currentHour = now.getHours();
+    const currentWindowId = currentHour * 6 + Math.floor(currentMinute / 10);
     
-    // Always schedule for the NEXT window to avoid rapid-fire screenshots
-    // Generate a random time within the next 10-minute window
-    const nextWindowStart = windowEndMinute % 60; // Handle hour boundary
-    const randomOffsetMinutes = Math.random() * 10; // 0-10 minutes spread
+    // Check if we've already taken a screenshot in this window
+    const alreadyTakenInWindow = this.lastScreenshotWindow === currentWindowId;
     
-    // Calculate the target time
     let captureTime = new Date(now);
     
-    // If next window is in the next hour
-    if (windowEndMinute >= 60) {
-      captureTime.setHours(captureTime.getHours() + 1);
-    }
-    
-    // Set the minutes (now guaranteed to be < 60)
-    const targetMinute = nextWindowStart + randomOffsetMinutes;
-    captureTime.setMinutes(Math.floor(targetMinute));
-    captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
-    captureTime.setMilliseconds(0);
-    
-    // Make sure we're scheduling for the future
-    // If somehow we calculated a time in the past, add an hour
-    if (captureTime.getTime() <= now.getTime()) {
-      captureTime.setHours(captureTime.getHours() + 1);
+    if (!alreadyTakenInWindow && (currentMinute - windowStartMinute) < 8) {
+      // We're early in the current window and haven't taken a screenshot yet
+      // Schedule within the current window (2-8 minutes from window start)
+      const remainingMinutes = windowEndMinute - currentMinute;
+      const randomOffsetMinutes = 2 + Math.random() * Math.min(6, remainingMinutes - 2);
+      const targetMinute = windowStartMinute + randomOffsetMinutes;
+      
+      captureTime.setMinutes(Math.floor(targetMinute));
+      captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
+      captureTime.setMilliseconds(0);
+      
+      // Make sure it's in the future (at least 5 seconds from now)
+      if (captureTime.getTime() <= now.getTime() + 5000) {
+        captureTime.setTime(now.getTime() + 5000 + Math.random() * 10000);
+      }
+    } else {
+      // Schedule for the NEXT window
+      const nextWindowStart = windowEndMinute % 60;
+      const randomOffsetMinutes = Math.random() * 10; // 0-10 minutes spread
+      
+      // If next window is in the next hour
+      if (windowEndMinute >= 60) {
+        captureTime.setHours(captureTime.getHours() + 1);
+      }
+      
+      // Set the minutes
+      const targetMinute = nextWindowStart + randomOffsetMinutes;
+      captureTime.setMinutes(Math.floor(targetMinute));
+      captureTime.setSeconds(Math.floor((targetMinute % 1) * 60));
+      captureTime.setMilliseconds(0);
+      
+      // Make sure we're scheduling for the future
+      if (captureTime.getTime() <= now.getTime()) {
+        captureTime.setHours(captureTime.getHours() + 1);
+      }
     }
     
     const delay = captureTime.getTime() - now.getTime();
@@ -204,8 +230,14 @@ export class ScreenshotServiceV2 {
       }
     }
     
-    // If still no session, log warning but continue
+    // If still no session, check if auto-creation is allowed
     if (!session || !sessionId) {
+      if (!this.autoSessionCreationEnabled) {
+        console.log('⚠️ No active session and auto-creation disabled, skipping screenshot');
+        // Schedule next screenshot
+        this.scheduleNextScreenshot();
+        return;
+      }
       console.log('⚠️ No active session found, but continuing with screenshot capture');
       // Use a fallback session ID or create a temporary one
       sessionId = 'TEMP-' + Date.now();
@@ -216,7 +248,20 @@ export class ScreenshotServiceV2 {
     
     try {
       // Capture the screenshot
-      const img = await screenshot();
+      console.log('📷 Calling screenshot-desktop to capture screen...');
+      let img;
+      try {
+        img = await screenshot();
+      } catch (screenshotError: any) {
+        console.error('❌ screenshot-desktop error:', screenshotError.message);
+        console.error('Error details:', screenshotError);
+        throw screenshotError;
+      }
+      console.log('📷 Screenshot captured, buffer size:', img ? img.length : 0);
+      
+      if (!img || img.length === 0) {
+        throw new Error('Screenshot buffer is empty');
+      }
       
       // Generate filenames
       const filename = `${captureTime.getTime()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
@@ -224,17 +269,42 @@ export class ScreenshotServiceV2 {
       const thumbnailFilename = `thumb_${filename}`;
       const thumbnailPath = path.join(this.screenshotDir, thumbnailFilename);
       
+      console.log('📷 Saving screenshot to:', localPath);
+      console.log('🔍 Debug - localPath type:', typeof localPath, 'value:', localPath);
+      console.log('🔍 Debug - img type:', typeof img, 'isBuffer:', Buffer.isBuffer(img), 'length:', img?.length);
+      
       // Save full size image
-      await sharp(img)
-        .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toFile(localPath);
+      try {
+        // Ensure localPath is a string
+        const pathStr = String(localPath);
+        console.log('🔍 Debug - Using pathStr:', pathStr);
+        
+        await sharp(img)
+          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toFile(pathStr);
+      } catch (sharpError: any) {
+        console.error('❌ Sharp error (full size):', sharpError.message);
+        throw sharpError;
+      }
+      
+      console.log('📷 Saving thumbnail to:', thumbnailPath);
       
       // Save thumbnail
-      await sharp(img)
-        .resize(320, 180, { fit: 'cover' })
-        .jpeg({ quality: 70 })
-        .toFile(thumbnailPath);
+      try {
+        // Ensure thumbnailPath is a string
+        const thumbPathStr = String(thumbnailPath);
+        
+        await sharp(img)
+          .resize(320, 180, { fit: 'cover' })
+          .jpeg({ quality: 70 })
+          .toFile(thumbPathStr);
+      } catch (sharpError: any) {
+        console.error('❌ Sharp error (thumbnail):', sharpError.message);
+        throw sharpError;
+      }
+      
+      console.log('📷 Screenshot and thumbnail saved successfully');
       
       // Get the current activity directly from the database service
       const currentActivity = (this.db as any).getCurrentActivityNote?.() || session?.task || 'Working';
@@ -278,6 +348,22 @@ export class ScreenshotServiceV2 {
     const screenshot = await this.db.getScreenshot(screenshotId) as any;
     if (!screenshot || !screenshot.localPath) return null;
     return screenshot.localPath;
+  }
+  
+  /**
+   * Disable auto session creation (used after concurrent session detection)
+   */
+  disableAutoSessionCreation() {
+    console.log('🔒 Auto session creation disabled');
+    this.autoSessionCreationEnabled = false;
+  }
+  
+  /**
+   * Enable auto session creation (used when starting a new session)
+   */
+  enableAutoSessionCreation() {
+    console.log('🔓 Auto session creation enabled');
+    this.autoSessionCreationEnabled = true;
   }
   
   /**

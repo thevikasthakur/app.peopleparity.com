@@ -18,6 +18,11 @@ export class SessionsService {
     mode: 'client_hours' | 'command_hours';
     task?: string;
     startTime: Date;
+    appVersion?: string;
+    deviceInfo?: string;
+    realIpAddress?: string;
+    location?: { lat: number; lon: number } | null;
+    isVpnDetected?: boolean;
   }) {
     // End any active sessions first
     await this.endActiveSessions(createSessionDto.userId);
@@ -31,6 +36,13 @@ export class SessionsService {
     sessionData.id = createSessionDto.id || uuidv4();
     
     console.log('Creating session with ID:', sessionData.id);
+    console.log('Session metadata:', {
+      appVersion: sessionData.appVersion,
+      deviceInfo: sessionData.deviceInfo ? 'Present' : 'Not provided',
+      realIpAddress: sessionData.realIpAddress,
+      location: sessionData.location,
+      isVpnDetected: sessionData.isVpnDetected
+    });
 
     const session = this.sessionsRepository.create(sessionData);
 

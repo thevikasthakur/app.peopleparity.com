@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -10,6 +11,14 @@ import { ActivityModule } from './modules/activity/activity.module';
 import { ScreenshotsModule } from './modules/screenshots/screenshots.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+
+// Import all entities explicitly for serverless
+import { User } from './entities/user.entity';
+import { Organization } from './entities/organization.entity';
+import { Project } from './entities/project.entity';
+import { Session } from './entities/session.entity';
+import { ActivityPeriod } from './entities/activity-period.entity';
+import { Screenshot } from './entities/screenshot.entity';
 
 @Module({
   imports: [
@@ -25,11 +34,26 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
         username: configService.get('DATABASE_USER'),
         password: configService.get('DATABASE_PASSWORD'),
         database: configService.get('DATABASE_NAME'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        entities: [
+          User,
+          Organization,
+          Project,
+          Session,
+          ActivityPeriod,
+          Screenshot
+        ],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
-        synchronize: false, // Disabled after manual schema fix
-        migrationsRun: false, // Disable migrations temporarily
+        synchronize: false, // Use migrations for schema management
+        migrationsRun: true, // Enable migrations to run automatically
         logging: process.env.NODE_ENV === 'development',
+        ssl: configService.get('DATABASE_HOST')?.includes('supabase.com') 
+          ? { rejectUnauthorized: false }
+          : false,
+        connectTimeoutMS: 30000,
+        extra: {
+          max: 10,
+          connectionTimeoutMillis: 30000,
+        },
       }),
       inject: [ConfigService],
     }),

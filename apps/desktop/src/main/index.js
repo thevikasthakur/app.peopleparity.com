@@ -60,8 +60,60 @@ electron_1.app.whenReady().then(async () => {
         console.error('Failed to restore session:', error);
     }
     screenshotService = new screenshotService_1.ScreenshotService(databaseService);
+    
+    // Listen for session stop events to stop screenshot service
+    activityTracker.on('session:stopped', () => {
+        console.log('📷 Stopping screenshot service due to session stop');
+        screenshotService.stop();
+        
+        // Notify renderer that session has stopped
+        if (mainWindow) {
+            mainWindow.webContents.send('session-update', { isActive: false });
+        }
+    });
+    
+    // Listen for session start events to start screenshot service
+    activityTracker.on('session:started', (session) => {
+        console.log('📷 Starting screenshot service for new session');
+        screenshotService.start();
+        
+        // Notify renderer that session has started
+        if (mainWindow) {
+            mainWindow.webContents.send('session-update', { 
+                isActive: true, 
+                session: session 
+            });
+        }
+    });
+    
     apiSyncService = new apiSyncService_1.ApiSyncService(databaseService, store);
     browserBridge = new browserExtensionBridge_1.BrowserExtensionBridge();
+    
+    // Listen for concurrent session detection
+    electron_1.app.on('concurrent-session-detected', async (event) => {
+        console.error('🚫 CONCURRENT SESSION DETECTED!', event);
+        
+        // Stop the current session
+        if (activityTracker) {
+            await activityTracker.stopSession();
+        }
+        
+        // Show notification to user
+        if (mainWindow) {
+            mainWindow.webContents.send('concurrent-session-detected', {
+                title: 'Session Stopped',
+                message: 'Another device is already tracking time. This session has been stopped.',
+                details: event.details
+            });
+        }
+        
+        // Use electron dialog to show alert
+        const { dialog } = require('electron');
+        dialog.showErrorBox(
+            'Concurrent Session Detected',
+            'Another device is already tracking time for your account. This session has been stopped to prevent duplicate time tracking.'
+        );
+    });
     // Start API sync service
     apiSyncService.start();
     browserBridge.start();

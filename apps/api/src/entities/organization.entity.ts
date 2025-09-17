@@ -7,19 +7,19 @@ export class Organization {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', unique: true })
   name: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', unique: true })
   code: string;
 
-  @Column({ default: 'UTC' })
+  @Column({ type: 'varchar', default: 'UTC' })
   timezone: string;
 
-  @Column({ default: 'sunday' })
+  @Column({ type: 'varchar', default: 'sunday' })
   firstDayOfWeek: string;
 
-  @Column({ default: true })
+  @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
   @CreateDateColumn()

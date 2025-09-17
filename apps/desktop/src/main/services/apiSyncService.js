@@ -12,8 +12,9 @@ class ApiSyncService {
         this.store = store;
         this.syncInterval = null;
         this.isOnline = true;
+        const baseUrl = process.env.API_URL || 'http://localhost:3001';
         this.api = axios_1.default.create({
-            baseURL: process.env.API_URL || 'http://localhost:3001/api',
+            baseURL: `${baseUrl}/api`,
             timeout: 10000,
         });
         this.setupInterceptors();

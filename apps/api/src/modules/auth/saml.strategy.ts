@@ -8,10 +8,10 @@ export class MicrosoftSamlStrategy extends PassportStrategy(SamlStrategy, 'saml'
   constructor(private configService: ConfigService) {
     super({
       // SAML configuration for Microsoft Azure AD
-      entryPoint: configService.get('SAML_ENTRY_POINT') || 'https://login.microsoftonline.com/{tenant-id}/saml2',
-      issuer: configService.get('SAML_ISSUER') || 'http://localhost:3001',
-      callbackUrl: configService.get('SAML_CALLBACK_URL') || 'http://localhost:3001/api/auth/saml/callback',
-      cert: configService.get('SAML_CERT') || '', // Microsoft's public certificate
+      entryPoint: process.env.SAML_ENTRY_POINT || 'https://login.microsoftonline.com/{tenant-id}/saml2',
+      issuer: process.env.SAML_ISSUER || 'http://localhost:3001',
+      callbackUrl: process.env.SAML_CALLBACK_URL || 'http://localhost:3001/api/auth/saml/callback',
+      cert: process.env.SAML_CERT || '', // Microsoft's public certificate
       identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
       disableRequestedAuthnContext: true,
       signatureAlgorithm: 'sha256',

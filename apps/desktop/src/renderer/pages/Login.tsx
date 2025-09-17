@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Eye, EyeOff, Loader2, Zap, Coffee, Code2, Clock } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Coffee, Code2, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
+import logoImage from '../tiny-logo.png';
 
 const funnyLoadingMessages = [
   "Waking up the hamsters... 🐹",
@@ -16,7 +17,7 @@ const loginQuotes = [
   "Ready to pretend you're productive? 😏",
   "Time to track those 'productive' hours! 📊",
   "Welcome back, keyboard warrior! ⌨️",
-  "Let's make those hours count! (or at least look like they do) 🎯",
+  "Let's make those hours count! 🎯",
   "Another day, another dashboard to impress! 💪"
 ];
 
@@ -45,7 +46,10 @@ export function Login() {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError('Invalid credentials. Did you forget your password again? 🤔');
+      alert(err);
+      console.error('Login failed:', err);
+      setError(JSON.stringify(err));
+      // setError('Invalid credentials. Did you forget your password again? 🤔');
     } finally {
       clearInterval(messageInterval);
       setIsLoading(false);
@@ -67,9 +71,9 @@ export function Login() {
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ type: "spring", stiffness: 260, damping: 20 }}
-              className="w-20 h-20 mx-auto mb-4 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl flex items-center justify-center shadow-lg"
+              className="w-20 h-20 mx-auto mb-4 flex items-center justify-center"
             >
-              <Zap className="w-10 h-10 text-white" />
+              <img src={logoImage} alt="People Parity Logo" className="w-20 h-20 object-contain" />
             </motion.div>
             
             <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
@@ -179,8 +183,13 @@ export function Login() {
                   setError('Failed to start Microsoft login. Please try again.');
                 }
               } else {
-                // Fallback for browser environment
-                window.location.href = 'http://localhost:3001/api/auth/saml/login';
+                // Fallback for browser environment - get API URL from backend
+                if (window.electronAPI?.auth?.getApiUrl) {
+                  const apiUrl = await window.electronAPI.auth.getApiUrl();
+                  window.location.href = `${apiUrl}/api/auth/saml/login`;
+                } else {
+                  window.location.href = 'http://localhost:3001/api/auth/saml/login';
+                }
               }
             }}
             disabled={isLoading}

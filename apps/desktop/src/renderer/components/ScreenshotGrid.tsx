@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
+import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader, RotateCw, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ActivityModal } from './ActivityModal';
 
@@ -52,6 +52,8 @@ interface Screenshot {
     metricsBreakdown?: any;
   }[];
   syncStatus?: SyncStatus;
+  isFromDifferentDevice?: boolean; // Flag for screenshots from other devices
+  deviceInfo?: string; // Which device captured this
 }
 
 interface DetailedMetrics {
@@ -277,12 +279,17 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [modalScreenshot, setModalScreenshot] = useState<Screenshot | null>(null);
+  const [modalScreenshotIndex, setModalScreenshotIndex] = useState<number>(-1);
   const [detailedMetrics, setDetailedMetrics] = useState<DetailedMetrics[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [currentEditActivity, setCurrentEditActivity] = useState('');
   const [recentActivities, setRecentActivities] = useState<string[]>([]);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+  const [signedFullUrl, setSignedFullUrl] = useState<string | null>(null);
+  const [loadingSignedUrl, setLoadingSignedUrl] = useState(false);
+  const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Load recent activities when modal opens
@@ -299,6 +306,130 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
       }
     }
   }, [showEditActivityModal, selectedIds, screenshots]);
+
+  // Fetch signed URL when modal opens
+  useEffect(() => {
+    const fetchSignedUrl = async () => {
+      if (!modalScreenshot) {
+        setSignedFullUrl(null);
+        return;
+      }
+
+      // Check if we have a valid cached URL for this screenshot
+      const cached = signedUrlCacheRef.current.get(modalScreenshot.id);
+      const now = Date.now();
+      
+      if (cached && cached.expiresAt > now) {
+        // Use cached URL if it's still valid (with 30 second buffer)
+        console.log(`Using cached signed URL for screenshot ${modalScreenshot.id}, expires in ${Math.round((cached.expiresAt - now) / 1000)}s`);
+        setSignedFullUrl(cached.url);
+        return;
+      }
+
+      // Remove expired cache entry if it exists
+      if (cached) {
+        console.log(`Cached signed URL expired for screenshot ${modalScreenshot.id}, fetching new one`);
+        signedUrlCacheRef.current.delete(modalScreenshot.id);
+      }
+
+      setLoadingSignedUrl(true);
+      try {
+        const response = await window.electronAPI.screenshots.fetchSignedUrl(modalScreenshot.id);
+
+        if (response.success && response.signedUrl) {
+          // Cache the URL with expiration time (5 minutes minus 30 second buffer)
+          const expiresAt = now + ((response.expiresIn || 300) - 30) * 1000;
+          signedUrlCacheRef.current.set(modalScreenshot.id, {
+            url: response.signedUrl,
+            expiresAt
+          });
+          
+          console.log(`Cached new signed URL for screenshot ${modalScreenshot.id}, expires at ${new Date(expiresAt).toLocaleTimeString()}`);
+          setSignedFullUrl(response.signedUrl);
+        } else {
+          console.error('Failed to fetch signed URL:', response.error);
+          // Fall back to using the regular URL
+          setSignedFullUrl(null);
+        }
+      } catch (error) {
+        console.error('Error fetching signed URL:', error);
+        setSignedFullUrl(null);
+      } finally {
+        setLoadingSignedUrl(false);
+      }
+    };
+
+    fetchSignedUrl();
+  }, [modalScreenshot]);
+
+  // Clean up expired cache entries periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const cache = signedUrlCacheRef.current;
+      let cleanedCount = 0;
+      
+      for (const [id, entry] of cache.entries()) {
+        if (entry.expiresAt <= now) {
+          cache.delete(id);
+          cleanedCount++;
+        }
+      }
+      
+      if (cleanedCount > 0) {
+        console.log(`Cleaned up ${cleanedCount} expired signed URL cache entries`);
+      }
+    }, 60000); // Clean up every minute
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
+  // Navigate to previous/next screenshot
+  const navigateScreenshot = (direction: 'prev' | 'next') => {
+    if (modalScreenshotIndex === -1) return;
+    
+    let newIndex = modalScreenshotIndex;
+    if (direction === 'prev') {
+      newIndex = modalScreenshotIndex > 0 ? modalScreenshotIndex - 1 : screenshots.length - 1;
+    } else {
+      newIndex = modalScreenshotIndex < screenshots.length - 1 ? modalScreenshotIndex + 1 : 0;
+    }
+    
+    setModalScreenshotIndex(newIndex);
+    setModalScreenshot(screenshots[newIndex]);
+    setSignedFullUrl(null); // Reset signed URL to fetch new one
+  };
+
+  // Handle keyboard navigation for screenshot modal
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (!modalScreenshot) return;
+      
+      switch(event.key) {
+        case 'Escape':
+          setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
+          setModalScreenshotIndex(-1);
+          break;
+        case 'ArrowLeft':
+          event.preventDefault();
+          navigateScreenshot('prev');
+          break;
+        case 'ArrowRight':
+          event.preventDefault();
+          navigateScreenshot('next');
+          break;
+      }
+    };
+
+    if (modalScreenshot) {
+      document.addEventListener('keydown', handleKeyPress);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [modalScreenshot, modalScreenshotIndex, screenshots]);
 
   const loadRecentActivities = async () => {
     try {
@@ -456,6 +587,18 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
     );
   }
 
+  // Check if we need to add date separators (for when UTC date != local date)
+  const getLocalDateString = (timestamp: Date) => {
+    return timestamp.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+  
+  // Track when local date changes
+  let lastLocalDate: string | null = null;
+  
   return (
     <div className="space-y-4">
       {Object.entries(hourGroups).map(([hour, hourScreenshots]) => {
@@ -512,8 +655,27 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
         
         console.log(`Hour ${hour} activity groups:`, activityGroups);
 
+        // Check if we need a date separator
+        const firstValidScreenshot = validScreenshots[0];
+        const currentLocalDate = firstValidScreenshot ? getLocalDateString(firstValidScreenshot.timestamp) : null;
+        const showDateSeparator = currentLocalDate && currentLocalDate !== lastLocalDate;
+        if (currentLocalDate) {
+          lastLocalDate = currentLocalDate;
+        }
+
         return (
           <div key={hour} className="space-y-2">
+            {showDateSeparator && (
+              <div className="flex items-center gap-3 py-2 mt-4 first:mt-0">
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+                <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-600">{currentLocalDate}</span>
+                  <span className="text-xs text-gray-400">(Local Time)</span>
+                </div>
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="w-4 h-4" />
               <span className="font-medium">{hour}</span>
@@ -535,6 +697,31 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   >
                     <div className="absolute top-1 left-1 text-xs text-gray-400">
                       {slotLabel}
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Check if this is a screenshot from a different device
+              if (screenshot.isFromDifferentDevice) {
+                return (
+                  <div
+                    key={`different-device-${hour}-${index}`}
+                    className="relative aspect-video rounded-lg bg-amber-50 border-2 border-amber-200"
+                  >
+                    <div className="absolute top-1 left-1 text-xs text-amber-600">
+                      {slotLabel}
+                    </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-2">
+                      <Monitor className="w-8 h-8 text-amber-400 mb-1" />
+                      <div className="text-xs text-amber-600 text-center font-medium">
+                        Different Device
+                      </div>
+                      {screenshot.deviceInfo && (
+                        <div className="text-[10px] text-amber-500 mt-1 truncate max-w-full px-1">
+                          {screenshot.deviceInfo}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -562,6 +749,8 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     }
                   `}
                   onClick={() => {
+                    const index = screenshots.findIndex(s => s.id === screenshot.id);
+                    setModalScreenshotIndex(index);
                     setModalScreenshot(screenshot);
                     fetchDetailedMetrics(screenshot);
                   }}
@@ -590,6 +779,73 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   {/* Gray overlay for non-synced screenshots */}
                   {isNotFullySynced && (
                     <div className="absolute inset-0 bg-gray-600/20 backdrop-blur-[0.5px] pointer-events-none" />
+                  )}
+                  
+                  {/* Retry button for failed or stuck partial uploads */}
+                  {((screenshot.syncStatus?.status === 'failed' && percentageToTenScale(screenshot.activityScore) > 0) ||
+                    (screenshot.syncStatus?.status === 'partial')) && (
+                    <button
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 text-white rounded-full transition-all shadow-lg ${
+                        retryingIds.has(screenshot.id) 
+                          ? 'bg-blue-500 cursor-not-allowed animate-pulse' 
+                          : 'bg-orange-500 hover:bg-orange-600'
+                      }`}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        
+                        // Prevent multiple clicks
+                        if (retryingIds.has(screenshot.id)) {
+                          console.log('Already retrying screenshot:', screenshot.id);
+                          return;
+                        }
+                        
+                        console.log('Retrying sync for screenshot:', screenshot.id);
+                        
+                        // Add to retrying set for visual feedback
+                        setRetryingIds(prev => new Set(prev).add(screenshot.id));
+                        
+                        try {
+                          const result = await (window as any).electronAPI.screenshots.retrySync(screenshot.id);
+                          
+                          // Keep the loading state for a moment to show progress
+                          await new Promise(resolve => setTimeout(resolve, 1500));
+                          
+                          if (result.success) {
+                            console.log('Successfully retried sync');
+                            // Refresh the screenshots to update sync status
+                            if (onRefresh) {
+                              await onRefresh();
+                            }
+                          } else {
+                            // Only show error if it's not the "not in queue" error for partial uploads
+                            if (!result.error?.includes('not found in sync queue')) {
+                              console.error('Failed to retry sync:', result.error);
+                              alert(`Failed to retry sync: ${result.error}`);
+                            } else {
+                              // For partial uploads not in queue, still refresh to show updated status
+                              console.log('Item not in queue (likely already syncing), refreshing...');
+                              if (onRefresh) {
+                                await onRefresh();
+                              }
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error retrying sync:', error);
+                          alert(`Error retrying sync: ${error.message || 'Unknown error'}`);
+                        } finally {
+                          // Remove from retrying set
+                          setRetryingIds(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(screenshot.id);
+                            return newSet;
+                          });
+                        }
+                      }}
+                      title={retryingIds.has(screenshot.id) ? "Uploading..." : "Retry upload"}
+                      disabled={retryingIds.has(screenshot.id)}
+                    >
+                      <RotateCw className={`w-3 h-3 ${retryingIds.has(screenshot.id) ? 'animate-spin' : ''}`} />
+                    </button>
                   )}
                   
                   {/* Selection Checkbox */}
@@ -736,7 +992,12 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               const screenshotIdsToDelete = Array.from(selectedIds);
               console.log('[UI] Delete button clicked for screenshots:', screenshotIdsToDelete);
               
-              if (confirm(`Are you sure you want to delete ${selectedIds.size} screenshot(s)? This action cannot be undone.`)) {
+              const totalMinutes = selectedIds.size * 10;
+              const hours = Math.floor(totalMinutes / 60);
+              const minutes = totalMinutes % 60;
+              const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} minutes`;
+              
+              if (confirm(`Are you sure you want to delete ${selectedIds.size} screenshot(s)?\n\n⚠️ WARNING: This will permanently reduce your logged time by ${timeString}.\n\nThis action cannot be undone and will affect both local and cloud records.`)) {
                 console.log('[UI] User confirmed deletion');
                 try {
                   console.log('[UI] Calling electronAPI.screenshots.delete with IDs:', screenshotIdsToDelete);
@@ -792,14 +1053,14 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
             onClick={() => setModalScreenshot(null)}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-[calc(100vw-20px)] max-w-[calc(100vw-20px)] h-[94vh] bg-white rounded-xl overflow-hidden shadow-2xl"
+              className="relative w-full h-full bg-white overflow-hidden shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -820,17 +1081,87 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     const statusInfo = getSyncStatusInfo(modalScreenshot.syncStatus);
                     const Icon = statusInfo.icon;
                     return (
-                      <div className={`
-                        px-3 py-1 rounded-full text-xs font-medium
-                        flex items-center gap-1.5 ${statusInfo.bgColor} ${statusInfo.color}
-                        border ${statusInfo.borderColor}
-                      `}>
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{statusInfo.label}</span>
-                        {statusInfo.showProgress && statusInfo.progress && (
-                          <span className="ml-1 opacity-75">
-                            ({Math.round(statusInfo.progress)}%)
-                          </span>
+                      <div className="flex items-center gap-2">
+                        <div className={`
+                          px-3 py-1 rounded-full text-xs font-medium
+                          flex items-center gap-1.5 ${statusInfo.bgColor} ${statusInfo.color}
+                          border ${statusInfo.borderColor}
+                        `}>
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{statusInfo.label}</span>
+                          {statusInfo.showProgress && statusInfo.progress && (
+                            <span className="ml-1 opacity-75">
+                              ({Math.round(statusInfo.progress)}%)
+                            </span>
+                          )}
+                        </div>
+                        {/* Retry button for failed or stuck partial uploads */}
+                        {((modalScreenshot.syncStatus.status === 'failed' && percentageToTenScale(modalScreenshot.activityScore) > 0) ||
+                          (modalScreenshot.syncStatus.status === 'partial')) && (
+                          <button
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
+                              retryingIds.has(modalScreenshot.id)
+                                ? 'bg-blue-500 text-white cursor-not-allowed animate-pulse'
+                                : 'bg-orange-500 text-white hover:bg-orange-600'
+                            }`}
+                            onClick={async () => {
+                              // Prevent multiple clicks
+                              if (retryingIds.has(modalScreenshot.id)) {
+                                console.log('Already retrying screenshot:', modalScreenshot.id);
+                                return;
+                              }
+                              
+                              console.log('Retrying sync for screenshot:', modalScreenshot.id);
+                              
+                              // Add to retrying set for visual feedback
+                              setRetryingIds(prev => new Set(prev).add(modalScreenshot.id));
+                              
+                              try {
+                                const result = await (window as any).electronAPI.screenshots.retrySync(modalScreenshot.id);
+                                
+                                // Keep the loading state for a moment to show progress
+                                await new Promise(resolve => setTimeout(resolve, 1500));
+                                
+                                if (result.success) {
+                                  console.log('Successfully retried sync');
+                                  // Close modal and refresh
+                                  setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
+                                  if (onRefresh) {
+                                    await onRefresh();
+                                  }
+                                } else {
+                                  // Only show error if it's not the "not in queue" error for partial uploads
+                                  if (!result.error?.includes('not found in sync queue')) {
+                                    console.error('Failed to retry sync:', result.error);
+                                    alert(`Failed to retry sync: ${result.error}`);
+                                  } else {
+                                    // For partial uploads not in queue, still refresh to show updated status
+                                    console.log('Item not in queue (likely already syncing), closing modal and refreshing...');
+                                    setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
+                                    if (onRefresh) {
+                                      await onRefresh();
+                                    }
+                                  }
+                                }
+                              } catch (error) {
+                                console.error('Error retrying sync:', error);
+                                alert(`Error retrying sync: ${error.message || 'Unknown error'}`);
+                              } finally {
+                                // Remove from retrying set
+                                setRetryingIds(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(modalScreenshot.id);
+                                  return newSet;
+                                });
+                              }
+                            }}
+                            disabled={retryingIds.has(modalScreenshot.id)}
+                          >
+                            <RotateCw className={`w-3 h-3 ${retryingIds.has(modalScreenshot.id) ? 'animate-spin' : ''}`} />
+                            <span>{retryingIds.has(modalScreenshot.id) ? 'Uploading...' : 'Retry Upload'}</span>
+                          </button>
                         )}
                       </div>
                     );
@@ -850,24 +1181,58 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
               
               {/* Modal Body - Side by side layout */}
               <div className="h-[calc(100%-4rem)] flex">
-                {/* Left side - Large Screenshot Image */}
-                <div className="flex-1 bg-gray-100 p-6 flex items-center justify-center overflow-auto">
-                  <img
-                    src={getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl)}
-                    alt="Full size screenshot"
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                    style={{ maxHeight: 'calc(94vh - 8rem)' }}
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      // Try thumbnail first
-                      if (img.src !== getSafeUrl(modalScreenshot.thumbnailUrl)) {
-                        img.src = getSafeUrl(modalScreenshot.thumbnailUrl);
-                      } else {
-                        // Final fallback
-                        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjQwMCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTNhZiI+U2NyZWVuc2hvdCBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4=';
-                      }
-                    }}
-                  />
+                {/* Left side - Large Screenshot Image with Navigation */}
+                <div className="flex-1 bg-gray-100 flex items-center justify-center overflow-auto relative">
+                  {/* Previous Arrow - Overlay on image */}
+                  <button
+                    onClick={() => navigateScreenshot('prev')}
+                    className="absolute left-6 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-black/70 backdrop-blur-sm rounded-full shadow-lg transition-all hover:scale-110 z-10"
+                    title="Previous screenshot (←)"
+                  >
+                    <ChevronLeft className="w-6 h-6 text-white" />
+                  </button>
+                  
+                  {/* Next Arrow - Overlay on image */}
+                  <button
+                    onClick={() => navigateScreenshot('next')}
+                    className="absolute right-6 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-black/70 backdrop-blur-sm rounded-full shadow-lg transition-all hover:scale-110 z-10"
+                    title="Next screenshot (→)"
+                  >
+                    <ChevronRight className="w-6 h-6 text-white" />
+                  </button>
+                  
+                  {/* Screenshot Counter */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/50 text-white rounded-full text-sm">
+                    {modalScreenshotIndex + 1} / {screenshots.length}
+                  </div>
+                  
+                  {loadingSignedUrl ? (
+                    <div className="flex items-center justify-center">
+                      <Loader className="w-8 h-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : (
+                    <img
+                      src={signedFullUrl || getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl)}
+                      alt="Full size screenshot"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement;
+                        // If signed URL fails, try regular full URL
+                        if (signedFullUrl && img.src === signedFullUrl) {
+                          console.warn('Signed URL failed, falling back to regular URL');
+                          setSignedFullUrl(null);
+                          img.src = getSafeUrl(modalScreenshot.fullUrl) || getSafeUrl(modalScreenshot.thumbnailUrl);
+                        }
+                        // Try thumbnail as next fallback
+                        else if (img.src !== getSafeUrl(modalScreenshot.thumbnailUrl)) {
+                          img.src = getSafeUrl(modalScreenshot.thumbnailUrl);
+                        } else {
+                          // Final fallback
+                          img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjQwMCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTNhZiI+U2NyZWVuc2hvdCBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4=';
+                        }
+                      }}
+                    />
+                  )}
                 </div>
                 
                 {/* Right side - Activity Details */}
@@ -1229,7 +1594,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                               <div className="bg-blue-50 rounded p-2">
                                 <div className="flex items-center gap-2 mb-2">
                                   <Activity className="w-4 h-4 text-blue-500" />
-                                  <span className="text-xs font-medium">Score Calculation</span>
+                                  <span className="text-xs font-medium">Activity Metrics</span>
                                 </div>
                                 <div className="space-y-1 text-xs">
                                   <div className="grid grid-cols-2 gap-2">
@@ -1237,43 +1602,14 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                                       <div key={key} className="flex justify-between">
                                         <span className="text-gray-600">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
                                         <span className="font-medium">
-                                          {typeof value === 'number' ? (value / 10).toFixed(1) : value}
+                                          {typeof value === 'number' ? value.toFixed(1) : value}
                                         </span>
                                       </div>
                                     ))}
                                   </div>
-                                  {metrics.scoreCalculation.penalties && Object.values(metrics.scoreCalculation.penalties).some(v => v > 0) && (
-                                    <div className="mt-1 pt-1 border-t">
-                                      <span className="text-red-600 font-medium">Penalties:</span>
-                                      {Object.entries(metrics.scoreCalculation.penalties).filter(([_, v]) => v > 0).map(([key, value]) => (
-                                        <div key={key} className="text-[10px] text-red-500">
-                                          -{value} ({key.replace(/([A-Z])/g, ' $1').trim()})
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {metrics.scoreCalculation.bonus?.mouseActivityBonus > 0 && (
-                                    <div className="mt-1 pt-1 border-t">
-                                      <div className="flex justify-between">
-                                        <span className="text-green-600 font-medium">Bonus:</span>
-                                        <span className="text-green-600 font-medium">
-                                          +{(metrics.scoreCalculation.bonus.mouseActivityBonus / 10).toFixed(1)}
-                                        </span>
-                                      </div>
-                                      <div className="text-[10px] text-green-500">
-                                        {metrics.scoreCalculation.bonus.description}
-                                      </div>
-                                    </div>
-                                  )}
                                   <div className="mt-1 pt-1 border-t">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Base Score:</span>
-                                      <span className="font-medium">
-                                        {percentageToTenScale((metrics.scoreCalculation.rawScore || 0) - (metrics.scoreCalculation.bonus?.mouseActivityBonus || 0)).toFixed(1)}
-                                      </span>
-                                    </div>
                                     <div className="flex justify-between font-bold">
-                                      <span className="text-gray-700">Final Score:</span>
+                                      <span className="text-gray-700">Overall Score:</span>
                                       {(() => {
                                         const scoreOutOf10 = percentageToTenScale(metrics.scoreCalculation.finalScore);
                                         const level = getActivityLevel(scoreOutOf10);
@@ -1318,6 +1654,7 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                             
                             // Close modal
                             setModalScreenshot(null);
+                            setModalScreenshotIndex(-1);
                             
                             // Refresh the screenshots
                             if (onRefresh) {

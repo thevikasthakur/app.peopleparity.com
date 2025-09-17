@@ -56,6 +56,11 @@ app.whenReady().then(async () => {
   databaseService.setActivityTracker(activityTracker as any); // Type cast for compatibility
   console.log('✅ Activity tracker V2 initialized');
   
+  // Initialize screenshot service V2 (before restoring session)
+  screenshotService = new ScreenshotServiceV2(databaseService);
+  screenshotService.setActivityTracker(activityTracker);
+  console.log('✅ Screenshot service V2 initialized');
+  
   // Restore existing active session if any
   try {
     const activeSession = databaseService.getActiveSession();
@@ -66,29 +71,99 @@ app.whenReady().then(async () => {
         activeSession.mode,
         activeSession.projectId || undefined
       );
-      console.log('✅ Session restored');
+      // Start screenshot service for the restored session
+      screenshotService.enableAutoSessionCreation();
+      screenshotService.start();
+      console.log('✅ Session restored and screenshot service started');
     } else {
-      console.log('ℹ️ No active session found');
+      console.log('ℹ️ No active session found - screenshot service NOT started');
     }
   } catch (error) {
     console.error('❌ Failed to restore session:', error);
   }
   
-  // Initialize screenshot service V2
-  screenshotService = new ScreenshotServiceV2(databaseService);
-  screenshotService.setActivityTracker(activityTracker);
-  console.log('✅ Screenshot service V2 initialized');
+  // Listen for session stop events to stop screenshot service
+  activityTracker.on('session:stopped', () => {
+    console.log('📷 Stopping screenshot service due to session stop');
+    screenshotService.stop();
+    
+    // Notify renderer that session has stopped
+    if (mainWindow) {
+      mainWindow.webContents.send('session-update', { isActive: false });
+    }
+  });
+  
+  // Listen for session start events to start screenshot service
+  activityTracker.on('session:started', async (session: any) => {
+    console.log('📷 Session started event received, starting screenshot service for new session:', session.id);
+    try {
+      // Re-enable auto session creation in case it was disabled
+      screenshotService.enableAutoSessionCreation();
+      await screenshotService.start();
+      console.log('✅ Screenshot service started successfully for session:', session.id);
+    } catch (error) {
+      console.error('❌ Failed to start screenshot service:', error);
+    }
+    
+    // Notify renderer that session has started
+    if (mainWindow) {
+      mainWindow.webContents.send('session-update', { 
+        isActive: true, 
+        session: session 
+      });
+    }
+  });
   
   // Initialize other services
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
   console.log('✅ API sync and browser bridge initialized');
   
-  // Start services
+  // Listen for concurrent session detection
+  app.on('concurrent-session-detected' as any, async (event: any) => {
+    console.error('🚫 CONCURRENT SESSION DETECTED!', event);
+    
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+    
+    // Stop the current session
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+    
+    // Clear sync queue for this session to prevent more alerts
+    if (event.sessionId) {
+      databaseService.clearSyncQueueForSession(event.sessionId);
+    }
+    
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('concurrent-session-detected', {
+        title: 'Session Stopped',
+        message: 'Another device is already tracking time. This session has been stopped.',
+        details: event.details
+      });
+    }
+    
+    // Use electron dialog to show alert (only once)
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Concurrent Session Detected',
+      'Another device is already tracking time for your account. This session has been stopped to prevent duplicate time tracking.'
+    );
+    
+    // Re-enable auto session creation after 30 seconds
+    setTimeout(() => {
+      screenshotService.enableAutoSessionCreation();
+      apiSyncService.resetConcurrentSessionFlag();
+    }, 30000);
+  });
+  
+  // Start services (but NOT screenshot service - it starts with sessions)
   apiSyncService.start();
   browserBridge.start();
-  screenshotService.start();
-  console.log('✅ All services started');
+  // screenshotService.start(); // DO NOT auto-start - only start when session starts
+  console.log('✅ API sync and browser bridge started');
   
   setupIpcHandlers();
   console.log('✅ IPC handlers registered');
@@ -110,7 +185,7 @@ app.on('activate', () => {
 function setupIpcHandlers() {
   // Auth handlers
   ipcMain.handle('auth:login', async (_, email: string, password: string) => {
-    return databaseService.authenticateUser(email, password);
+    return apiSyncService.login(email, password);
   });
   
   ipcMain.handle('auth:current-user', async () => {
@@ -123,8 +198,15 @@ function setupIpcHandlers() {
   });
   
   ipcMain.handle('auth:logout', async () => {
-    databaseService.clearCurrentUser();
-    return true;
+    return apiSyncService.logout();
+  });
+  
+  ipcMain.handle('auth:check-session', async () => {
+    return apiSyncService.checkSession();
+  });
+  
+  ipcMain.handle('auth:verify-token', async (_, token: string) => {
+    return apiSyncService.verifyToken(token);
   });
   
   // Session handlers

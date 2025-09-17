@@ -1,10 +1,12 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Request, Inject } from '@nestjs/common';
 import { ActivityService } from './activity.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('activity-periods')
 export class ActivityController {
-  constructor(private activityService: ActivityService) {}
+  constructor(
+    @Inject(ActivityService) private readonly activityService: ActivityService
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
@@ -34,6 +36,16 @@ export class ActivityController {
       return { success: true, period };
     } catch (error: any) {
       console.error('Error in activity controller:', error);
+      
+      // Handle concurrent session detection
+      if (error.message?.includes('CONCURRENT_SESSION_DETECTED')) {
+        return {
+          success: false,
+          error: 'CONCURRENT_SESSION_DETECTED',
+          message: 'Another session is already active in this time window. Stopping current session.',
+          details: error.message
+        };
+      }
       
       // Return a more informative error for foreign key violations
       if (error.message?.includes('foreign key constraint')) {
@@ -75,7 +87,9 @@ export class ActivityController {
 
 @Controller('activities')
 export class ActivitiesController {
-  constructor(private activityService: ActivityService) {}
+  constructor(
+    @Inject(ActivityService) private readonly activityService: ActivityService
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()

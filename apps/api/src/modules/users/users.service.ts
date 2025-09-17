@@ -48,10 +48,13 @@ export class UsersService {
   }
 
   async findById(id: string): Promise<User> {
-    return this.usersRepository.findOne({
+    console.log('Finding user by ID:', id);
+    const user = await this.usersRepository.findOne({
       where: { id },
       relations: ['organization'],
     });
+    console.log('Found user:', user?.email, 'Active:', user?.isActive);
+    return user;
   }
 
   async create(createUserDto: {

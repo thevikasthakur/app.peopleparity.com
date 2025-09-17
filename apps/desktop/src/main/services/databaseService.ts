@@ -4,6 +4,7 @@ import { app } from 'electron';
 import crypto from 'crypto';
 import axios, { AxiosInstance } from 'axios';
 import Store from 'electron-store';
+import { calculateScreenshotScore, calculateTop80Average } from '../utils/activityScoreCalculator';
 
 export class DatabaseService {
   private static instance: DatabaseService;
@@ -35,13 +36,14 @@ export class DatabaseService {
   
   private initializeApiClient() {
     const token = this.store.get('authToken') as string; // Changed from 'auth.token' to 'authToken'
-    // Use IPv4 explicitly to avoid IPv6 connection issues
-    const apiUrl = process.env.API_URL || 'http://127.0.0.1:3001/api';
-    const apiUrlFixed = apiUrl.replace('localhost', '127.0.0.1').replace('[::1]', '127.0.0.1').replace('::1', '127.0.0.1');
+    // Force IPv4 by using 127.0.0.1 instead of localhost
+    const envUrl = process.env.API_URL || 'http://localhost:3001';
+    const baseUrl = envUrl.replace('localhost', '127.0.0.1');
+    const apiUrl = `${baseUrl}/api`;
     
     if (token) {
       this.api = axios.create({
-        baseURL: apiUrlFixed,
+        baseURL: apiUrl,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -145,7 +147,7 @@ export class DatabaseService {
     task?: string;
     startTime: Date;
   }) {
-    const session = this.localDb.createSession({
+    const session = await this.localDb.createSession({
       userId: this.getCurrentUserId(),
       mode: data.mode,
       projectId: data.projectId,
@@ -356,7 +358,7 @@ export class DatabaseService {
     return this.localDb.saveScreenshot({
       id: data.id,  // Pass through the ID if provided
       userId: this.getCurrentUserId(),
-      sessionId: sessionId,
+      sessionId: sessionId!,  // We know sessionId is defined at this point
       localPath: data.localPath,
       thumbnailPath: data.thumbnailPath,
       capturedAt: data.capturedAt,
@@ -365,36 +367,31 @@ export class DatabaseService {
     });
   }
 
-  async getScreenshot(id: string) {
-    // This would need to be implemented in LocalDatabase
-    return null;
-  }
 
-  // Dashboard data - fetch from cloud API first, fallback to local
+  // Dashboard data - ALWAYS use local for current session (source of truth)
   async getDashboardData() {
     const userId = this.getCurrentUserId();
     
-    // Try to fetch from cloud API first
+    // ALWAYS get the current session from local database (it's the source of truth)
+    const localSession = this.localDb.getActiveSession(userId);
+    console.log('Local active session:', localSession ? `${localSession.id} (isActive: ${localSession.isActive})` : 'none');
+    
+    // Try to fetch stats from cloud API
     if (this.api) {
       try {
-        console.log('Fetching dashboard data from cloud...');
-        const [sessionsRes, statsRes] = await Promise.all([
-          this.api.get('/sessions/active'),
-          this.api.get('/dashboard/stats')
-        ]);
-        
-        const cloudSession = sessionsRes.data;
+        console.log('Fetching dashboard stats from cloud...');
+        const statsRes = await this.api.get('/dashboard/stats');
         const cloudStats = statsRes.data;
         
-        // Transform cloud data to match our format
+        // Return local session with cloud stats
         return {
-          currentSession: cloudSession ? {
-            id: cloudSession.id,
-            startTime: new Date(cloudSession.startTime),
-            activity: cloudSession.task || 'Working...',
-            mode: cloudSession.mode === 'client_hours' ? 'client' : 'command',
-            projectName: cloudSession.project?.name,
-            isActive: cloudSession.isActive
+          currentSession: localSession ? {
+            id: localSession.id,
+            startTime: localSession.startTime,
+            activity: localSession.task || 'Working...',
+            mode: localSession.mode === 'client_hours' ? 'client' : 'command',
+            projectName: localSession.projectName,
+            isActive: localSession.isActive
           } : null,
           todayStats: {
             clientHours: cloudStats.today.clientHours || 0,
@@ -414,12 +411,12 @@ export class DatabaseService {
           }
         };
       } catch (error) {
-        console.log('Failed to fetch from cloud, using local data:', error);
+        console.log('Failed to fetch stats from cloud, using local data:', error);
       }
     }
     
-    // Fallback to local database
-    console.log('Using local database for dashboard data');
+    // Fallback to local database for stats
+    console.log('Using local database for stats');
     const session = this.localDb.getActiveSession(userId);
     const todayStats = this.localDb.getTodayStats(userId);
     const weekStats = this.localDb.getWeekStats(userId);
@@ -432,7 +429,7 @@ export class DatabaseService {
         activity: session.task || 'Working...',
         mode: session.mode === 'client_hours' ? 'client' : 'command',
         projectName: projects.find(p => p.id === session.projectId)?.name,
-        isActive: true
+        isActive: Boolean(session.isActive)
       } : null,
       todayStats: {
         clientHours: todayStats.clientHours,
@@ -460,6 +457,14 @@ export class DatabaseService {
 
   getWeekStats(userId: string) {
     return this.localDb.getWeekStats(userId);
+  }
+  
+  getDateStats(userId: string, date: Date) {
+    return this.localDb.getDateStats(userId, date);
+  }
+  
+  getWeekStatsForDate(userId: string, date: Date) {
+    return this.localDb.getWeekStatsForDate(userId, date);
   }
 
   async getScreenshotsByDate(date: Date) {
@@ -787,6 +792,30 @@ export class DatabaseService {
   incrementSyncAttempts(queueId: string) {
     this.localDb.incrementSyncAttempts(queueId);
   }
+  
+  getFailedSyncItems() {
+    return this.localDb.getFailedSyncItems();
+  }
+  
+  getSyncQueueItem(entityId: string, entityType: string) {
+    return this.localDb.getSyncQueueItem(entityId, entityType);
+  }
+  
+  resetSyncAttempts(queueId: string) {
+    this.localDb.resetSyncAttempts(queueId);
+  }
+  
+  removeSyncQueueItem(queueId: string) {
+    this.localDb.removeSyncQueueItem(queueId);
+  }
+  
+  getActivityPeriodsForScreenshot(screenshotId: string) {
+    return this.localDb.getActivityPeriodsForScreenshot(screenshotId);
+  }
+  
+  getScreenshot(screenshotId: string) {
+    return this.localDb.getScreenshot(screenshotId);
+  }
 
   // Export and maintenance
   async exportUserData() {
@@ -854,6 +883,10 @@ export class DatabaseService {
     return this.localDb.clearSyncQueue();
   }
   
+  clearSyncQueueForSession(sessionId: string) {
+    return this.localDb.clearSyncQueueForSession(sessionId);
+  }
+  
   clearSessionsAndRelatedData() {
     return this.localDb.clearSessionsAndRelatedData();
   }
@@ -868,5 +901,110 @@ export class DatabaseService {
   
   setActivityTracker(tracker: any) {
     this.activityTracker = tracker;
+  }
+
+  getValidActivityPeriodsForSession(sessionId: string) {
+    return this.localDb.getValidActivityPeriodsForSession(sessionId);
+  }
+
+  getSessionsForDate(date: Date) {
+    const userId = this.getCurrentUserId();
+    if (!userId) return [];
+    
+    // Use UTC for consistent day boundaries
+    const startOfDay = new Date(date);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    
+    // Get all sessions for the specified date
+    const sessions = (this.localDb as any).db.prepare(`
+      SELECT 
+        s.id,
+        s.startTime,
+        s.endTime,
+        s.mode,
+        s.isActive,
+        s.task,
+        s.projectId
+      FROM sessions s
+      WHERE s.userId = ?
+        AND s.startTime >= ?
+        AND s.startTime < ?
+      ORDER BY s.startTime DESC
+    `).all(userId, startOfDay.getTime(), endOfDay.getTime());
+    
+    // Process sessions to calculate metrics for each
+    return sessions.map((session: any) => {
+      const startTime = new Date(session.startTime);
+      const endTime = session.endTime ? new Date(session.endTime) : new Date();
+      const elapsedMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+      
+      // Get screenshots for this session
+      const screenshots = (this.localDb as any).db.prepare(`
+        SELECT id
+        FROM screenshots
+        WHERE sessionId = ?
+        ORDER BY capturedAt
+      `).all(session.id);
+      
+      // Calculate activity score using the same method as productive-hours
+      const allScores: number[] = [];
+      let validScreenshots = 0;
+      
+      for (const screenshot of screenshots) {
+        // Get all activity periods for this screenshot
+        const activityPeriods = (this.localDb as any).db.prepare(`
+          SELECT activityScore
+          FROM activity_periods
+          WHERE screenshotId = ?
+          ORDER BY activityScore DESC
+        `).all(screenshot.id);
+        
+        const scores = activityPeriods.map((p: any) => p.activityScore);
+        
+        if (scores.length > 0) {
+          // Calculate weighted average using the same function as productive hours
+          const weightedScore = calculateScreenshotScore(scores);
+          const uiScore = weightedScore / 10; // Convert to UI scale
+          
+          // Count valid screenshots (activity score >= 2.5 on UI scale)
+          if (weightedScore >= 25) {
+            validScreenshots++;
+          }
+          
+          if (uiScore > 0) {
+            allScores.push(uiScore);
+          }
+        }
+      }
+      
+      // Calculate tracked minutes (each valid screenshot = 10 minutes)
+      const trackedMinutes = Math.min(validScreenshots * 10, elapsedMinutes); // Cap at elapsed time
+      
+      // Calculate top 80% average activity score, same as productive hours
+      const averageActivityScore = allScores.length > 0 
+        ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
+        : 0;
+      
+      return {
+        id: session.id,
+        startTime: startTime.toISOString(),
+        endTime: session.endTime ? endTime.toISOString() : null,
+        mode: session.mode,
+        isActive: !!session.isActive,
+        task: session.task,
+        projectId: session.projectId,
+        elapsedMinutes,
+        trackedMinutes: Math.min(trackedMinutes, elapsedMinutes), // Never more than elapsed
+        averageActivityScore,  // Already rounded to 1 decimal
+        screenshotCount: screenshots.length
+      };
+    });
+  }
+  
+  getTodaySessions() {
+    const today = new Date();
+    return this.getSessionsForDate(today);
   }
 }

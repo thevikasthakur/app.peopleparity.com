@@ -1,0 +1,626 @@
+{
+  "service": {
+    "service": "ppv1",
+    "serviceObject": {
+      "name": "ppv1"
+    },
+    "provider": {
+      "name": "aws",
+      "profile": "pp-api",
+      "runtime": "nodejs22.x",
+      "region": "ap-south-1",
+      "stage": "prod",
+      "memorySize": 3008,
+      "timeout": 31,
+      "logRetentionInDays": 14,
+      "httpApi": {
+        "cors": true
+      },
+      "tracing": {
+        "lambda": true
+      },
+      "environment": {
+        "NODE_OPTIONS": "--enable-source-maps",
+        "STAGE": "prod",
+        "SCREENSHOTS_BUCKET": "ppv1-screenshots-prod",
+        "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
+        "DATABASE_PORT": "6543",
+        "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
+        "DATABASE_PASSWORD": "FIr5FKZ3YqwRuxxv",
+        "DATABASE_NAME": "postgres",
+        "JWT_SECRET": "people-parity-secret-key-2024",
+        "JWT_EXPIRATION": "7d",
+        "PORT": "3001",
+        "NODE_ENV": "development",
+        "SUPER_ADMIN_EMAIL": "admin@peopleparity.com",
+        "SUPER_ADMIN_PASSWORD": "Expressparity1!",
+        "SAML_ENTRY_POINT": "https://login.microsoftonline.com/383cc6fe-545e-4fab-8276-0c78ac6258f7/saml2",
+        "SAML_ISSUER": "PeopleParity",
+        "SAML_CLIENT_ID": "PeopleParity",
+        "SAML_CALLBACK_URL": "http://localhost:3001/api/auth/saml/callback",
+        "SAML_CERT": "-----BEGIN CERTIFICATE-----\nMIIC8DCCAdigAwIBAgIQcNr6w7TexKlOQiRcfM3EkTANBgkqhkiG9w0BAQsFADA0MTIwMAYDVQQD\nEylNaWNyb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTAeFw0yNTA4MjAxNzA4\nMDVaFw0yODA4MjAxNzA4MDVaMDQxMjAwBgNVBAMTKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQg\nU1NPIENlcnRpZmljYXRlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4B+KN+dY3vNS\nNOySyWE6KS90Eeg9TC54XpYrWZj/dKI0gtEcfvm2hSvqKfDX5pDLUBB/SOe00Gz0OELqDZ6Tgg78\nM5lyKNQHpxg7g0rnKzNpI+j2uc5gS9eMK27N1GQxpnS/GqpF3N4iXuQYP8X4s2yNTleRfmjttrHW\nf4YSlp9l5zGHjdt8cs+JaBNupcAxPKFh2vBBWkab95O+UpjsOv/E3BnIyp/+R+kXmyaHvSk5hAEG\n74UcMKmBrSUYpa0R+CTpIb6YtPMkzwYkESGoqtvQkNahaIAr0i94ZWC/H33gvaapqTO84GwUF/pJ\nzQkmCjTglK5V4OKMxuzA+N+wCQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQDGprNWc6nrUiEQmiF3\nNDgqumqmxhLafGe3iMFaEJhGkuZge4ZpiqU8AdaK6KYnvzZ8may/rm0uj5z4RIufs6hkAed0OVrC\nHTw2bVHqgwHc8iMXouy7gzz8tvn54yGq69rZkEWg3/spgvGFR1ZZudXHIPkQp5irLG9f63iyi1cF\nC2T0Wl5PgkGZVkM+s8hU0AiYshSYYd5i73IPNFEvDoLV69GqUU6RRobMUlm5oUuaNohht3+6ZRp7\ncfuxmh/dKbjYWc4jfB1/Na4YL+hmoaFRqtaY39AyLSQDkpvThq2Wgl55CbxKhlSnXlTao+4pDcBr\nXyQ9nY0Lnh+p0dOEqU8o\n-----END CERTIFICATE-----",
+        "FRONTEND_URL": "http://localhost:5174"
+      },
+      "iam": {
+        "role": {
+          "statements": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket"
+              ],
+              "Resource": "arn:aws:s3:::ppv1-screenshots-prod"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject"
+              ],
+              "Resource": "arn:aws:s3:::ppv1-screenshots-prod/*"
+            }
+          ]
+        }
+      },
+      "versionFunctions": true,
+      "compiledCloudFormationTemplate": {
+        "AWSTemplateFormatVersion": "2010-09-09",
+        "Description": "The AWS CloudFormation template for this Serverless application",
+        "Resources": {
+          "ApiLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+              "LogGroupName": "/aws/lambda/ppv1-prod-api",
+              "RetentionInDays": 14
+            }
+          },
+          "IamRoleLambdaExecution": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+              "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {
+                      "Service": [
+                        "lambda.amazonaws.com"
+                      ]
+                    },
+                    "Action": [
+                      "sts:AssumeRole"
+                    ]
+                  }
+                ]
+              },
+              "Policies": [
+                {
+                  "PolicyName": {
+                    "Fn::Join": [
+                      "-",
+                      [
+                        "ppv1",
+                        "prod",
+                        "lambda"
+                      ]
+                    ]
+                  },
+                  "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "logs:CreateLogStream",
+                          "logs:CreateLogGroup",
+                          "logs:TagResource"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ppv1-prod*:*"
+                          }
+                        ]
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "logs:PutLogEvents"
+                        ],
+                        "Resource": [
+                          {
+                            "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ppv1-prod*:*:*"
+                          }
+                        ]
+                      },
+                      {
+                        "$ref": "$[\"service\"][\"provider\"][\"iam\"][\"role\"][\"statements\"][0]"
+                      },
+                      {
+                        "$ref": "$[\"service\"][\"provider\"][\"iam\"][\"role\"][\"statements\"][1]"
+                      },
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "xray:PutTraceSegments",
+                          "xray:PutTelemetryRecords"
+                        ],
+                        "Resource": [
+                          "*"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ],
+              "Path": "/",
+              "RoleName": {
+                "Fn::Join": [
+                  "-",
+                  [
+                    "ppv1",
+                    "prod",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    "lambdaRole"
+                  ]
+                ]
+              }
+            }
+          },
+          "ApiLambdaFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+              "Code": {
+                "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
+                "S3Key": "serverless/ppv1/prod/1757597365752-2025-09-11T13:29:25.752Z/ppv1.zip"
+              },
+              "Handler": "src/lambda.handler",
+              "Runtime": "nodejs22.x",
+              "FunctionName": "ppv1-prod-api",
+              "MemorySize": 3008,
+              "Timeout": 31,
+              "TracingConfig": {
+                "Mode": "Active"
+              },
+              "Environment": {
+                "Variables": {
+                  "NODE_OPTIONS": "--enable-source-maps",
+                  "STAGE": "prod",
+                  "SCREENSHOTS_BUCKET": "ppv1-screenshots-prod",
+                  "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
+                  "DATABASE_PORT": "6543",
+                  "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
+                  "DATABASE_PASSWORD": "FIr5FKZ3YqwRuxxv",
+                  "DATABASE_NAME": "postgres",
+                  "JWT_SECRET": "people-parity-secret-key-2024",
+                  "JWT_EXPIRATION": "7d",
+                  "PORT": "3001",
+                  "NODE_ENV": "development",
+                  "SUPER_ADMIN_EMAIL": "admin@peopleparity.com",
+                  "SUPER_ADMIN_PASSWORD": "Expressparity1!",
+                  "SAML_ENTRY_POINT": "https://login.microsoftonline.com/383cc6fe-545e-4fab-8276-0c78ac6258f7/saml2",
+                  "SAML_ISSUER": "PeopleParity",
+                  "SAML_CLIENT_ID": "PeopleParity",
+                  "SAML_CALLBACK_URL": "http://localhost:3001/api/auth/saml/callback",
+                  "SAML_CERT": "-----BEGIN CERTIFICATE-----\nMIIC8DCCAdigAwIBAgIQcNr6w7TexKlOQiRcfM3EkTANBgkqhkiG9w0BAQsFADA0MTIwMAYDVQQD\nEylNaWNyb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTAeFw0yNTA4MjAxNzA4\nMDVaFw0yODA4MjAxNzA4MDVaMDQxMjAwBgNVBAMTKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQg\nU1NPIENlcnRpZmljYXRlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4B+KN+dY3vNS\nNOySyWE6KS90Eeg9TC54XpYrWZj/dKI0gtEcfvm2hSvqKfDX5pDLUBB/SOe00Gz0OELqDZ6Tgg78\nM5lyKNQHpxg7g0rnKzNpI+j2uc5gS9eMK27N1GQxpnS/GqpF3N4iXuQYP8X4s2yNTleRfmjttrHW\nf4YSlp9l5zGHjdt8cs+JaBNupcAxPKFh2vBBWkab95O+UpjsOv/E3BnIyp/+R+kXmyaHvSk5hAEG\n74UcMKmBrSUYpa0R+CTpIb6YtPMkzwYkESGoqtvQkNahaIAr0i94ZWC/H33gvaapqTO84GwUF/pJ\nzQkmCjTglK5V4OKMxuzA+N+wCQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQDGprNWc6nrUiEQmiF3\nNDgqumqmxhLafGe3iMFaEJhGkuZge4ZpiqU8AdaK6KYnvzZ8may/rm0uj5z4RIufs6hkAed0OVrC\nHTw2bVHqgwHc8iMXouy7gzz8tvn54yGq69rZkEWg3/spgvGFR1ZZudXHIPkQp5irLG9f63iyi1cF\nC2T0Wl5PgkGZVkM+s8hU0AiYshSYYd5i73IPNFEvDoLV69GqUU6RRobMUlm5oUuaNohht3+6ZRp7\ncfuxmh/dKbjYWc4jfB1/Na4YL+hmoaFRqtaY39AyLSQDkpvThq2Wgl55CbxKhlSnXlTao+4pDcBr\nXyQ9nY0Lnh+p0dOEqU8o\n-----END CERTIFICATE-----",
+                  "FRONTEND_URL": "http://localhost:5174"
+                }
+              },
+              "Role": {
+                "Fn::GetAtt": [
+                  "IamRoleLambdaExecution",
+                  "Arn"
+                ]
+              }
+            },
+            "DependsOn": [
+              "ApiLogGroup"
+            ]
+          },
+          "ApiLambdaVersionnS5RIMaqRIWrOmQpJvaUnriCLmcGwkCcl1LITHA8": {
+            "Type": "AWS::Lambda::Version",
+            "DeletionPolicy": "Retain",
+            "Properties": {
+              "FunctionName": {
+                "Ref": "ApiLambdaFunction"
+              },
+              "CodeSha256": "9PMBwh+PJbJ7td2OQWDw/aaLhn3f8zwqKsU8HzBZZU0="
+            }
+          },
+          "HttpApi": {
+            "Type": "AWS::ApiGatewayV2::Api",
+            "Properties": {
+              "Name": "prod-ppv1",
+              "ProtocolType": "HTTP",
+              "CorsConfiguration": {
+                "AllowHeaders": [
+                  "Content-Type",
+                  "X-Amz-Date",
+                  "Authorization",
+                  "X-Api-Key",
+                  "X-Amz-Security-Token",
+                  "X-Amz-User-Agent",
+                  "X-Amzn-Trace-Id"
+                ],
+                "AllowMethods": [
+                  "OPTIONS",
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "HEAD",
+                  "DELETE"
+                ],
+                "AllowOrigins": [
+                  "*"
+                ]
+              }
+            }
+          },
+          "HttpApiStage": {
+            "Type": "AWS::ApiGatewayV2::Stage",
+            "Properties": {
+              "ApiId": {
+                "Ref": "HttpApi"
+              },
+              "StageName": "$default",
+              "AutoDeploy": true,
+              "DefaultRouteSettings": {
+                "DetailedMetricsEnabled": false
+              }
+            }
+          },
+          "ApiLambdaPermissionHttpApi": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+              "FunctionName": {
+                "Fn::GetAtt": [
+                  "ApiLambdaFunction",
+                  "Arn"
+                ]
+              },
+              "Action": "lambda:InvokeFunction",
+              "Principal": "apigateway.amazonaws.com",
+              "SourceArn": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition"
+                    },
+                    ":execute-api:",
+                    {
+                      "Ref": "AWS::Region"
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId"
+                    },
+                    ":",
+                    {
+                      "Ref": "HttpApi"
+                    },
+                    "/*"
+                  ]
+                ]
+              }
+            }
+          },
+          "HttpApiIntegrationApi": {
+            "Type": "AWS::ApiGatewayV2::Integration",
+            "Properties": {
+              "ApiId": {
+                "Ref": "HttpApi"
+              },
+              "IntegrationType": "AWS_PROXY",
+              "IntegrationUri": {
+                "$ref": "$[\"service\"][\"provider\"][\"compiledCloudFormationTemplate\"][\"Resources\"][\"ApiLambdaPermissionHttpApi\"][\"Properties\"][\"FunctionName\"]"
+              },
+              "PayloadFormatVersion": "2.0",
+              "TimeoutInMillis": 30000
+            }
+          },
+          "HttpApiRouteAnyProxyVar": {
+            "Type": "AWS::ApiGatewayV2::Route",
+            "Properties": {
+              "ApiId": {
+                "Ref": "HttpApi"
+              },
+              "RouteKey": "ANY /{proxy+}",
+              "Target": {
+                "Fn::Join": [
+                  "/",
+                  [
+                    "integrations",
+                    {
+                      "Ref": "HttpApiIntegrationApi"
+                    }
+                  ]
+                ]
+              }
+            },
+            "DependsOn": "HttpApiIntegrationApi"
+          },
+          "HttpApiRouteAny": {
+            "Type": "AWS::ApiGatewayV2::Route",
+            "Properties": {
+              "ApiId": {
+                "Ref": "HttpApi"
+              },
+              "RouteKey": "ANY /",
+              "Target": {
+                "Fn::Join": [
+                  "/",
+                  [
+                    "integrations",
+                    {
+                      "Ref": "HttpApiIntegrationApi"
+                    }
+                  ]
+                ]
+              }
+            },
+            "DependsOn": "HttpApiIntegrationApi"
+          },
+          "ScreenshotsBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+              "BucketName": "ppv1-screenshots-prod",
+              "PublicAccessBlockConfiguration": {
+                "BlockPublicAcls": true,
+                "BlockPublicPolicy": false,
+                "IgnorePublicAcls": true,
+                "RestrictPublicBuckets": false
+              },
+              "BucketEncryption": {
+                "ServerSideEncryptionConfiguration": [
+                  {
+                    "ServerSideEncryptionByDefault": {
+                      "SSEAlgorithm": "AES256"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ScreenshotsBucketPolicy": {
+            "Type": "AWS::S3::BucketPolicy",
+            "Properties": {
+              "Bucket": {
+                "Ref": "ScreenshotsBucket"
+              },
+              "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Sid": "PublicReadThumbs",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": [
+                      {
+                        "Fn::Sub": "arn:aws:s3:::ppv1-screenshots-prod/inzint/*/thumb/*"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "Outputs": {
+          "ServerlessDeploymentBucketName": {
+            "Value": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
+            "Export": {
+              "Name": "sls-ppv1-prod-ServerlessDeploymentBucketName"
+            }
+          },
+          "ApiLambdaFunctionQualifiedArn": {
+            "Description": "Current Lambda function version",
+            "Value": {
+              "Ref": "ApiLambdaVersionnS5RIMaqRIWrOmQpJvaUnriCLmcGwkCcl1LITHA8"
+            },
+            "Export": {
+              "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
+            }
+          },
+          "HttpApiId": {
+            "Description": "Id of the HTTP API",
+            "Value": {
+              "Ref": "HttpApi"
+            },
+            "Export": {
+              "Name": "sls-ppv1-prod-HttpApiId"
+            }
+          },
+          "HttpApiUrl": {
+            "Description": "URL of the HTTP API",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "https://",
+                  {
+                    "Ref": "HttpApi"
+                  },
+                  ".execute-api.",
+                  {
+                    "Ref": "AWS::Region"
+                  },
+                  ".",
+                  {
+                    "Ref": "AWS::URLSuffix"
+                  }
+                ]
+              ]
+            },
+            "Export": {
+              "Name": "sls-ppv1-prod-HttpApiUrl"
+            }
+          },
+          "ScreenshotsBucketName": {
+            "Value": "ppv1-screenshots-prod",
+            "Export": {
+              "Name": "ppv1-prod-ScreenshotsBucketName"
+            }
+          }
+        }
+      },
+      "vpc": {}
+    },
+    "custom": {
+      "screenshotsBucket": "ppv1-screenshots-prod",
+      "dotenv": {
+        "logging": false
+      },
+      "serverless-offline": {
+        "httpPort": 3001,
+        "lambdaPort": 3002,
+        "noPrependStageInUrl": true,
+        "timeout": 60,
+        "host": "0.0.0.0"
+      }
+    },
+    "plugins": [
+      "serverless-offline",
+      "serverless-dotenv-plugin"
+    ],
+    "pluginsData": {},
+    "functions": {
+      "api": {
+        "handler": "src/lambda.handler",
+        "events": [
+          {
+            "httpApi": {
+              "method": "ANY",
+              "path": "/{proxy+}"
+            },
+            "resolvedMethod": "ANY",
+            "resolvedPath": "/{proxy+}"
+          },
+          {
+            "httpApi": {
+              "method": "ANY",
+              "path": "/"
+            },
+            "resolvedMethod": "ANY",
+            "resolvedPath": "/"
+          }
+        ],
+        "name": "ppv1-prod-api",
+        "environment": {
+          "NODE_OPTIONS": "--enable-source-maps"
+        },
+        "package": {},
+        "memory": 3008,
+        "timeout": 31,
+        "runtime": "nodejs22.x",
+        "vpc": {},
+        "versionLogicalId": "ApiLambdaVersionnS5RIMaqRIWrOmQpJvaUnriCLmcGwkCcl1LITHA8"
+      }
+    },
+    "resources": {
+      "Resources": {
+        "ScreenshotsBucket": {
+          "Type": "AWS::S3::Bucket",
+          "Properties": {
+            "BucketName": "ppv1-screenshots-prod",
+            "PublicAccessBlockConfiguration": {
+              "BlockPublicAcls": true,
+              "BlockPublicPolicy": false,
+              "IgnorePublicAcls": true,
+              "RestrictPublicBuckets": false
+            },
+            "BucketEncryption": {
+              "ServerSideEncryptionConfiguration": [
+                {
+                  "ServerSideEncryptionByDefault": {
+                    "SSEAlgorithm": "AES256"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "ScreenshotsBucketPolicy": {
+          "Type": "AWS::S3::BucketPolicy",
+          "Properties": {
+            "Bucket": {
+              "Ref": "ScreenshotsBucket"
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "PublicReadThumbs",
+                  "Effect": "Allow",
+                  "Principal": "*",
+                  "Action": "s3:GetObject",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::ppv1-screenshots-prod/inzint/*/thumb/*"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "Outputs": {
+        "ScreenshotsBucketName": {
+          "Value": "ppv1-screenshots-prod",
+          "Export": {
+            "Name": "ppv1-prod-ScreenshotsBucketName"
+          }
+        }
+      }
+    },
+    "configValidationMode": "warn",
+    "serviceFilename": "serverless",
+    "initialServerlessConfig": {
+      "service": "ppv1",
+      "frameworkVersion": "4",
+      "provider": {
+        "$ref": "$[\"service\"][\"provider\"]"
+      },
+      "functions": {
+        "$ref": "$[\"service\"][\"functions\"]"
+      },
+      "plugins": {
+        "$ref": "$[\"service\"][\"plugins\"]"
+      },
+      "build": {
+        "esbuild": {
+          "bundle": true,
+          "platform": "node",
+          "format": "cjs",
+          "target": "node22",
+          "sourcemap": true,
+          "keepNames": true,
+          "minify": false,
+          "packages": "external"
+        }
+      },
+      "custom": {
+        "$ref": "$[\"service\"][\"custom\"]"
+      },
+      "resources": {
+        "$ref": "$[\"service\"][\"resources\"]"
+      }
+    },
+    "appId": null,
+    "orgId": null,
+    "build": {
+      "$ref": "$[\"service\"][\"initialServerlessConfig\"][\"build\"]"
+    },
+    "layers": {}
+  },
+  "package": {
+    "artifactDirectoryName": "serverless/ppv1/prod/1757597365752-2025-09-11T13:29:25.752Z",
+    "artifact": "ppv1.zip"
+  }
+}

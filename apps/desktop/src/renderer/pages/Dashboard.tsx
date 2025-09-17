@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { TimeDisplay } from '../components/TimeDisplay';
 import { CurrentSessionDisplay } from '../components/CurrentSessionDisplay';
@@ -9,9 +9,14 @@ import { Analytics } from '../components/Analytics';
 import { Leaderboard } from '../components/Leaderboard';
 import { TaskSelector } from '../components/TaskSelector';
 import { ProfileDropdown } from '../components/ProfileDropdown';
+import { TodaysHustle } from '../components/TodaysHustle';
+import { WeeklyMarathon } from '../components/WeeklyMarathon';
+import { CurrentSessionInfo } from '../components/CurrentSessionInfo';
+import { PermissionsWizard } from '../components/PermissionsWizard';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
-import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight, Minus, AlertCircle } from 'lucide-react';
+import logoImage from '../tiny-logo.png';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",
@@ -32,6 +37,7 @@ export function Dashboard() {
     weekStats, 
     screenshots,
     isIdle,
+    isOperationInProgress,
     startSession,
     switchMode,
     stopSession
@@ -39,6 +45,9 @@ export function Dashboard() {
   
   const [showTaskSelector, setShowTaskSelector] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showPermissionsWizard, setShowPermissionsWizard] = useState(false);
+  const [permissionsChecked, setPermissionsChecked] = useState(false);
+  const [hasAllPermissions, setHasAllPermissions] = useState(false);
   const [randomMessage, setRandomMessage] = useState('');
   const [pendingMode, setPendingMode] = useState<'client' | 'command' | null>(null);
   // Load activity and recent activities from localStorage
@@ -52,22 +61,116 @@ export function Dashboard() {
   });
   const [showAnalyticsTooltip, setShowAnalyticsTooltip] = useState(false);
   const [showLeaderboardTooltip, setShowLeaderboardTooltip] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    // Get current UTC date
+    const now = new Date();
+    // Create a date at UTC midnight for today
+    const todayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      0, 0, 0, 0
+    ));
+    return todayUTC;
+  });
   const [customScreenshots, setCustomScreenshots] = useState<any[]>([]);
   const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false);
+  const [isChangingDate, setIsChangingDate] = useState(false);
+  const [todaySessions, setTodaySessions] = useState<any[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    // Skip if we're in the middle of changing dates
+    if (isChangingDate) return;
+    
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
+    loadTodaySessions();
+  }, [selectedDate, isChangingDate]);
+  
+  useEffect(() => {
+    // Reload sessions when current session changes
+    if (!isChangingDate) {
+      loadTodaySessions();
+    }
+  }, [currentSession, isChangingDate]);
+  
+  // Check permissions on mount only
+  useEffect(() => {
+    const checkPermissions = async () => {
+      if (window.electronAPI?.permissions) {
+        try {
+          const permissions = await window.electronAPI.permissions.check();
+          const allGranted = permissions['screen-recording'] === 'granted' && 
+                           permissions['accessibility'] === 'granted';
+          setHasAllPermissions(allGranted);
+          setPermissionsChecked(true);
+          
+          // Show wizard if this is first time or permissions missing
+          const wizardShown = localStorage.getItem('permissionsWizardShown');
+          if (!wizardShown && !allGranted) {
+            setShowPermissionsWizard(true);
+          }
+        } catch (error) {
+          console.error('Failed to check permissions:', error);
+          setPermissionsChecked(true);
+        }
+      } else {
+        setPermissionsChecked(true);
+      }
+    };
+    
+    // Only check once on mount, not periodically
+    checkPermissions();
   }, []);
+  
+  const loadTodaySessions = async () => {
+    try {
+      const sessions = await window.electronAPI.session.getTodaySessions(selectedDate.toISOString());
+      setTodaySessions(sessions || []);
+    } catch (error) {
+      console.error('Failed to load sessions for date:', selectedDate, error);
+    }
+  };
+  
+  // Listen for concurrent session detection
+  useEffect(() => {
+    const handleConcurrentSession = (data: any) => {
+      console.log('Concurrent session detected:', data);
+      // Refresh dashboard to show stopped session
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      // Could also show a toast notification here if you have a toast library
+    };
+    
+    window.electronAPI?.on('concurrent-session-detected', handleConcurrentSession);
+    
+    return () => {
+      window.electronAPI?.off('concurrent-session-detected', handleConcurrentSession);
+    };
+  }, [queryClient]);
 
+  // Compare dates in UTC to match backend logic - memoized for performance
+  const isToday = useMemo(() => {
+    const now = new Date();
+    const selectedUTC = new Date(Date.UTC(
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(),
+      selectedDate.getDate()
+    ));
+    const todayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    ));
+    return selectedUTC.getTime() === todayUTC.getTime();
+  }, [selectedDate]);
+  
   // Load screenshots for selected date when it changes
   useEffect(() => {
-    const isToday = selectedDate.toDateString() === new Date().toDateString();
-    if (!isToday) {
-      loadScreenshotsForDate(selectedDate);
-    }
-  }, [selectedDate]);
+    // Skip if it's today (we use real-time screenshots)
+    if (isToday) return;
+    
+    loadScreenshotsForDate(selectedDate);
+  }, [selectedDate, isToday]);
 
   const loadScreenshotsForDate = async (date: Date) => {
     setIsLoadingScreenshots(true);
@@ -82,27 +185,39 @@ export function Dashboard() {
     }
   };
 
-  const handleDateChange = (date: Date) => {
-    setSelectedDate(date);
-    setShowDatePicker(false);
-  };
-
-  const handlePreviousDay = () => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() - 1);
+  const handleDateChange = async (date: Date) => {
+    // Prevent multiple date changes while loading
+    if (isChangingDate) return;
+    
+    // Show loading immediately for better UX
+    setIsChangingDate(true);
+    
+    // Disable body scroll
+    document.body.style.overflow = 'hidden';
+    document.body.style.pointerEvents = 'none';
+    
+    // Convert the input date to UTC midnight
+    const newDate = new Date(Date.UTC(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      0, 0, 0, 0
+    ));
+    
+    // Update selected date
     setSelectedDate(newDate);
+    
+    // Give React time to process the update and prevent UI hanging
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Keep loading overlay for 4 seconds to ensure all data is loaded
+    setTimeout(() => {
+      setIsChangingDate(false);
+      // Re-enable body scroll and interactions
+      document.body.style.overflow = '';
+      document.body.style.pointerEvents = '';
+    }, 4000);
   };
-
-  const handleNextDay = () => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() + 1);
-    // Don't allow future dates
-    if (newDate <= new Date()) {
-      setSelectedDate(newDate);
-    }
-  };
-
-  const isToday = selectedDate.toDateString() === new Date().toDateString();
   const displayScreenshots = isToday ? screenshots : customScreenshots;
 
   // Client mode disabled - always use command mode
@@ -120,10 +235,14 @@ export function Dashboard() {
     const trackingMode = 'command_hours';
     const activityName = task?.trim() || currentActivity;
     
-    if (currentSession) {
-      await switchMode(trackingMode, activityName, projectId);
-    } else {
-      await startSession(trackingMode, activityName, projectId);
+    try {
+      if (currentSession) {
+        await switchMode(trackingMode, activityName, projectId);
+      } else {
+        await startSession(trackingMode, activityName, projectId);
+      }
+    } catch (error) {
+      console.error('Failed to handle task selection:', error);
     }
     setShowTaskSelector(false);
     setPendingMode(null);
@@ -154,7 +273,7 @@ export function Dashboard() {
       console.error('Dashboard: Failed to save activity to database:', error);
     }
     
-    // Close the activity modal
+    // Close the activity modal BEFORE showing the loader
     setShowActivityModal(false);
     
     // If we don't have an active session, start one with just the activity (no task selector)
@@ -172,16 +291,97 @@ export function Dashboard() {
     }
   };
 
+  const [showStopConfirmation, setShowStopConfirmation] = useState(false);
+
   const handleStopTracking = async () => {
-    await stopSession();
+    try {
+      await stopSession();
+      setShowStopConfirmation(true);
+      // Hide confirmation after 3 seconds
+      setTimeout(() => setShowStopConfirmation(false), 3000);
+    } catch (error) {
+      console.error('Failed to stop session:', error);
+    }
   };
 
   return (
     <div className="min-h-screen" data-mode={mode}>
+      {/* Permissions Wizard */}
+      {showPermissionsWizard && (
+        <PermissionsWizard
+          onComplete={() => {
+            setShowPermissionsWizard(false);
+            localStorage.setItem('permissionsWizardShown', 'true');
+            // Re-check permissions after wizard completes
+            if (window.electronAPI?.permissions) {
+              window.electronAPI.permissions.check().then(permissions => {
+                const allGranted = permissions['screen-recording'] === 'granted' && 
+                                 permissions['accessibility'] === 'granted';
+                setHasAllPermissions(allGranted);
+              });
+            }
+          }}
+          onSkip={() => {
+            setShowPermissionsWizard(false);
+            localStorage.setItem('permissionsWizardShown', 'true');
+          }}
+        />
+      )}
+      
+      {/* Permissions Warning Banner */}
+      {permissionsChecked && !hasAllPermissions && !showPermissionsWizard && (
+        <div className="fixed top-0 left-0 right-0 bg-amber-50 border-b border-amber-200 px-4 py-3 z-50">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              <p className="text-sm text-amber-800">
+                <strong>Permissions Required:</strong> Some features may not work correctly without Screen Recording and Accessibility permissions.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowPermissionsWizard(true)}
+              className="text-sm font-medium text-amber-700 hover:text-amber-900 underline"
+            >
+              Setup Permissions
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Full-screen Processing Overlay */}
+      {isOperationInProgress && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
+          <div className="bg-white rounded-lg p-8 shadow-xl max-w-sm w-full mx-4">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-lg font-medium text-gray-800">
+                Processing...
+              </p>
+              <p className="text-sm text-gray-500 text-center">
+                Please wait while we update your tracking session
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Fixed Draggable Title Bar */}
-      <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center z-50">
+      <div className="draggable-header fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center gap-2 z-50">
+        <img src={logoImage} alt="Logo" className="w-4 h-4 object-contain" />
         <span className="text-xs text-gray-500 font-medium">People Parity Tracker</span>
       </div>
+      
+      {/* Stop Confirmation Notification */}
+      {showStopConfirmation && (
+        <div className="fixed top-12 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in-down">
+          <div className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="font-medium">Tracking stopped successfully!</span>
+          </div>
+        </div>
+      )}
       
       {/* Content with padding to account for fixed header */}
       <div className="p-6 pt-12">
@@ -190,19 +390,24 @@ export function Dashboard() {
           {/* Header */}
           <div className="glass-card p-4 bounce-in shadow-lg">
             <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                People Parity
-              </h1>
-              <p className="sarcastic-text mt-1">{randomMessage}</p>
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col items-center">
+                <img src={logoImage} alt="People Parity Logo" className="w-12 h-12 object-contain" />
+                <span className="text-xs text-gray-600 mt-1">People Parity</span>
+              </div>
             </div>
             
             <div className="flex items-center gap-4">
+              {/* Current Session Display - Enhanced Version */}
+              {currentSession && (
+                <CurrentSessionInfo currentSession={currentSession} />
+              )}
+              
               {!currentSession ? (
                 <button
                   onClick={handleStartTracking}
                   className="btn-primary flex items-center gap-2"
-                  disabled={showTaskSelector}
+                  disabled={isOperationInProgress || showTaskSelector}
                 >
                   <Play className="w-4 h-4" />
                   Start Tracking
@@ -210,6 +415,7 @@ export function Dashboard() {
               ) : (
                 <button
                   onClick={handleStopTracking}
+                  disabled={isOperationInProgress}
                   className="btn-secondary flex items-center gap-2"
                 >
                   <Square className="w-4 h-4" />
@@ -222,27 +428,14 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Time Stats - Current Session, Today's Hustle, Weekly Marathon */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <CurrentSessionDisplay
-            screenshots={screenshots}
-            currentSession={currentSession}
-          />
-          
-          <TimeDisplay
-            title="Today's Hustle"
-            clientHours={todayStats.clientHours}
-            commandHours={todayStats.commandHours}
-            icon={<Coffee className="w-5 h-5" />}
-            message=""
-          />
-          
-          <TimeDisplay
-            title="Weekly Marathon"
-            clientHours={weekStats.clientHours}
-            commandHours={weekStats.commandHours}
-            icon={<Zap className="w-5 h-5" />}
-            message=""
+        {/* Time Stats - Today's Hustle and Weekly Marathon */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TodaysHustle key={`hustle-${refreshKey}`} selectedDate={selectedDate} isToday={isToday} />
+          <WeeklyMarathon 
+            key={`marathon-${refreshKey}`} 
+            selectedDate={selectedDate} 
+            isToday={isToday}
+            onDayClick={handleDateChange}
           />
         </div>
 
@@ -255,23 +448,155 @@ export function Dashboard() {
               <Activity className="w-5 h-5 text-primary" />
               Activity
             </h3>
+            
+            {/* Activity Selector */}
             <div 
-              className="p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+              className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors mb-3"
               onClick={() => setShowActivityModal(true)}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-gray-500" />
-                  <span className="font-medium text-lg">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span className="font-medium text-sm">
                     {currentActivity || 'Select Activity'}
                   </span>
                 </div>
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Click to change your current activity
+              <p className="text-xs text-gray-500 mt-1">
+                Click to change
               </p>
             </div>
+            
+            {/* Today's Sessions List */}
+            {todaySessions.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-gray-600">{isToday ? 'Earlier Today' : `Sessions on ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`}</h4>
+                  <span className="text-xs text-gray-500">{todaySessions.length} session{todaySessions.length !== 1 ? 's' : ''}</span>
+                </div>
+                
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto custom-scrollbar">
+                  {todaySessions.slice(0, 8).map((session) => {
+                    const sessionStartTime = new Date(session.startTime);
+                    const sessionEndTime = session.endTime ? new Date(session.endTime) : null;
+                    const startTimeStr = sessionStartTime.toLocaleTimeString('en-US', { 
+                      hour: 'numeric', 
+                      minute: '2-digit',
+                      hour12: true 
+                    });
+                    const endTimeStr = sessionEndTime ? sessionEndTime.toLocaleTimeString('en-US', { 
+                      hour: 'numeric', 
+                      minute: '2-digit',
+                      hour12: true 
+                    }) : 'ongoing';
+                    const timeRange = `${startTimeStr} - ${endTimeStr}`;
+
+                    const formatSessionTime = (minutes: number) => {
+                      const hours = Math.floor(minutes / 60);
+                      const mins = minutes % 60;
+                      if (hours > 0) {
+                        return `${hours}h${mins > 0 ? ` ${mins}m` : ''}`;
+                      }
+                      return `${mins}m`;
+                    };
+                    
+                    const getActivityColor = (score: number) => {
+                      if (score >= 8.5) return '#10b981';
+                      if (score >= 7.0) return '#3b82f6';
+                      if (score >= 5.5) return '#f59e0b';
+                      if (score >= 4.0) return '#ef4444';
+                      return '#dc2626';
+                    };
+                    
+                    const getActivityLevel = (score: number) => {
+                      if (score >= 8.5) return 'Good';
+                      if (score >= 7.0) return 'Fair';
+                      if (score >= 5.5) return 'Low';
+                      if (score >= 4.0) return 'Poor';
+                      return 'Critical';
+                    };
+
+                    const isCurrentSession = currentSession && session.id === currentSession.id;
+
+                    return (
+                      <div 
+                        key={session.id} 
+                        className={`flex items-center justify-between px-2.5 py-2 rounded-md transition-colors ${
+                          isCurrentSession 
+                            ? 'bg-primary/10 border border-primary/20' 
+                            : 'bg-white hover:bg-gray-50 border border-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {/* Status */}
+                          <div className="flex-shrink-0">
+                            {session.isActive ? (
+                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                            ) : (
+                              <Minus className="w-3 h-3 text-gray-300" />
+                            )}
+                          </div>
+                          
+                          {/* Time and task */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-gray-700">{timeRange}</span>
+                              {isCurrentSession && (
+                                <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded text-[10px]">Active</span>
+                              )}
+                            </div>
+                            <p className="text-gray-500 truncate text-xs mt-0.5">
+                              {session.task || 'No activity specified'}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Metrics */}
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          {/* Elapsed time */}
+                          <div className="text-right">
+                            <div className="text-xs font-medium text-gray-600">
+                              {formatSessionTime(session.elapsedMinutes)}
+                            </div>
+                            <div className="text-[10px] text-gray-400">elapsed</div>
+                          </div>
+                          
+                          {/* Tracked time */}
+                          <div className="text-right">
+                            <div className="text-xs font-semibold" style={{ color: getActivityColor(session.averageActivityScore) }}>
+                              {formatSessionTime(session.trackedMinutes)}
+                            </div>
+                            <div className="text-[10px] text-gray-400">tracked</div>
+                          </div>
+                          
+                          {/* Activity level */}
+                          <div className="text-right min-w-[45px]">
+                            <div className="text-xs font-semibold" style={{ color: getActivityColor(session.averageActivityScore) }}>
+                              {session.averageActivityScore.toFixed(1)}
+                            </div>
+                            <div className="text-[10px]" style={{ color: getActivityColor(session.averageActivityScore) }}>
+                              {getActivityLevel(session.averageActivityScore)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {todaySessions.length > 8 && (
+                  <p className="text-xs text-gray-400 text-center mt-2">+{todaySessions.length - 8} more session{todaySessions.length - 8 !== 1 ? 's' : ''}</p>
+                )}
+              </div>
+            )}
+            
+            {todaySessions.length === 0 && (
+              <div className="text-center py-6">
+                <p className="text-sm text-gray-400">No sessions {isToday ? 'yet today' : 'on this date'}</p>
+                <p className="text-xs text-gray-400 mt-1">{isToday ? 'Start tracking to see your sessions here' : 'Select a different date to view sessions'}</p>
+              </div>
+            )}
           </div>
 
           {/* Analytics */}
@@ -335,70 +660,12 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Activity className="w-5 h-5 text-primary" />
-              {isToday ? "Today's" : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} Snapshots
+              {isToday ? "Today's" : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} Snapshots
             </h2>
             
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted">
-                {isLoadingScreenshots ? 'Loading...' : `${displayScreenshots.length} moments captured`}
-              </span>
-              
-              {/* Date Selector */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePreviousDay}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                  title="Previous day"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                
-                <button
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors relative"
-                >
-                  <Calendar className="w-4 h-4" />
-                  <span className="text-sm font-medium">
-                    {isToday ? 'Today' : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </span>
-                  
-                  {/* Simple Date Picker Dropdown */}
-                  {showDatePicker && (
-                    <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-50">
-                      <input
-                        type="date"
-                        value={selectedDate.toISOString().split('T')[0]}
-                        max={new Date().toISOString().split('T')[0]}
-                        onChange={(e) => handleDateChange(new Date(e.target.value))}
-                        className="px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleNextDay}
-                  className={`p-1 hover:bg-gray-100 rounded transition-colors ${
-                    selectedDate.toDateString() === new Date().toDateString() 
-                      ? 'opacity-50 cursor-not-allowed' 
-                      : ''
-                  }`}
-                  disabled={selectedDate.toDateString() === new Date().toDateString()}
-                  title="Next day"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-                
-                {!isToday && (
-                  <button
-                    onClick={() => setSelectedDate(new Date())}
-                    className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                  >
-                    Today
-                  </button>
-                )}
-              </div>
-            </div>
+            <span className="text-sm text-muted">
+              {isLoadingScreenshots ? 'Loading...' : `${displayScreenshots.length} moments captured`}
+            </span>
           </div>
           
           {isLoadingScreenshots ? (
@@ -411,6 +678,7 @@ export function Dashboard() {
               onScreenshotClick={(id) => console.log('Screenshot clicked:', id)}
               onSelectionChange={(ids) => console.log('Selection changed:', ids)}
               onRefresh={async () => {
+                console.log('Refreshing after screenshot deletion...');
                 if (isToday) {
                   // Invalidate the screenshots query to refetch the data
                   await queryClient.invalidateQueries({ queryKey: ['screenshots'] });
@@ -419,6 +687,10 @@ export function Dashboard() {
                   await loadScreenshotsForDate(selectedDate);
                 }
                 console.log('Screenshots refreshed');
+                
+                // Force refresh of TodaysHustle and WeeklyMarathon by changing their key
+                setRefreshKey(prev => prev + 1);
+                console.log('Triggered refresh of productive hours displays');
               }}
             />
           )}
@@ -452,6 +724,27 @@ export function Dashboard() {
         onActivityChange={handleActivitySelected}
         recentActivities={recentActivities}
       />
+      
+      {/* Loading overlay when changing dates - blocks all interactions */}
+      {isChangingDate && (
+        <div 
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999]" 
+          style={{ 
+            backdropFilter: 'blur(2px)',
+            cursor: 'wait'
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+          onMouseUp={(e) => e.preventDefault()}
+          onClick={(e) => e.preventDefault()}
+          onContextMenu={(e) => e.preventDefault()}
+          onWheel={(e) => e.preventDefault()}
+        >
+          <div className="bg-white rounded-xl p-5 shadow-xl flex flex-col items-center pointer-events-none">
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-300 border-t-primary mb-2"></div>
+            <p className="text-gray-600 text-sm">Loading...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

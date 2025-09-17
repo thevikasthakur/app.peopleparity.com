@@ -6,6 +6,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         login: (email, password) => electron_1.ipcRenderer.invoke('auth:login', email, password),
         logout: () => electron_1.ipcRenderer.invoke('auth:logout'),
         checkSession: () => electron_1.ipcRenderer.invoke('auth:check-session'),
+        getApiUrl: () => electron_1.ipcRenderer.invoke('auth:get-api-url'),
     },
     session: {
         start: (mode, task, projectId) => electron_1.ipcRenderer.invoke('session:start', mode, task, projectId),

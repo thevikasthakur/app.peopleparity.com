@@ -24,6 +24,7 @@ import crypto from 'crypto';
 import { DatabaseService } from './databaseService';
 import { WindowManager, ActivityPeriod, Screenshot } from './windowManager';
 import { MetricsCollector, DetailedActivityMetrics } from './metricsCollector';
+import { getGlobalSpikeDetectorV2, resetGlobalSpikeDetectorV2, ActivityDataV2 } from '../utils/spikeDetectorV2';
 
 interface ActivityMetrics {
   keyHits: number;
@@ -67,6 +68,9 @@ export class ActivityTrackerV2 extends EventEmitter {
   // Keys configuration
   private productiveKeys: Set<number> = new Set();
   private navigationKeys: Set<number> = new Set();
+  
+  // Inactivity detection
+  private consecutiveZeroActivityCount: number = 0;
   
   constructor(db: DatabaseService) {
     super();
@@ -128,6 +132,47 @@ export class ActivityTrackerV2 extends EventEmitter {
       console.log('\n📦 Window complete event received, saving to database...');
       
       try {
+        // Check for inactivity (0 activity score)
+        let hasZeroActivity = false;
+        let avgActivityScore = 0;
+        
+        if (windowData.activityPeriods.length > 0) {
+          const totalScore = windowData.activityPeriods.reduce((sum: number, p: any) => sum + p.activityScore, 0);
+          avgActivityScore = totalScore / windowData.activityPeriods.length;
+          hasZeroActivity = avgActivityScore === 0;
+        } else if (windowData.screenshot) {
+          // No activity periods but has screenshot = inactive
+          hasZeroActivity = true;
+        }
+        
+        // Track consecutive zero activity
+        if (hasZeroActivity) {
+          this.consecutiveZeroActivityCount++;
+          console.log(`⚠️ Zero activity detected! Consecutive count: ${this.consecutiveZeroActivityCount}`);
+          
+          // Check if we have 2 consecutive 0-activity screenshots
+          if (this.consecutiveZeroActivityCount >= 2) {
+            console.log('🚨 2 consecutive zero-activity screenshots detected! Stopping tracker...');
+            
+            // Import and show the message
+            const { getRandomInactivityMessage } = require('../utils/inactivityMessages');
+            const message = getRandomInactivityMessage();
+            
+            // Emit event to show alert in renderer
+            this.emit('inactivity:detected', message);
+            
+            // Stop the session
+            setTimeout(() => {
+              this.stopSession();
+            }, 100); // Small delay to ensure message is shown
+            
+            return; // Don't save this window's data
+          }
+        } else {
+          // Reset counter if activity detected
+          this.consecutiveZeroActivityCount = 0;
+        }
+        
         // Save screenshot first if exists
         let savedScreenshotId: string | null = null;
         
@@ -217,11 +262,13 @@ export class ActivityTrackerV2 extends EventEmitter {
     this.currentMode = mode;
     this.isTracking = true;
     
-    // Reset metrics
+    // Reset metrics and spike detector for new session
     this.currentMetrics = this.createEmptyMetrics();
     this.periodStartTime = new Date();
+    resetGlobalSpikeDetectorV2(); // Reset spike history for new session
     this.lastActivityTime = new Date();
     this.activeSeconds = 0;
+    this.consecutiveZeroActivityCount = 0; // Reset inactivity counter
     
     // Start the window manager
     this.windowManager.startSession(session.id, currentUser.id, mode);
@@ -504,6 +551,25 @@ export class ActivityTrackerV2 extends EventEmitter {
     const periodEnd = new Date();
     const periodDuration = (periodEnd.getTime() - this.periodStartTime.getTime()) / 1000; // in seconds
     
+    // Check for activity spikes before generating metrics
+    const spikeDetector = getGlobalSpikeDetectorV2();
+    const activityData: ActivityDataV2 = {
+      keyHits: this.currentMetrics.keyHits,
+      productiveKeyHits: this.currentMetrics.productiveKeyHits,
+      navigationKeyHits: this.currentMetrics.navigationKeyHits,
+      uniqueKeys: this.currentMetrics.uniqueKeys.size,
+      keySequencePattern: undefined, // Will be analyzed by the detector
+      mouseClicks: this.currentMetrics.mouseClicks,
+      mouseScrolls: this.currentMetrics.mouseScrolls,
+      mouseDistance: this.currentMetrics.mouseDistance,
+      timestamp: periodEnd,
+      hasTextPatterns: undefined, // Will be analyzed by the detector
+      hasCodingPatterns: undefined, // Will be analyzed by the detector
+      hasReadingPattern: undefined // Will be analyzed by the detector
+    };
+    
+    const spikeDetectionResult = spikeDetector.addActivity(activityData);
+    
     // Generate detailed metrics using MetricsCollector
     const detailedMetrics = this.metricsCollector.generateMetricsBreakdown(
       {
@@ -522,16 +588,46 @@ export class ActivityTrackerV2 extends EventEmitter {
       periodDuration
     );
     
-    // Use the calculated score from detailed metrics
-    const activityScore = detailedMetrics.scoreCalculation.finalScore;
+    // If spike detection identifies bot activity with high confidence, set score to 0
+    let activityScore = detailedMetrics.scoreCalculation.finalScore;
+    if (spikeDetectionResult.isBot && spikeDetectionResult.confidence >= 60) {
+      activityScore = 0; // Mark as bot activity (only if confident)
+      console.log(`  🚫 Bot activity detected via spike analysis (confidence: ${spikeDetectionResult.confidence}%): ${spikeDetectionResult.spikeReason}`);
+    } else if (spikeDetectionResult.hasSpike && spikeDetectionResult.confidence >= 50) {
+      // Reduce score proportionally based on spike severity and confidence
+      const reduction = (spikeDetectionResult.spikeScore / 100) * (spikeDetectionResult.confidence / 100);
+      activityScore = Math.max(0, Math.round(activityScore * (1 - reduction)));
+      console.log(`  ⚠️ Activity spike detected, reducing score by ${Math.round(reduction * 100)}%`);
+    }
     
     console.log(`\n📊 Saving period: ${this.periodStartTime.toISOString()} - ${periodEnd.toISOString()}`);
     console.log(`  Activity score: ${activityScore} (formula: ${detailedMetrics.scoreCalculation.formula})`);
     console.log(`  Keystrokes: ${this.currentMetrics.keyHits} (${this.currentMetrics.productiveKeyHits} productive)`);
     console.log(`  Mouse: ${this.currentMetrics.mouseClicks} clicks, ${Math.round(this.currentMetrics.mouseDistance)}px distance`);
-    if (detailedMetrics.botDetection.keyboardBotDetected || detailedMetrics.botDetection.mouseBotDetected) {
-      console.log(`  ⚠️ Bot activity detected: ${detailedMetrics.botDetection.details.join(', ')}`);
+    
+    // Log bot detection from both sources
+    if (spikeDetectionResult.hasSpike && !spikeDetectionResult.isBot) {
+      console.log(`  🚨 Spike detected (score: ${spikeDetectionResult.spikeScore}, confidence: ${spikeDetectionResult.confidence}%): ${spikeDetectionResult.spikeReason}`);
+      if (spikeDetectionResult.details) {
+        console.log(`      Details:`, spikeDetectionResult.details);
+      }
     }
+    if (detailedMetrics.botDetection.keyboardBotDetected || detailedMetrics.botDetection.mouseBotDetected) {
+      console.log(`  ⚠️ Pattern bot detected: ${detailedMetrics.botDetection.details.join(', ')}`);
+    }
+    
+    // Add spike detection info to metrics breakdown
+    const enhancedMetrics = {
+      ...detailedMetrics,
+      spikeDetection: {
+        isBot: spikeDetectionResult.isBot,
+        hasSpike: spikeDetectionResult.hasSpike,
+        spikeScore: spikeDetectionResult.spikeScore,
+        confidence: spikeDetectionResult.confidence,
+        spikeReason: spikeDetectionResult.spikeReason,
+        details: spikeDetectionResult.details
+      }
+    };
     
     // Create activity period object with detailed metrics
     const period: ActivityPeriod = {
@@ -542,9 +638,9 @@ export class ActivityTrackerV2 extends EventEmitter {
       periodEnd: periodEnd,
       mode: this.currentMode,
       activityScore,
-      isValid: true,
-      classification: detailedMetrics.classification.category,
-      metricsBreakdown: detailedMetrics, // Add detailed metrics
+      isValid: !(spikeDetectionResult.isBot && spikeDetectionResult.confidence >= 60), // Mark invalid only if confident bot detection
+      classification: spikeDetectionResult.isBot ? 'bot' : detailedMetrics.classification.category,
+      metricsBreakdown: enhancedMetrics, // Add enhanced metrics with spike detection
       commandHourData: this.currentMode === 'command_hours' ? {
         uniqueKeys: this.currentMetrics.uniqueKeys.size,
         productiveKeyHits: this.currentMetrics.productiveKeyHits,
@@ -634,23 +730,24 @@ export class ActivityTrackerV2 extends EventEmitter {
     const mouseDistancePerMin = this.currentMetrics.mouseDistance / minutesPassed;
     
     // Calculate base score components (0-100 total)
+    // LIBERALIZED: All multipliers increased by 15% for easier scoring
     let baseScore = 0;
     
     // Keyboard activity (0-40 points)
-    baseScore += Math.min(40, keysPerMin * 2.2);
+    baseScore += Math.min(40, keysPerMin * 2.53); // Was 2.2, now +15%
     
     // Mouse clicks (0-20 points)
-    baseScore += Math.min(20, clicksPerMin * 6);
+    baseScore += Math.min(20, clicksPerMin * 6.9); // Was 6, now +15%
     
     // Mouse movement (0-15 points)
     // Normal mouse movement is 1000-5000 pixels per minute
-    baseScore += Math.min(15, mouseDistancePerMin / 200); // 3000px = 15 points
+    baseScore += Math.min(15, mouseDistancePerMin / 174); // Was 200, now -13% (lower divisor = higher score)
     
     // Scroll activity (0-10 points)
-    baseScore += Math.min(10, scrollsPerMin * 3);
+    baseScore += Math.min(10, scrollsPerMin * 3.45); // Was 3, now +15%
     
     // Key diversity (0-15 points)
-    baseScore += Math.min(15, uniqueKeysPerMin * 3);
+    baseScore += Math.min(15, uniqueKeysPerMin * 3.45); // Was 3, now +15%
     
     // Base score capped at 100
     baseScore = Math.min(100, baseScore);
@@ -661,16 +758,17 @@ export class ActivityTrackerV2 extends EventEmitter {
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
     
     // Apply graduated bonuses based on activity level (avoid suspicious levels > 50)
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
-      if (totalMouseActivity > 20) {
+    // LIBERALIZED: All thresholds reduced by 15% for easier bonuses
+    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 425)) { // Was 500
+      if (totalMouseActivity > 17) { // Was 20
         mouseBonus = 30; // Very high activity (30% bonus)
-      } else if (totalMouseActivity > 15) {
+      } else if (totalMouseActivity > 12.75) { // Was 15
         mouseBonus = 25; // High activity (25% bonus)
-      } else if (totalMouseActivity > 10) {
+      } else if (totalMouseActivity > 8.5) { // Was 10
         mouseBonus = 20; // Good activity (20% bonus)
-      } else if (totalMouseActivity > 5) {
+      } else if (totalMouseActivity > 4.25) { // Was 5
         mouseBonus = 15; // Moderate activity (15% bonus)
-      } else if (totalMouseActivity > 2) {
+      } else if (totalMouseActivity > 1.7) { // Was 2
         mouseBonus = 10; // Light activity (10% bonus)
       }
       

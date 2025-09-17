@@ -151,7 +151,7 @@ export class MetricsCollector {
     }
     
     return {
-      isBotLike: confidence > 0.5,
+      isBotLike: confidence > 0.7, // Increased threshold for keyboard
       confidence: Math.min(confidence, 1),
       reasons
     };
@@ -201,16 +201,17 @@ export class MetricsCollector {
         }
       }
       
-      if (straightLineCount > positions.length * 0.7) {
-        reasons.push('Mouse movement in perfectly straight lines');
-        confidence += 0.4;
+      // Much more lenient - only flag if >90% straight lines AND high speed
+      if (straightLineCount > positions.length * 0.9 && speeds.some(s => s > 2000)) {
+        reasons.push('Mouse movement in perfectly straight lines at high speed');
+        confidence += 0.3;
       }
       
-      // Check for instant teleportation (bot-like)
-      const teleports = speeds.filter(s => s > 5000).length; // 5000 pixels/ms is impossible
-      if (teleports > 0) {
+      // Check for instant teleportation (bot-like) - be more lenient
+      const teleports = speeds.filter(s => s > 10000).length; // 10000 pixels/ms is truly impossible
+      if (teleports > 2) { // Allow occasional spikes from screen switching
         reasons.push(`${teleports} instant mouse teleportations detected`);
-        confidence += 0.5;
+        confidence += 0.4;
       }
     }
     
@@ -225,14 +226,15 @@ export class MetricsCollector {
       const clickVariance = clickIntervals.reduce((sum, i) => sum + Math.pow(i - avgClickInterval, 2), 0) / clickIntervals.length;
       const clickStdDev = Math.sqrt(clickVariance);
       
-      if (clickStdDev < 5) {
-        reasons.push(`Unnaturally consistent click intervals (std dev: ${clickStdDev.toFixed(2)}ms)`);
+      // Much stricter - only flag truly robotic clicking
+      if (clickStdDev < 2 && avgClickInterval < 100) { // Very consistent AND very fast
+        reasons.push(`Unnaturally consistent fast clicking (std dev: ${clickStdDev.toFixed(2)}ms)`);
         confidence += 0.3;
       }
     }
     
     return {
-      isBotLike: confidence > 0.5,
+      isBotLike: confidence > 0.7, // Increased threshold from 0.5 to 0.7 for mouse
       confidence: Math.min(confidence, 1),
       reasons
     };
@@ -269,48 +271,53 @@ export class MetricsCollector {
     // Score components (0-10 scale each) - Updated thresholds for higher scores
     const components = {
       // Key hits: Progressive scoring to allow max 9.0 from keyboard alone
-      // 0-30: linear (0-5), 31-60: slower growth (5-7), 61-100: diminishing (7-8.5), 100+: caps at 9.0
-      keyHits: keyHitsPerMin <= 30 
-        ? (keyHitsPerMin / 30) * 5
-        : keyHitsPerMin <= 60
-        ? 5 + ((keyHitsPerMin - 30) / 30) * 2
-        : keyHitsPerMin <= 100
-        ? 7 + ((keyHitsPerMin - 60) / 40) * 1.5
-        : Math.min(9, 8.5 + ((keyHitsPerMin - 100) / 100) * 0.5),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-25.5: linear (0-5), 26-51: slower growth (5-7), 52-85: diminishing (7-8.5), 85+: caps at 9.0
+      keyHits: keyHitsPerMin <= 25.5 
+        ? (keyHitsPerMin / 25.5) * 5
+        : keyHitsPerMin <= 51
+        ? 5 + ((keyHitsPerMin - 25.5) / 25.5) * 2
+        : keyHitsPerMin <= 85
+        ? 7 + ((keyHitsPerMin - 51) / 34) * 1.5
+        : Math.min(9, 8.5 + ((keyHitsPerMin - 85) / 85) * 0.5),
       
       // Key diversity: Progressive scoring for unique keys
-      // 0-10: linear (0-5), 11-20: slower (5-7), 21-30: diminishing (7-8.5), 30+: caps at 9.0
-      keyDiversity: uniqueKeysPerMin <= 10
-        ? (uniqueKeysPerMin / 10) * 5
-        : uniqueKeysPerMin <= 20
-        ? 5 + ((uniqueKeysPerMin - 10) / 10) * 2
-        : uniqueKeysPerMin <= 30
-        ? 7 + ((uniqueKeysPerMin - 20) / 10) * 1.5
-        : Math.min(9, 8.5 + ((uniqueKeysPerMin - 30) / 20) * 0.5),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-8.5: linear (0-5), 9-17: slower (5-7), 18-25.5: diminishing (7-8.5), 25.5+: caps at 9.0
+      keyDiversity: uniqueKeysPerMin <= 8.5
+        ? (uniqueKeysPerMin / 8.5) * 5
+        : uniqueKeysPerMin <= 17
+        ? 5 + ((uniqueKeysPerMin - 8.5) / 8.5) * 2
+        : uniqueKeysPerMin <= 25.5
+        ? 7 + ((uniqueKeysPerMin - 17) / 8.5) * 1.5
+        : Math.min(9, 8.5 + ((uniqueKeysPerMin - 25.5) / 17) * 0.5),
       
       // Mouse clicks: Progressive scoring to help achieve 7.5 with mouse alone
-      // 0-15: linear (0-5), 16-30: slower (5-6.5), 31-50: diminishing (6.5-7.5)
-      mouseClicks: clicksPerMin <= 15
-        ? (clicksPerMin / 15) * 5
-        : clicksPerMin <= 30
-        ? 5 + ((clicksPerMin - 15) / 15) * 1.5
-        : Math.min(7.5, 6.5 + ((clicksPerMin - 30) / 20) * 1),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-12.75: linear (0-5), 13-25.5: slower (5-6.5), 26-42.5: diminishing (6.5-7.5)
+      mouseClicks: clicksPerMin <= 12.75
+        ? (clicksPerMin / 12.75) * 5
+        : clicksPerMin <= 25.5
+        ? 5 + ((clicksPerMin - 12.75) / 12.75) * 1.5
+        : Math.min(7.5, 6.5 + ((clicksPerMin - 25.5) / 17) * 1),
       
       // Mouse scrolls: Progressive scoring
-      // 0-8: linear (0-5), 9-15: slower (5-6.5), 16+: caps at 7.5
-      mouseScrolls: scrollsPerMin <= 8
-        ? (scrollsPerMin / 8) * 5
-        : scrollsPerMin <= 15
-        ? 5 + ((scrollsPerMin - 8) / 7) * 1.5
-        : Math.min(7.5, 6.5 + ((scrollsPerMin - 15) / 10) * 1),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-6.8: linear (0-5), 7-12.75: slower (5-6.5), 13.6+: caps at 7.5
+      mouseScrolls: scrollsPerMin <= 6.8
+        ? (scrollsPerMin / 6.8) * 5
+        : scrollsPerMin <= 12.75
+        ? 5 + ((scrollsPerMin - 6.8) / 5.95) * 1.5
+        : Math.min(7.5, 6.5 + ((scrollsPerMin - 12.75) / 8.5) * 1),
       
       // Mouse movement: Progressive scoring based on distance
-      // 0-2000: linear (0-5), 2001-4000: slower (5-6.5), 4001+: caps at 7.5
-      mouseMovement: mouseDistancePerMin <= 2000
-        ? (mouseDistancePerMin / 2000) * 5
-        : mouseDistancePerMin <= 4000
-        ? 5 + ((mouseDistancePerMin - 2000) / 2000) * 1.5
-        : Math.min(7.5, 6.5 + ((mouseDistancePerMin - 4000) / 2000) * 1),
+      // LIBERALIZED: Thresholds reduced by 15% for easier scoring
+      // 0-1700: linear (0-5), 1701-3400: slower (5-6.5), 3401+: caps at 7.5
+      mouseMovement: mouseDistancePerMin <= 1700
+        ? (mouseDistancePerMin / 1700) * 5
+        : mouseDistancePerMin <= 3400
+        ? 5 + ((mouseDistancePerMin - 1700) / 1700) * 1.5
+        : Math.min(7.5, 6.5 + ((mouseDistancePerMin - 3400) / 1700) * 1),
     };
     
     // Calculate penalties for suspicious behavior
@@ -324,8 +331,8 @@ export class MetricsCollector {
     if (botDetection.keyboardBotDetected) {
       penalties.botPenalty += 1.5; // Reduced from 25% to 1.5 points
     }
-    if (botDetection.mouseBotDetected) {
-      penalties.botPenalty += 1.5; // Reduced from 25% to 1.5 points
+    if (botDetection.mouseBotDetected && botDetection.confidence > 0.7) {
+      penalties.botPenalty += 1.0; // Further reduced and only apply if confident
     }
     
     // Idle penalty (scale to 0-10 range)
@@ -356,33 +363,62 @@ export class MetricsCollector {
     // Scale to 0-100 and apply penalties for base score
     const baseScore = Math.max(0, Math.min(100, (weightedScore * 10) - totalPenalties));
     
-    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
-    let mouseBonus = 0;
+    // Activity bonus (0-30 points) - Added ON TOP of base score
+    // Now includes both mouse and keyboard bonuses
+    let activityBonus = 0;
     let bonusDescription = 'No bonus';
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    const totalKeyboardActivity = keyHitsPerMin + (uniqueKeysPerMin * 2); // Weight diversity higher
     
-    // Apply graduated bonuses based on activity level
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
-      if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Very high activity
-        bonusDescription = 'Very high mouse activity (30% bonus)';
-      } else if (totalMouseActivity > 15) {
-        mouseBonus = 25; // High activity
-        bonusDescription = 'High mouse activity (25% bonus)';
-      } else if (totalMouseActivity > 10) {
-        mouseBonus = 20; // Good activity
-        bonusDescription = 'Good mouse activity (20% bonus)';
-      } else if (totalMouseActivity > 5) {
-        mouseBonus = 15; // Moderate activity
-        bonusDescription = 'Moderate mouse activity (15% bonus)';
-      } else if (totalMouseActivity > 2) {
-        mouseBonus = 10; // Light activity
-        bonusDescription = 'Light mouse activity (10% bonus)';
+    // Check for human-like typing patterns
+    const hasHumanLikeTyping = 
+      keyHitsPerMin > 10 && keyHitsPerMin < 200 && // Reasonable typing speed (10-200 keys/min)
+      uniqueKeysPerMin > 3 && // Good key diversity
+      true; // Simplified bot check for now
+    
+    // Priority 1: Keyboard bonus when mouse activity is low
+    if (totalMouseActivity < 5 && hasHumanLikeTyping) {
+      if (totalKeyboardActivity > 150) {
+        activityBonus = 25; // Very high keyboard activity
+        bonusDescription = 'Exceptional keyboard focus';
+      } else if (totalKeyboardActivity > 100) {
+        activityBonus = 20; // High keyboard activity
+        bonusDescription = 'Strong keyboard activity';
+      } else if (totalKeyboardActivity > 60) {
+        activityBonus = 15; // Good keyboard activity
+        bonusDescription = 'Good keyboard activity';
+      } else if (totalKeyboardActivity > 30) {
+        activityBonus = 10; // Moderate keyboard activity
+        bonusDescription = 'Moderate keyboard activity';
       }
+    }
+    // Priority 2: Mouse bonus when keyboard activity is low (existing logic)
+    else if (totalKeyboardActivity < 30 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+      if (totalMouseActivity > 20) {
+        activityBonus = 30; // Very high mouse activity
+        bonusDescription = 'Exceptional mouse activity';
+      } else if (totalMouseActivity > 15) {
+        activityBonus = 25; // High mouse activity
+        bonusDescription = 'High mouse activity';
+      } else if (totalMouseActivity > 10) {
+        activityBonus = 20; // Good mouse activity
+        bonusDescription = 'Good mouse activity';
+      } else if (totalMouseActivity > 5) {
+        activityBonus = 15; // Moderate mouse activity
+        bonusDescription = 'Moderate mouse activity';
+      } else if (totalMouseActivity > 2) {
+        activityBonus = 10; // Light mouse activity
+        bonusDescription = 'Light mouse activity';
+      }
+    }
+    // Priority 3: Balanced activity gets a small bonus
+    else if (totalMouseActivity > 5 && totalKeyboardActivity > 30 && hasHumanLikeTyping) {
+      activityBonus = 10;
+      bonusDescription = 'Balanced activity';
     }
     
     // Add bonus on top of base score, but cap total at 100
-    const rawScore = baseScore + mouseBonus;
+    const rawScore = baseScore + activityBonus;
     const finalScore = Math.min(100, rawScore);
     
     // Debug logging for transparency
@@ -405,18 +441,18 @@ export class MetricsCollector {
       weighted: weightedScore.toFixed(1),
       penalties: totalPenalties.toFixed(1),
       baseScore: baseScore.toFixed(0),
-      mouseBonus: mouseBonus > 0 ? `+${mouseBonus}` : '0',
+      activityBonus: activityBonus > 0 ? `+${activityBonus}` : '0',
       final: finalScore.toFixed(0)
     });
     
-    const formula = mouseBonus > 0 
-      ? `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}] + mouseBonus[${mouseBonus}]`
+    const formula = activityBonus > 0 
+      ? `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}] + activityBonus[${activityBonus}]`
       : `(keyHits[${components.keyHits.toFixed(1)}]*0.25 + keyDiversity[${components.keyDiversity.toFixed(1)}]*0.45 + clicks[${components.mouseClicks.toFixed(1)}]*0.10 + scrolls[${components.mouseScrolls.toFixed(1)}]*0.10 + movement[${components.mouseMovement.toFixed(1)}]*0.10) * 10 - penalties[${totalPenalties.toFixed(1)}]`;
     
     return {
       components,
       bonus: {
-        mouseActivityBonus: mouseBonus,
+        mouseActivityBonus: activityBonus,
         description: bonusDescription
       },
       penalties,
@@ -757,43 +793,72 @@ export class MetricsCollector {
     // Scale to 0-100 and apply penalties for base score
     const baseScore = Math.max(0, Math.min(100, (weightedScore * 10) - (totalPenalties * 10)));
     
-    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
-    let mouseBonus = 0;
+    // Activity bonus (0-30 points) - Added ON TOP of base score
+    // Now includes both mouse and keyboard bonuses
+    let activityBonus = 0;
     let bonusDescription = 'No bonus';
     const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
+    const totalKeyboardActivity = keyHitsPerMin + (uniqueKeysPerMin * 2); // Weight diversity higher
     
-    // Apply graduated bonuses based on activity level
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
-      if (totalMouseActivity > 20) {
-        mouseBonus = 30; // Very high activity
-        bonusDescription = 'Very high mouse activity (30% bonus)';
-      } else if (totalMouseActivity > 15) {
-        mouseBonus = 25; // High activity
-        bonusDescription = 'High mouse activity (25% bonus)';
-      } else if (totalMouseActivity > 10) {
-        mouseBonus = 20; // Good activity
-        bonusDescription = 'Good mouse activity (20% bonus)';
-      } else if (totalMouseActivity > 5) {
-        mouseBonus = 15; // Moderate activity
-        bonusDescription = 'Moderate mouse activity (15% bonus)';
-      } else if (totalMouseActivity > 2) {
-        mouseBonus = 10; // Light activity
-        bonusDescription = 'Light mouse activity (10% bonus)';
+    // Check for human-like typing patterns
+    const hasHumanLikeTyping = 
+      keyHitsPerMin > 10 && keyHitsPerMin < 200 && // Reasonable typing speed (10-200 keys/min)
+      uniqueKeysPerMin > 3 && // Good key diversity
+      true; // Simplified bot check for now
+    
+    // Priority 1: Keyboard bonus when mouse activity is low
+    if (totalMouseActivity < 5 && hasHumanLikeTyping) {
+      if (totalKeyboardActivity > 150) {
+        activityBonus = 25; // Very high keyboard activity
+        bonusDescription = 'Exceptional keyboard focus';
+      } else if (totalKeyboardActivity > 100) {
+        activityBonus = 20; // High keyboard activity
+        bonusDescription = 'Strong keyboard activity';
+      } else if (totalKeyboardActivity > 60) {
+        activityBonus = 15; // Good keyboard activity
+        bonusDescription = 'Good keyboard activity';
+      } else if (totalKeyboardActivity > 30) {
+        activityBonus = 10; // Moderate keyboard activity
+        bonusDescription = 'Moderate keyboard activity';
       }
+    }
+    // Priority 2: Mouse bonus when keyboard activity is low (existing logic)
+    else if (totalKeyboardActivity < 30 && (clicksPerMin > 0 || mouseDistancePerMin > 500)) {
+      if (totalMouseActivity > 20) {
+        activityBonus = 30; // Very high mouse activity
+        bonusDescription = 'Exceptional mouse activity';
+      } else if (totalMouseActivity > 15) {
+        activityBonus = 25; // High mouse activity
+        bonusDescription = 'High mouse activity';
+      } else if (totalMouseActivity > 10) {
+        activityBonus = 20; // Good mouse activity
+        bonusDescription = 'Good mouse activity';
+      } else if (totalMouseActivity > 5) {
+        activityBonus = 15; // Moderate mouse activity
+        bonusDescription = 'Moderate mouse activity';
+      } else if (totalMouseActivity > 2) {
+        activityBonus = 10; // Light mouse activity
+        bonusDescription = 'Light mouse activity';
+      }
+    }
+    // Priority 3: Balanced activity gets a small bonus
+    else if (totalMouseActivity > 5 && totalKeyboardActivity > 30 && hasHumanLikeTyping) {
+      activityBonus = 10;
+      bonusDescription = 'Balanced activity';
     }
     
     // Add bonus on top of base score, but cap total at 100
-    const rawScore = baseScore + mouseBonus;
+    const rawScore = baseScore + activityBonus;
     const finalScore = Math.min(100, rawScore);
 
-    const formula = mouseBonus > 0
-      ? `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)}) + mouseBonus(${mouseBonus})`
+    const formula = activityBonus > 0
+      ? `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)}) + activityBonus(${activityBonus})`
       : `(key_hits * 0.25 + key_diversity * 0.45 + clicks * 0.10 + scrolls * 0.10 + movement * 0.10) * 10 - penalties(${totalPenalties.toFixed(1)})`;
 
     return {
       components,
       bonus: {
-        mouseActivityBonus: mouseBonus,
+        mouseActivityBonus: activityBonus,
         description: bonusDescription
       },
       penalties,

@@ -12,6 +12,7 @@ export class ScreenshotService {
   private screenshotDir: string;
   private captureTimers: Map<number, NodeJS.Timeout> = new Map();
   private activityTracker: ActivityTracker | null = null;
+  private autoSessionCreationEnabled = true; // Flag to control auto session creation
   
   constructor(private db: DatabaseService) {
     this.screenshotDir = path.join(app.getPath('userData'), 'screenshots');
@@ -44,6 +45,22 @@ export class ScreenshotService {
     this.isCapturing = false;
     this.captureTimers.forEach(timer => clearTimeout(timer));
     this.captureTimers.clear();
+  }
+  
+  /**
+   * Disable auto session creation (used after concurrent session detection)
+   */
+  disableAutoSessionCreation() {
+    console.log('🔒 Auto session creation disabled');
+    this.autoSessionCreationEnabled = false;
+  }
+  
+  /**
+   * Enable auto session creation
+   */
+  enableAutoSessionCreation() {
+    console.log('🔓 Auto session creation enabled');
+    this.autoSessionCreationEnabled = true;
   }
   
   private async ensureScreenshotDir() {
