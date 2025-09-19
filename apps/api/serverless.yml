@@ -50,7 +50,6 @@ functions:
 
 plugins:
   - serverless-offline
-  - serverless-dotenv-plugin
 
 # Built-in Serverless v4 builder
 build:

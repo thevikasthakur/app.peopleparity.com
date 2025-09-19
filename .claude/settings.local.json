@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(node:*)",
+      "Bash(where npm)",
+      "Bash(npm view:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm install:*)",
+      "Bash(npm search:*)",
+      "Bash(npm run:*)",
+      "Bash(npx electron-builder:*)",
+      "Bash(tasklist)",
+      "Bash(findstr:*)",
+      "Bash(npx electron-packager:*)",
+      "Bash(dir:*)",
+      "Bash(npm start)",
+      "Bash(npm uninstall:*)",
+      "Bash(npx electron:*)",
+      "Bash(\"./People Parity.exe\")",
+      "Read(//c/Users/Dhiraj/AppData/Roaming/People Parity/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

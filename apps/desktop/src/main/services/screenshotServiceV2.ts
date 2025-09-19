@@ -2,7 +2,8 @@
  * Screenshot Service V2 - Works with the new ActivityTrackerV2
  */
 
-import screenshot from 'screenshot-desktop';
+// import screenshot from 'screenshot-desktop';
+import { captureScreenshotAlternative } from './screenshotElectron';
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs/promises';
@@ -248,12 +249,12 @@ export class ScreenshotServiceV2 {
     
     try {
       // Capture the screenshot
-      console.log('📷 Calling screenshot-desktop to capture screen...');
+      console.log('📷 Calling Electron desktopCapturer to capture screen...');
       let img;
       try {
-        img = await screenshot();
+        img = await captureScreenshotAlternative();
       } catch (screenshotError: any) {
-        console.error('❌ screenshot-desktop error:', screenshotError.message);
+        console.error('❌ Electron screenshot error:', screenshotError.message);
         console.error('Error details:', screenshotError);
         throw screenshotError;
       }

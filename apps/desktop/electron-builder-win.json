@@ -1,0 +1,33 @@
+{
+  "appId": "com.peopleparity.timetracker",
+  "productName": "People Parity",
+  "copyright": "Copyright © 2025 People Parity",
+  "directories": {
+    "output": "dist-installer"
+  },
+  "asar": false,
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "node_modules/**/*"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "People Parity"
+  }
+}

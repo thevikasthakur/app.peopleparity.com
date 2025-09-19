@@ -1,0 +1,51 @@
+appId: com.peopleparity.timetracker
+productName: People Parity
+copyright: Copyright © 2025 People Parity
+
+directories:
+  output: dist-working
+
+asar: false
+asarUnpack:
+  - "**/*.node"
+  - "**/node_modules/better-sqlite3/**/*"
+  - "**/node_modules/uiohook-napi/**/*"
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/@img/**/*"
+  - "**/node_modules/screenshot-desktop/**/*"
+  - "**/node_modules/active-win/**/*"
+
+files:
+  - dist/**/*
+  - package.json
+  - node_modules/**/*
+  - "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!node_modules/**/*.d.ts"
+  - "!node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+
+npmRebuild: false
+buildDependenciesFromSource: false
+electronVersion: "28.2.0"
+nodeGypRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  publisherName: People Parity Inc.
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: People Parity
+  installerIcon: null
+  uninstallerIcon: null
+  artifactName: ${productName}-Setup-${version}.${ext}
+  warningsAsErrors: false

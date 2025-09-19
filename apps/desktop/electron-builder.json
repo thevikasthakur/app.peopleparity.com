@@ -34,7 +34,7 @@
     "node_modules/@img/**/*",
     "node_modules/screenshot-desktop/**/*"
   ],
-  "npmRebuild": true,
+  "npmRebuild": false,
   "buildDependenciesFromSource": false,
   "mac": {
     "category": "public.app-category.productivity",
