@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Eye, EyeOff, Loader2, Coffee, Code2, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
-import logoImage from '../tiny-logo.png';
+// Using S3-hosted logo for cross-platform compatibility
+const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
 
 const funnyLoadingMessages = [
   "Waking up the hamsters... 🐹",

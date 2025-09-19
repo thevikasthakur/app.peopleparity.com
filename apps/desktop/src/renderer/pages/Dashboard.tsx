@@ -16,7 +16,8 @@ import { PermissionsWizard } from '../components/PermissionsWizard';
 import { useTracker } from '../hooks/useTracker';
 import { useTheme } from '../contexts/ThemeContext';
 import { Coffee, Zap, Trophy, Activity, Play, Square, Clock, ChevronDown, Lock, Calendar, ChevronLeft, ChevronRight, Minus, AlertCircle } from 'lucide-react';
-import logoImage from '../tiny-logo.png';
+// Using S3-hosted logo for cross-platform compatibility
+const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
 
 const sarcasticMessages = [
   "Time to make the magic happen! ✨",

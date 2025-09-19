@@ -54,6 +54,9 @@ export class ActivityTrackerV2 extends EventEmitter {
   private currentSessionId: string | null = null;
   private currentUserId: string | null = null;
   private currentMode: 'client_hours' | 'command_hours' = 'command_hours';
+  private currentProjectId: string | undefined;
+  private currentTask: string | undefined;
+  private sessionStartDate: string | null = null; // UTC date in YYYY-MM-DD format
   
   // Activity tracking
   private currentMetrics: ActivityMetrics;
@@ -64,6 +67,7 @@ export class ActivityTrackerV2 extends EventEmitter {
   // Timers
   private periodTimer: NodeJS.Timeout | null = null;
   private activeTimeTimer: NodeJS.Timeout | null = null;
+  private dateChangeTimer: NodeJS.Timeout | null = null;
   
   // Keys configuration
   private productiveKeys: Set<number> = new Set();
@@ -260,6 +264,9 @@ export class ActivityTrackerV2 extends EventEmitter {
     this.currentSessionId = session.id;
     this.currentUserId = currentUser.id;
     this.currentMode = mode;
+    this.currentProjectId = projectId;
+    this.currentTask = task;
+    this.sessionStartDate = this.getUTCDateString(new Date());
     this.isTracking = true;
     
     // Reset metrics and spike detector for new session
@@ -276,7 +283,7 @@ export class ActivityTrackerV2 extends EventEmitter {
     // Start tracking
     this.startTracking();
     
-    console.log(`✅ Session started: ${session.id}`);
+    console.log(`✅ Session started: ${session.id} (UTC date: ${this.sessionStartDate})`);
     this.emit('session:started', session);
     
     return session;
@@ -308,13 +315,16 @@ export class ActivityTrackerV2 extends EventEmitter {
     // Reset state
     this.currentSessionId = null;
     this.currentUserId = null;
+    this.currentProjectId = undefined;
+    this.currentTask = undefined;
+    this.sessionStartDate = null;
     this.isTracking = false;
   }
   
   /**
    * Restore an existing session (e.g., after app restart)
    */
-  restoreSession(sessionId: string, mode: 'client_hours' | 'command_hours', projectId?: string) {
+  restoreSession(sessionId: string, mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) {
     console.log('\n🔄 Restoring existing session:', sessionId);
     
     const currentUser = this.db.getCurrentUser();
@@ -327,6 +337,9 @@ export class ActivityTrackerV2 extends EventEmitter {
     this.currentSessionId = sessionId;
     this.currentUserId = currentUser.id;
     this.currentMode = mode;
+    this.currentProjectId = projectId;
+    this.currentTask = task;
+    this.sessionStartDate = this.getUTCDateString(new Date());
     this.isTracking = true;
     
     // Reset metrics and collector
@@ -342,7 +355,7 @@ export class ActivityTrackerV2 extends EventEmitter {
     // Start tracking
     this.startTracking();
     
-    console.log(`✅ Session restored: ${sessionId}`);
+    console.log(`✅ Session restored: ${sessionId} (UTC date: ${this.sessionStartDate})`);
   }
   
   /**
@@ -371,6 +384,9 @@ export class ActivityTrackerV2 extends EventEmitter {
     
     // Start active time tracking
     this.startActiveTimeTracking();
+    
+    // Start date change monitoring for UTC midnight rollover
+    this.startDateChangeTimer();
   }
   
   /**
@@ -388,6 +404,11 @@ export class ActivityTrackerV2 extends EventEmitter {
     if (this.activeTimeTimer) {
       clearInterval(this.activeTimeTimer);
       this.activeTimeTimer = null;
+    }
+    
+    if (this.dateChangeTimer) {
+      clearTimeout(this.dateChangeTimer);
+      this.dateChangeTimer = null;
     }
     
     // Note: We don't stop uIOhook as it's global
@@ -823,5 +844,79 @@ export class ActivityTrackerV2 extends EventEmitter {
       lastMousePosition: null,
       activeSeconds: 0
     };
+  }
+  
+  /**
+   * Get UTC date string in YYYY-MM-DD format
+   */
+  private getUTCDateString(date: Date): string {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  
+  /**
+   * Start the date change timer to check for UTC midnight rollover
+   */
+  private startDateChangeTimer() {
+    // Calculate time until next UTC midnight
+    const now = new Date();
+    const tomorrow = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + 1,
+      0, 0, 0, 0
+    ));
+    const msUntilMidnight = tomorrow.getTime() - now.getTime();
+    
+    console.log(`⏰ Date change timer will trigger in ${Math.round(msUntilMidnight / 1000)} seconds (at UTC midnight)`);
+    
+    // Set timer for UTC midnight
+    this.dateChangeTimer = setTimeout(async () => {
+      await this.handleDateChange();
+      
+      // Set up the next timer for tomorrow midnight
+      this.startDateChangeTimer();
+    }, msUntilMidnight);
+  }
+  
+  /**
+   * Handle UTC date change - perform session rollover
+   */
+  private async handleDateChange() {
+    if (!this.isTracking || !this.currentSessionId) return;
+    
+    const newDate = this.getUTCDateString(new Date());
+    
+    // Check if date actually changed
+    if (this.sessionStartDate === newDate) {
+      return; // No date change
+    }
+    
+    console.log(`\n🌐 UTC Date changed from ${this.sessionStartDate} to ${newDate}`);
+    console.log('📅 Performing session rollover...');
+    
+    // Store current session details
+    const currentMode = this.currentMode;
+    const currentProjectId = this.currentProjectId;
+    const currentTask = this.currentTask;
+    
+    // Save any pending period data
+    await this.savePeriodData();
+    
+    // Stop current session (this will end it at the previous day)
+    await this.stopSession();
+    
+    // Start new session with the same task/project for the new day
+    console.log('🔄 Starting new session for the new UTC date...');
+    await this.startSession(currentMode, currentProjectId, currentTask);
+    
+    console.log(`✅ Session rollover complete. New session started for ${newDate}`);
+    this.emit('session:rollover', {
+      previousDate: this.sessionStartDate,
+      newDate: newDate,
+      sessionId: this.currentSessionId
+    });
   }
 }

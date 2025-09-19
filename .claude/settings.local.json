@@ -20,7 +20,8 @@
       "Bash(\"./People Parity.exe\")",
       "Read(//c/Users/Dhiraj/AppData/Roaming/People Parity/**)",
       "Bash(ls:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []

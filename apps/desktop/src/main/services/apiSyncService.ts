@@ -62,11 +62,23 @@ export class ApiSyncService {
     // Handle auth errors
     this.api.interceptors.response.use(
       (response) => response,
-      (error) => {
+      async (error) => {
         if (error.response?.status === 401) {
-          this.store.delete('authToken');
-          this.store.delete('user');
-          this.db.clearCurrentUser();
+          // Don't delete token for certain endpoints that might fail with 401 for other reasons
+          const url = error.config?.url || '';
+          const shouldClearAuth = !url.includes('/auth/verify') && 
+                                 !url.includes('/auth/login') &&
+                                 !url.includes('/sessions') &&
+                                 !url.includes('/activity-periods');
+          
+          if (shouldClearAuth) {
+            console.log('401 error on endpoint:', url, '- clearing auth token');
+            this.store.delete('authToken');
+            this.store.delete('user');
+            this.db.clearCurrentUser();
+          } else {
+            console.log('401 error on endpoint:', url, '- keeping auth token');
+          }
         }
         return Promise.reject(error);
       }
@@ -882,7 +894,8 @@ export class ApiSyncService {
             }
             
             console.log('Uploading screenshot to S3:', data.localPath);
-            const uploadResult = await this.uploadScreenshot(data.localPath);
+            const capturedAt = new Date(data.capturedAt); // Use the actual capture time
+            const uploadResult = await this.uploadScreenshot(data.localPath, capturedAt);
             s3FullUrl = uploadResult.fullUrl;
             s3ThumbnailUrl = uploadResult.thumbnailUrl;
             
@@ -983,7 +996,7 @@ export class ApiSyncService {
     }, 30000);
   }
 
-  async uploadScreenshot(localPath: string): Promise<{ fullUrl: string; thumbnailUrl: string }> {
+  async uploadScreenshot(localPath: string, captureTime?: Date): Promise<{ fullUrl: string; thumbnailUrl: string }> {
     try {
       const fs = require('fs').promises;
       const path = require('path');
@@ -993,21 +1006,23 @@ export class ApiSyncService {
       const fileBuffer = await fs.readFile(localPath);
       const filename = path.basename(localPath);
       
-      // Get local timezone information
-      const now = new Date();
-      const timezoneOffset = now.getTimezoneOffset(); // in minutes
+      // Use capture time if provided, otherwise fall back to current time (for backward compatibility)
+      const timestampDate = captureTime || new Date();
+      
+      // Get timezone information from the capture time
+      const timezoneOffset = timestampDate.getTimezoneOffset(); // in minutes
       const offsetHours = Math.floor(Math.abs(timezoneOffset) / 60);
       const offsetMinutes = Math.abs(timezoneOffset) % 60;
       const offsetSign = timezoneOffset <= 0 ? '+' : '-'; // Note: getTimezoneOffset returns negative for positive offsets
       const timezone = `${offsetSign}${offsetHours.toString().padStart(2, '0')}${offsetMinutes.toString().padStart(2, '0')}`;
       
-      // Format local time as YYYY-MM-DDTHH:MM:SS without timezone conversion
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hour = String(now.getHours()).padStart(2, '0');
-      const minute = String(now.getMinutes()).padStart(2, '0');
-      const second = String(now.getSeconds()).padStart(2, '0');
+      // Format capture time as YYYY-MM-DDTHH:MM:SS without timezone conversion
+      const year = timestampDate.getFullYear();
+      const month = String(timestampDate.getMonth() + 1).padStart(2, '0');
+      const day = String(timestampDate.getDate()).padStart(2, '0');
+      const hour = String(timestampDate.getHours()).padStart(2, '0');
+      const minute = String(timestampDate.getMinutes()).padStart(2, '0');
+      const second = String(timestampDate.getSeconds()).padStart(2, '0');
       const localTimestamp = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
       
       // Step 1: Request signed URLs from the server

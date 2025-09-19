@@ -12,6 +12,9 @@ if (fs.existsSync(htmlPath)) {
   
   // Replace any absolute paths with relative paths
   // This works for both Windows and Unix-like systems
+  // But preserve S3/external URLs
+  
+  // Only replace local absolute paths, not https:// URLs
   html = html.replace(/href="\/tiny-logo\.png"/g, 'href="./tiny-logo.png"');
   html = html.replace(/src="\/assets\//g, 'src="./assets/');
   html = html.replace(/href="\/assets\//g, 'href="./assets/');
@@ -20,6 +23,8 @@ if (fs.existsSync(htmlPath)) {
   html = html.replace(/href="\\tiny-logo\.png"/g, 'href="./tiny-logo.png"');
   html = html.replace(/src="\\assets\\/g, 'src="./assets/');
   html = html.replace(/href="\\assets\\/g, 'href="./assets/');
+  
+  // Keep S3 URLs as they are (they already start with https://)
   
   fs.writeFileSync(htmlPath, html);
   console.log('✅ Fixed asset paths in index.html');

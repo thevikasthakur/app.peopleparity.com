@@ -6,6 +6,7 @@ import { formatHoursToHM } from '../utils/timeFormatters';
 interface WeeklyData {
   productiveHours: number;
   averageActivityScore: number;
+  activityLevel?: string;
   markers: {
     dailyTarget: number; // 9 or 10.5 based on holiday
     maxScale: number; // 45 hours
@@ -81,11 +82,13 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
     return null;
   }
 
-  const { productiveHours, averageActivityScore, markers, attendance, message } = weeklyData;
+  const { productiveHours, averageActivityScore, activityLevel, markers, attendance, message } = weeklyData;
   const percentage = Math.min((productiveHours / markers.maxScale) * 100, 100);
   
-  // Get activity level label
+  // Get activity level label - use server-provided value or fall back to local calculation
   const getActivityLevel = (score: number) => {
+    if (activityLevel) return activityLevel;
+    // Fallback for backward compatibility
     if (score >= 8.5) return 'Good';
     if (score >= 7.0) return 'Fair';
     if (score >= 5.5) return 'Low';
@@ -493,10 +496,10 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           <p>Daily Target: {markers.dailyTarget}h</p>
           {markers.hasHoliday ? (
             <p className="text-amber-600 font-medium">
-              🎉 Holiday week ({markers.dailyTarget}h/day)
+              🎉 Short week ({markers.dailyTarget}h/day)
             </p>
           ) : (
-            <p className="text-gray-600">Regular week (10.5h/day)</p>
+            <p className="text-gray-600">Regular week ({markers.dailyTarget}h/day)</p>
           )}
         </div>
       </div>

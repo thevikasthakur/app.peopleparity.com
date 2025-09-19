@@ -6,6 +6,7 @@ import { formatHoursToHM } from '../utils/timeFormatters';
 interface HustleData {
   productiveHours: number;
   averageActivityScore: number;
+  activityLevel?: string;
   markers: {
     halfAttendance: number;
     threeQuarterAttendance: number;
@@ -69,11 +70,13 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
     return null;
   }
 
-  const { productiveHours, averageActivityScore, markers, message, attendance } = hustleData;
+  const { productiveHours, averageActivityScore, activityLevel, markers, message, attendance } = hustleData;
   const percentage = Math.min((productiveHours / markers.maxScale) * 100, 100);
   
-  // Get activity level label
+  // Get activity level label - use server-provided value or fall back to local calculation
   const getActivityLevel = (score: number) => {
+    if (activityLevel) return activityLevel;
+    // Fallback for backward compatibility
     if (score >= 8.5) return 'Good';
     if (score >= 7.0) return 'Fair';
     if (score >= 5.5) return 'Low';

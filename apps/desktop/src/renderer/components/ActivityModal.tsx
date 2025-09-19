@@ -121,9 +121,9 @@ export function ActivityModal({
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg"
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
           >
-            <div className="glass-card p-6">
+            <div className="glass-card p-6 w-full max-w-lg mx-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div>

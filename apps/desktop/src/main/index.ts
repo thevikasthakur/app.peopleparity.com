@@ -591,16 +591,9 @@ function setupIpcHandlers() {
     return apiSyncService.logout();
   });
   
-  // auth:check-session is already set up earlier for immediate availability
-  // Re-registering it here would override the earlier handler
-  // ipcMain.handle('auth:check-session', async () => {
-  //   if (!apiSyncService) {
-  //     console.log('ApiSyncService not initialized, returning empty session');
-  //     return { user: null };
-  //   }
-  //   return apiSyncService.checkSession();
-  // });
-
+  // auth:check-session handler is already registered early in app.whenReady()
+  // to avoid race conditions with the renderer process
+  
   ipcMain.handle('auth:verify-token', async (_, token: string) => {
     if (!apiSyncService) {
       console.error('ApiSyncService not initialized');
@@ -1139,9 +1132,20 @@ function setupIpcHandlers() {
       attendance
     });
 
+    // Calculate activity level based on score
+    const getActivityLevel = (score: number) => {
+      if (score >= 8.5) return 'Good';
+      if (score >= 7.0) return 'Fair';
+      if (score >= 5.5) return 'Low';
+      if (score >= 4.0) return 'Poor';
+      if (score >= 2.5) return 'Critical';
+      return 'Inactive';
+    };
+    
     return {
       productiveHours,
       averageActivityScore,
+      activityLevel: getActivityLevel(averageActivityScore),
       markers,
       message,
       attendance,
@@ -1264,10 +1268,21 @@ function setupIpcHandlers() {
     };
     
     const message = productiveHoursService.getWeeklyMessage(productiveHours, attendance, markers);
+    
+    // Calculate activity level based on score
+    const getActivityLevel = (score: number) => {
+      if (score >= 8.5) return 'Good';
+      if (score >= 7.0) return 'Fair';
+      if (score >= 5.5) return 'Low';
+      if (score >= 4.0) return 'Poor';
+      if (score >= 2.5) return 'Critical';
+      return 'Inactive';
+    };
 
     return {
       productiveHours,
       averageActivityScore,
+      activityLevel: getActivityLevel(averageActivityScore),
       markers,
       attendance,
       message,
