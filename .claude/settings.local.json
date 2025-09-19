@@ -18,7 +18,9 @@
       "Bash(npm uninstall:*)",
       "Bash(npx electron:*)",
       "Bash(\"./People Parity.exe\")",
-      "Read(//c/Users/Dhiraj/AppData/Roaming/People Parity/**)"
+      "Read(//c/Users/Dhiraj/AppData/Roaming/People Parity/**)",
+      "Bash(ls:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
