@@ -376,7 +376,7 @@ export class ScreenshotServiceV2 {
       if (screenshot && screenshot.localPath) {
         try {
           await fs.unlink(screenshot.localPath);
-          
+
           // Delete thumbnail too
           const thumbnailPath = screenshot.localPath.replace(
             path.basename(screenshot.localPath),
@@ -388,5 +388,33 @@ export class ScreenshotServiceV2 {
         }
       }
     }
+  }
+
+  /**
+   * Pause screenshot capture temporarily
+   */
+  public pauseCapture() {
+    console.log('⏸ Pausing screenshot capture...');
+    this.isCapturing = false;
+
+    // Clear all timers
+    this.captureTimers.forEach(timer => clearTimeout(timer));
+    this.captureTimers.clear();
+  }
+
+  /**
+   * Resume screenshot capture
+   */
+  public resumeCapture() {
+    if (this.isCapturing) {
+      console.log('⚠️ Screenshot capture is already active');
+      return;
+    }
+
+    console.log('▶️ Resuming screenshot capture...');
+    this.isCapturing = true;
+
+    // Schedule next capture
+    this.scheduleNextScreenshot();
   }
 }

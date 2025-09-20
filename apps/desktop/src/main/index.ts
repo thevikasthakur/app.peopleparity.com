@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog, Menu, Tray, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { ActivityTrackerV2 } from './services/activityTrackerV2';
@@ -77,6 +77,7 @@ if (app.isPackaged) {
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let activityTracker: ActivityTrackerV2;
 let screenshotService: ScreenshotServiceV2;
 let databaseService: DatabaseService;
@@ -295,6 +296,24 @@ const createWindow = () => {
     const indexPath = path.join(__dirname, '../renderer/index.html');
     console.log('Loading production HTML from:', indexPath);
     mainWindow.loadFile(indexPath);
+
+    // Open dev tools to debug blank screen issue
+    mainWindow.webContents.openDevTools();
+
+    // Log any console messages from renderer
+    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      console.log('[Renderer Console]', message);
+    });
+
+    // Log when page finishes loading
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('✅ Page finished loading');
+    });
+
+    // Log any errors
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('❌ Page failed to load:', errorDescription);
+    });
   }
 
   // Handle window close event - prevent accidental closure during tracking
@@ -337,6 +356,370 @@ const createWindow = () => {
     mainWindow = null;
   });
 };
+
+// Create system tray/menu bar icon
+const createTray = async () => {
+  let trayIcon: Electron.NativeImage | undefined;
+
+  // First try to use local bundled icon
+  // Use PNG for macOS, ICO for Windows
+  const iconExt = process.platform === 'darwin' ? '.png' : '.ico';
+  const localIconPath = path.join(__dirname, `../assets/tray-icon${iconExt}`);
+  const srcIconPath = path.join(__dirname, `../../src/assets/tray-icon${iconExt}`);
+
+  let iconPath: string | null = null;
+
+  if (fs.existsSync(localIconPath)) {
+    iconPath = localIconPath;
+    console.log('✅ Found bundled icon at:', localIconPath);
+  } else if (fs.existsSync(srcIconPath)) {
+    iconPath = srcIconPath;
+    console.log('✅ Found source icon at:', srcIconPath);
+  }
+
+  if (iconPath) {
+    try {
+      trayIcon = nativeImage.createFromPath(iconPath);
+      if (!trayIcon.isEmpty()) {
+        console.log('✅ Loaded local People Parity icon');
+        // Apply resize for local icon
+        if (process.platform === 'darwin') {
+          // macOS menu bar - ~77% of original (was 22, now 17)
+          trayIcon = trayIcon.resize({ width: 17, height: 17 });
+        } else if (process.platform === 'win32') {
+          // Windows - ~75% of original (was 16, now 12)
+          trayIcon = trayIcon.resize({ width: 12, height: 12 });
+        }
+      } else {
+        console.log('⚠️ Local icon is empty, will try downloading');
+        iconPath = null;
+      }
+    } catch (e) {
+      console.error('Failed to load local icon:', e);
+      iconPath = null;
+    }
+  }
+
+  // If no local icon, try to download
+  if (!iconPath) {
+    try {
+      // Try to download the icon from S3
+      const https = require('https');
+    const iconUrl = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity.ico';
+
+    // Download icon to temp location - use appropriate extension
+    const tempIconPath = path.join(app.getPath('userData'), `tray-icon${iconExt}`);
+
+    // Check if we already have it downloaded
+    if (fs.existsSync(tempIconPath)) {
+      trayIcon = nativeImage.createFromPath(tempIconPath);
+      console.log('✅ Using cached People Parity icon for tray');
+      // Apply resize for cached icon
+      if (!trayIcon.isEmpty()) {
+        if (process.platform === 'darwin') {
+          trayIcon = trayIcon.resize({ width: 17, height: 17 });
+        } else if (process.platform === 'win32') {
+          trayIcon = trayIcon.resize({ width: 12, height: 12 });
+        }
+      }
+    } else {
+      // Download the icon
+      console.log('📥 Downloading People Parity icon from S3...');
+      const file = fs.createWriteStream(tempIconPath);
+
+      await new Promise((resolve, reject) => {
+        https.get(iconUrl, (response: any) => {
+          response.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve(true);
+          });
+        }).on('error', (err: Error) => {
+          fs.unlink(tempIconPath, () => {}); // Delete incomplete file
+          reject(err);
+        });
+      });
+
+      trayIcon = nativeImage.createFromPath(tempIconPath);
+      if (!trayIcon.isEmpty()) {
+        console.log('✅ Downloaded and using People Parity icon for tray');
+        // Apply resize for downloaded icon
+        if (process.platform === 'darwin') {
+          trayIcon = trayIcon.resize({ width: 17, height: 17 });
+        } else if (process.platform === 'win32') {
+          trayIcon = trayIcon.resize({ width: 12, height: 12 });
+        }
+      } else {
+        throw new Error('Downloaded icon is empty');
+      }
+    }
+
+    } catch (e) {
+      console.error('Failed to download/load tray icon:', e);
+    }
+  }
+
+  // If still no icon, create fallback
+  if (!trayIcon || trayIcon.isEmpty()) {
+    console.log('⚠️ Creating fallback purple icon for tray');
+    // Create fallback icon with People Parity brand colors (~77% of original size)
+    const size = process.platform === 'darwin' ? 17 : 12;
+    const buffer = Buffer.alloc(size * size * 4);
+    // Use People Parity brand color (purple/indigo)
+    const color = [139, 92, 246, 255]; // RGBA - purple color (#8B5CF6)
+    for (let i = 0; i < buffer.length; i += 4) {
+      buffer[i] = color[0];
+      buffer[i + 1] = color[1];
+      buffer[i + 2] = color[2];
+      buffer[i + 3] = color[3];
+    }
+    trayIcon = nativeImage.createFromBuffer(buffer, { width: size, height: size });
+    console.log('✅ Created fallback purple icon');
+  }
+
+  // Final check before creating tray
+  if (!trayIcon || trayIcon.isEmpty()) {
+    console.error('❌ No icon available for tray!');
+    // Create a simple default icon as last resort
+    const size = 16;
+    const buffer = Buffer.alloc(size * size * 4);
+    for (let i = 0; i < buffer.length; i += 4) {
+      buffer[i] = 139;     // R
+      buffer[i + 1] = 92;   // G
+      buffer[i + 2] = 246;  // B
+      buffer[i + 3] = 255;  // A
+    }
+    trayIcon = nativeImage.createFromBuffer(buffer, { width: size, height: size });
+  }
+
+  console.log('🔧 Creating tray with icon size:', trayIcon.getSize());
+  tray = new Tray(trayIcon);
+
+  // Update tray context menu
+  updateTrayMenu();
+
+  // Set tooltip
+  tray.setToolTip('People Parity Time Tracker');
+
+  // Handle tray click events - different behavior on macOS
+  if (process.platform === 'darwin') {
+    // On macOS, the menu is shown automatically on click
+    // We need to update it before it's shown
+    tray.on('mouse-down', () => {
+      console.log('🖱️ [macOS] Tray mouse-down, updating menu...');
+      updateTrayMenu();
+    });
+
+    // Also handle click for good measure
+    tray?.on('click', (event) => {
+      console.log('🖱️ [macOS] Tray clicked');
+      // The menu should already be updated from mouse-down
+    });
+  } else {
+    // Windows/Linux behavior
+    tray.on('click', () => {
+      console.log('🖱️ Tray clicked, updating menu...');
+      updateTrayMenu();
+
+      // On Windows/Linux, left-click shows/hides window
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+        }
+      }
+    });
+
+    // Right-click shows menu on Windows/Linux
+    tray?.on('right-click', () => {
+      console.log('🖱️ Tray right-clicked, updating menu...');
+      updateTrayMenu();
+      tray?.popUpContextMenu();
+    });
+  }
+};
+
+// Update tray menu based on current state
+const updateTrayMenu = () => {
+  console.log('🔄 updateTrayMenu called');
+
+  if (!tray) {
+    console.log('❌ No tray instance');
+    return;
+  }
+
+  if (!databaseService) {
+    console.log('❌ No databaseService instance');
+    return;
+  }
+
+  const currentSession = databaseService?.getActiveSession();
+  const hasActiveSession = currentSession && currentSession.isActive;
+  console.log(`📊 Current session status: ${hasActiveSession ? 'Active' : 'Inactive'}`);
+
+  // Get the actual current note from the session or activity period
+  let currentNote = 'No note set';
+  let lastActivityName = '';
+
+  if (currentSession) {
+    // Try to get from current activity period first, then fall back to session task
+    const currentActivity = databaseService?.getCurrentActivity();
+    currentNote = (currentActivity as any)?.currentNote || currentSession.task || 'No note set';
+    lastActivityName = currentSession.task || currentNote;
+  } else {
+    // Get last session's task for restart
+    const lastSession = databaseService?.getLastSession?.();
+    if (lastSession) {
+      lastActivityName = lastSession.task || 'previous activity';
+    } else {
+      lastActivityName = 'tracking';
+    }
+  }
+
+  // Get recent activities - first try from synced store, then from database
+  let recentNotes: string[] = [];
+
+  // Try to get activities synced from renderer first
+  const storedActivities = store.get('recentActivities') as string[] || [];
+  if (storedActivities.length > 0) {
+    recentNotes = storedActivities;
+    console.log(`📝 Using ${recentNotes.length} synced activities from renderer`);
+  } else {
+    // Fall back to database - but get actual session tasks, not just notes
+    const dbActivities = databaseService?.getRecentNotes() || [];
+    console.log(`📝 Database returned ${dbActivities.length} activities`);
+
+    // If database has activities, use them
+    if (dbActivities.length > 0) {
+      recentNotes = dbActivities;
+      console.log(`📝 Using activities from database:`, dbActivities.slice(0, 5));
+    } else {
+      // As a last resort, try to request from renderer if window exists
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log('📝 Requesting activities from renderer...');
+        mainWindow.webContents.send('request-recent-activities');
+      }
+    }
+  }
+
+  console.log(`📝 Final activities for tray menu:`, recentNotes.slice(0, 5));
+
+  // Build menu items array
+  const menuItems: any[] = [];
+
+  // Check if we have a valid activity name for restart
+  const hasValidActivityName = lastActivityName &&
+    lastActivityName !== 'tracking' &&
+    lastActivityName !== 'previous activity' &&
+    lastActivityName.trim().length > 0;
+
+  // Start/Stop tracking
+  if (hasActiveSession) {
+    // Show stop button when session is active
+    menuItems.push({
+      label: '⏹ Stop Tracking',
+      click: async () => {
+        try {
+          // Stop current session
+          await activityTracker.stopSession();
+          console.log('⏹ Tracking stopped from tray');
+          updateTrayMenu(); // Refresh menu
+          if (mainWindow) {
+            mainWindow.webContents.send('tracking-state-changed', false);
+          }
+        } catch (error) {
+          console.error('❌ Failed to stop session from tray:', error);
+        }
+      }
+    });
+  } else if (hasValidActivityName) {
+    // Show restart button only if we have a valid activity name
+    menuItems.push({
+      label: `▶️ Restart ${lastActivityName.substring(0, 30)}${lastActivityName.length > 30 ? '...' : ''}`,
+      click: async () => {
+        try {
+          // Get last session's task to use for new session
+          const lastSession = databaseService?.getLastSession?.();
+          const taskToUse = lastSession?.task || lastActivityName;
+
+          if (taskToUse && taskToUse.trim().length > 0) {
+            // Start new session with previous task
+            // Note: startSession signature is (mode, projectId?, task?)
+            await activityTracker.startSession('command_hours', undefined, taskToUse);
+            console.log(`▶️ Tracking restarted from tray with task: ${taskToUse}`);
+            updateTrayMenu(); // Refresh menu
+            if (mainWindow) {
+              mainWindow.webContents.send('tracking-state-changed', true);
+            }
+          } else {
+            console.error('❌ Cannot start session: No valid task name available');
+          }
+        } catch (error) {
+          console.error('❌ Failed to start session from tray:', error);
+        }
+      }
+    });
+  } else {
+    // No valid activity name, show disabled message
+    menuItems.push({
+      label: '▶️ Start Tracking (Open app to set activity)',
+      enabled: false
+    });
+  }
+
+  menuItems.push({ type: 'separator' });
+
+  // Current note display
+  menuItems.push({
+    label: `📝 ${currentNote.substring(0, 40)}${currentNote.length > 40 ? '...' : ''}`,
+    enabled: false
+  });
+
+  // Show recent activities as toggle options if session is active
+  if (hasActiveSession && recentNotes.length > 0) {
+    menuItems.push({ type: 'separator' });
+
+    // Add each activity as a clickable item
+    recentNotes.slice(0, 10).forEach((activity) => {
+      const isCurrentActivity = currentNote === activity;
+
+      menuItems.push({
+        label: isCurrentActivity ? `✓ ${activity}` : `    ${activity}`,
+        click: async () => {
+          console.log(`📝 Changing activity to: ${activity}`);
+          if (currentSession) {
+            // Update both the session note and task
+            await databaseService.updateSessionNote(currentSession.id, activity);
+
+            // Notify renderer to update UI
+            if (mainWindow) {
+              mainWindow.webContents.send('note-updated', activity);
+            }
+
+            // Refresh menu to show checkmark on new selection
+            updateTrayMenu();
+          }
+        }
+      });
+    });
+  }
+
+  menuItems.push({ type: 'separator' });
+
+  // Quit option
+  menuItems.push({
+    label: '❌ Quit',
+    click: () => {
+      app.quit();
+    }
+  });
+
+  const contextMenu = Menu.buildFromTemplate(menuItems);
+
+  tray.setContextMenu(contextMenu);
+};
+
 
 // Set up basic IPC handlers immediately when app is ready
 // These will return safe defaults until services are initialized
@@ -417,7 +800,11 @@ app.whenReady().then(async () => {
   // Create window AFTER handlers are registered
   createWindow();
   console.log('✅ Main window created');
-  
+
+  // Create system tray
+  await createTray();
+  console.log('✅ System tray created');
+
   // Restore existing active session if any
   try {
     const activeSession = databaseService.getActiveSession();
@@ -443,7 +830,10 @@ app.whenReady().then(async () => {
   activityTracker.on('session:stopped', () => {
     console.log('📷 Stopping screenshot service due to session stop');
     screenshotService.stop();
-    
+
+    // Update tray menu
+    updateTrayMenu();
+
     // Notify renderer that session has stopped
     if (mainWindow) {
       mainWindow.webContents.send('session-update', { isActive: false });
@@ -455,7 +845,10 @@ app.whenReady().then(async () => {
   const sessionStartedListener = async (session: any) => {
     console.log('📷 Session started event received, starting screenshot service for new session:', session.id);
     console.log('📷 Screenshot service instance exists:', !!screenshotService);
-    
+
+    // Update tray menu
+    updateTrayMenu();
+
     try {
       // Re-enable auto session creation in case it was disabled
       screenshotService.enableAutoSessionCreation();
@@ -701,6 +1094,43 @@ function setupIpcHandlers() {
   
   ipcMain.handle('session:activity', async () => {
     return databaseService.getCurrentActivity();
+  });
+
+  ipcMain.handle('session:update-note', async (_, note: string) => {
+    const activeSession = databaseService.getActiveSession();
+    if (!activeSession) {
+      return { success: false, error: 'No active session' };
+    }
+
+    try {
+      // Update the note in the database
+      databaseService.updateSessionNote(activeSession.id, note);
+
+      // Update tray menu to reflect new note
+      updateTrayMenu();
+
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to update session note:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Also listen for note updates from renderer
+  ipcMain.on('note-updated', () => {
+    updateTrayMenu();
+  });
+
+  // Sync recent activities from renderer's localStorage
+  ipcMain.handle('sync-recent-activities', async (_, activities: string[]) => {
+    console.log('📝 Syncing recent activities from renderer:', activities);
+    // Store these in a way accessible to the tray menu
+    // For now, we can use the store or a local variable
+    if (store) {
+      store.set('recentActivities', activities);
+    }
+    updateTrayMenu();
+    return { success: true };
   });
   
   ipcMain.handle('session:today', async (_event, dateString?: string) => {

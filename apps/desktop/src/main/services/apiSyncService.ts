@@ -341,7 +341,7 @@ export class ApiSyncService {
       }
 
       console.log('🔄 Fetching daily productive hours from cloud for date:', date.toISOString());
-      console.log('🔑 Using auth token:', token.substring(0, 20) + '...');
+      console.log('🔑 Using auth token:', (token as string).substring(0, 20) + '...');
 
       // Call the new productive hours endpoint
       const dateStr = date.toISOString().split('T')[0];
@@ -390,7 +390,7 @@ export class ApiSyncService {
       }
 
       console.log('🔄 Fetching weekly productive hours from cloud for date:', date.toISOString());
-      console.log('🔑 Using auth token:', token.substring(0, 20) + '...');
+      console.log('🔑 Using auth token:', (token as string).substring(0, 20) + '...');
       
       // Call the new productive hours endpoint
       const dateStr = date.toISOString().split('T')[0];

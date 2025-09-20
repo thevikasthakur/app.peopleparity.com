@@ -83,10 +83,41 @@ export function Dashboard() {
   useEffect(() => {
     // Skip if we're in the middle of changing dates
     if (isChangingDate) return;
-    
+
     setRandomMessage(sarcasticMessages[Math.floor(Math.random() * sarcasticMessages.length)]);
     loadTodaySessions();
   }, [selectedDate, isChangingDate]);
+
+  // Sync recent activities to main process on mount and when they change
+  useEffect(() => {
+    if (recentActivities.length > 0) {
+      console.log('📝 Syncing activities to main process:', recentActivities.slice(0, 5));
+      window.electronAPI.invoke('sync-recent-activities', recentActivities).catch(err => {
+        console.error('Failed to sync activities to main:', err);
+      });
+    }
+  }, [recentActivities]);
+
+  // Listen for activity requests from main process
+  useEffect(() => {
+    const handleActivityRequest = () => {
+      console.log('📝 Main process requested recent activities');
+      const activities = recentActivities.length > 0 ? recentActivities :
+        (JSON.parse(localStorage.getItem('recentActivities') || '[]') as string[]);
+
+      if (activities.length > 0) {
+        window.electronAPI.invoke('sync-recent-activities', activities).catch(err => {
+          console.error('Failed to sync activities on request:', err);
+        });
+      }
+    };
+
+    window.electronAPI?.on('request-recent-activities', handleActivityRequest);
+
+    return () => {
+      window.electronAPI?.off('request-recent-activities', handleActivityRequest);
+    };
+  }, [recentActivities]);
   
   useEffect(() => {
     // Reload sessions when current session changes
@@ -262,6 +293,12 @@ export function Dashboard() {
     setRecentActivities(prev => {
       const updated = [activity, ...prev.filter(a => a !== activity)].slice(0, 12);
       localStorage.setItem('recentActivities', JSON.stringify(updated));
+
+      // Sync to main process for tray menu
+      window.electronAPI.invoke('sync-recent-activities', updated).catch(err => {
+        console.error('Failed to sync activities to main:', err);
+      });
+
       return updated;
     });
     

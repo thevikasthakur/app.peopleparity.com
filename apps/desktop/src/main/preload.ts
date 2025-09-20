@@ -90,12 +90,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('debug:enable-foreign-keys'),
   },
   on: (channel: string, callback: (...args: any[]) => void) => {
-    const validChannels = ['idle-status', 'session-update', 'screenshot-captured'];
+    const validChannels = ['idle-status', 'session-update', 'screenshot-captured', 'request-recent-activities', 'note-updated', 'tracking-state-changed', 'concurrent-session-detected'];
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => callback(...args));
     }
   },
   off: (channel: string, callback: (...args: any[]) => void) => {
     ipcRenderer.removeListener(channel, callback);
+  },
+  // Generic invoke method for any IPC call
+  invoke: (channel: string, ...args: any[]) => {
+    return ipcRenderer.invoke(channel, ...args);
   },
 });

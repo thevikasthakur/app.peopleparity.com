@@ -241,17 +241,23 @@ export class ActivityTrackerV2 extends EventEmitter {
    */
   async startSession(mode: 'client_hours' | 'command_hours', projectId?: string, task?: string) {
     console.log('\n🟢 Starting new tracking session...');
-    
+
+    // Validate that we have a task/activity name
+    if (!task || task.trim().length === 0) {
+      console.error('❌ Cannot start session without a task/activity name');
+      throw new Error('Activity name is required to start a session');
+    }
+
     // End any existing session
     if (this.currentSessionId) {
       await this.stopSession();
     }
-    
+
     // Create new session in database
     const session = await this.db.createSession({
       mode,
       projectId,
-      task,
+      task: task.trim(), // Ensure task is trimmed
       startTime: new Date()
     });
     
@@ -918,5 +924,53 @@ export class ActivityTrackerV2 extends EventEmitter {
       newDate: newDate,
       sessionId: this.currentSessionId
     });
+  }
+
+  /**
+   * Pause tracking temporarily (keeps session active)
+   */
+  public pauseTracking() {
+    if (!this.isTracking) {
+      console.log('⚠️ Tracking is not active, cannot pause');
+      return;
+    }
+
+    console.log('⏸ Pausing tracking...');
+
+    // Save current period data before pausing
+    this.savePeriodData();
+
+    // Stop tracking mechanisms but keep session active
+    this.stopTracking();
+
+    // Mark as not tracking but keep session
+    this.isTracking = false;
+
+    this.emit('tracking:paused', this.currentSessionId);
+  }
+
+  /**
+   * Resume tracking after pause
+   */
+  public resumeTracking() {
+    if (!this.currentSessionId) {
+      console.log('⚠️ No active session to resume');
+      return;
+    }
+
+    if (this.isTracking) {
+      console.log('⚠️ Tracking is already active');
+      return;
+    }
+
+    console.log('▶️ Resuming tracking...');
+
+    // Restart tracking mechanisms
+    this.startTracking();
+
+    // Mark as tracking
+    this.isTracking = true;
+
+    this.emit('tracking:resumed', this.currentSessionId);
   }
 }

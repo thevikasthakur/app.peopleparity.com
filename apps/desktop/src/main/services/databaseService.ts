@@ -731,10 +731,6 @@ export class DatabaseService {
     }));
   }
 
-  // Notes management
-  async getRecentNotes() {
-    return this.localDb.getRecentNotes(this.getCurrentUserId(), 10);
-  }
 
   async saveNote(noteText: string) {
     console.log(`DatabaseService: saveNote called with: "${noteText}"`);
@@ -1006,5 +1002,126 @@ export class DatabaseService {
   getTodaySessions() {
     const today = new Date();
     return this.getSessionsForDate(today);
+  }
+
+  updateSessionNote(sessionId: string, note: string) {
+    // Update the task field since sessions table doesn't have currentNote
+    const stmt = (this.localDb as any).db.prepare(`
+      UPDATE sessions
+      SET task = ?
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(note, sessionId);
+
+    if (result.changes === 0) {
+      throw new Error('Session not found or update failed');
+    }
+
+    console.log(`✅ Updated note for session ${sessionId}`);
+    return true;
+  }
+
+  getRecentNotes(): string[] {
+    try {
+      // First, let's debug what's actually in the sessions table
+      const debugSessions = (this.localDb as any).db.prepare(`
+        SELECT id, task, startTime, endTime, isActive
+        FROM sessions
+        WHERE task IS NOT NULL
+        ORDER BY startTime DESC
+        LIMIT 10
+      `).all();
+
+      console.log('📝 Debug - Recent sessions in DB:');
+      debugSessions.forEach((s: any, i: number) => {
+        console.log(`  ${i + 1}. Task: "${s.task}", Active: ${s.isActive}, Time: ${new Date(s.startTime).toLocaleString()}`);
+      });
+
+      // Check if activity_periods table has currentNote column
+      try {
+        const debugActivityPeriods = (this.localDb as any).db.prepare(`
+          SELECT currentNote, startTime
+          FROM activity_periods
+          WHERE currentNote IS NOT NULL AND currentNote != ''
+          ORDER BY startTime DESC
+          LIMIT 10
+        `).all();
+
+        console.log('📝 Debug - Recent activity periods:');
+        debugActivityPeriods.forEach((a: any, i: number) => {
+          console.log(`  ${i + 1}. Note: "${a.currentNote}", Time: ${new Date(a.startTime).toLocaleString()}`);
+        });
+      } catch (e) {
+        console.log('📝 Note: activity_periods table does not have currentNote column');
+      }
+
+      // Get unique activities from sessions only (sessions doesn't have currentNote column)
+      const recentActivities = (this.localDb as any).db.prepare(`
+        SELECT task as note, MAX(startTime) as last_used
+        FROM sessions
+        WHERE task IS NOT NULL
+          AND task != ''
+          AND task != 'null'
+          AND task != 'undefined'
+          AND LENGTH(TRIM(task)) > 0
+        GROUP BY task
+        ORDER BY last_used DESC
+        LIMIT 20
+      `).all();
+
+      console.log(`📝 Raw query found ${recentActivities.length} unique activities`);
+
+      // Extract just the note values
+      const activities = recentActivities
+        .map((r: any) => r.note)
+        .filter((note: any) => {
+          // More robust filtering
+          return note && typeof note === 'string' && note.trim().length > 0;
+        })
+        .map((note: string) => note.trim()); // Trim whitespace
+
+      console.log(`📝 Activities for tray menu (${activities.length} total):`, activities.slice(0, 10));
+
+      // Only add defaults if we have no activities at all
+      if (activities.length === 0) {
+        console.log('📝 No activities found, returning defaults');
+        return [
+          'Development',
+          'Code Review',
+          'Testing',
+          'Documentation',
+          'Meeting'
+        ];
+      }
+
+      return activities;
+    } catch (error) {
+      console.error('❌ Error getting recent notes:', error);
+      // Return defaults on error
+      return [
+        'Development',
+        'Code Review',
+        'Testing',
+        'Documentation',
+        'Meeting'
+      ];
+    }
+  }
+
+  getLastSession() {
+    try {
+      // Get the most recent session (active or completed)
+      const session = (this.localDb as any).db.prepare(`
+        SELECT * FROM sessions
+        ORDER BY startTime DESC
+        LIMIT 1
+      `).get();
+
+      return session;
+    } catch (error) {
+      console.error('Error getting last session:', error);
+      return null;
+    }
   }
 }

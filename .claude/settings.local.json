@@ -22,7 +22,12 @@
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(pkill:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(sqlite3:*)",
+      "Bash(curl:*)",
+      "Read(//Users/thakur/Library/**)",
+      "Read(//tmp/**)",
+      "Bash(sips:*)"
     ],
     "deny": [],
     "ask": []
