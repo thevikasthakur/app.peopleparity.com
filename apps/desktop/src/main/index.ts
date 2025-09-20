@@ -1129,10 +1129,12 @@ function setupIpcHandlers() {
     
     const markers = productiveHoursService.getScaleMarkers(selectedDate);
     const message = productiveHoursService.getHustleMessage(productiveHours, markers, lastActivityScore);
-    
-    // Modify attendance status color based on activity score
-    const baseAttendance = productiveHoursService.getAttendanceStatus(productiveHours, markers);
-    const attendance = {
+
+    // Get attendance status with weekend handling
+    const baseAttendance = productiveHoursService.getAttendanceStatus(productiveHours, markers, selectedDate);
+
+    // Only modify color based on activity score for weekdays
+    const attendance = baseAttendance.isWeekend ? baseAttendance : {
       ...baseAttendance,
       color: averageActivityScore >= 8.5 ? '#10b981' : // green - Good activity
              averageActivityScore >= 7.0 ? '#3b82f6' : // blue - Fair activity

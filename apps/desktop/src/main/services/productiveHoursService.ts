@@ -133,11 +133,26 @@ export class ProductiveHoursService {
   /**
    * Get attendance status based on productive hours
    */
-  getAttendanceStatus(hours: number, markers: any): {
+  getAttendanceStatus(hours: number, markers: any, date: Date = new Date()): {
     earned: number;
     status: string;
     color: string;
+    isWeekend?: boolean;
   } {
+    // Check if it's a weekend
+    const dayOfWeek = date.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday = 0, Saturday = 6
+
+    if (isWeekend) {
+      // Weekends don't award attendance
+      return {
+        earned: 0,
+        status: 'Weekend Hours',
+        color: '#8b5cf6', // purple - distinguishing weekend work
+        isWeekend: true
+      };
+    }
+
     if (hours >= markers.fullAttendance) {
       return {
         earned: 1.0,

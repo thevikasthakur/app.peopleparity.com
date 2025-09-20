@@ -270,15 +270,18 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
             }
           };
           
+          // Allow clicking on weekends if there are hours logged
+          const isClickable = onDayClick && dayDate && (!isWeekend || dayHours > 0);
+
           return (
-            <div 
+            <div
               key={label}
-              className={`p-2 rounded-lg border text-center transition-all relative ${getStatusClasses()} ${!isWeekend && onDayClick ? 'cursor-pointer hover:shadow-lg hover:scale-105 transform' : ''}`}
+              className={`p-2 rounded-lg border text-center transition-all relative ${getStatusClasses()} ${isClickable ? 'cursor-pointer hover:shadow-lg hover:scale-105 transform' : ''}`}
               style={isCurrentDay && attendanceStatus === 'in-progress' ? {
                 animation: 'subtle-pulse 3s ease-in-out infinite'
               } : {}}
               onClick={() => {
-                if (!isWeekend && onDayClick && dayDate) {
+                if (isClickable) {
                   onDayClick(dayDate);
                 }
               }}

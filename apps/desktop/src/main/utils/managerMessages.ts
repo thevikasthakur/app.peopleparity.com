@@ -398,7 +398,11 @@ export function getWeeklyMarathonMessage(context: MessageContext): string {
   const { trackedHoursWeek, targetWeeklyHours = 40, dayOfWeek } = context;
   const remainingHours = Math.max(0, targetWeeklyHours - trackedHoursWeek);
   const weeklyProgress = (trackedHoursWeek / targetWeeklyHours) * 100;
-  const daysRemaining = 5 - dayOfWeek;
+  // Calculate days remaining in work week (Mon-Fri)
+  // dayOfWeek: 0=Sunday, 1=Monday, ..., 6=Saturday
+  const daysRemaining = dayOfWeek === 0 ? 5 : // Sunday: 5 days left
+                        dayOfWeek === 6 ? 0 : // Saturday: 0 days left
+                        Math.max(0, 5 - dayOfWeek); // Mon-Fri: normal calculation
 
   if (dayOfWeek === 5) {
     // Friday special

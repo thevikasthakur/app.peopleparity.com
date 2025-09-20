@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, TrendingUp, Award, Zap, Coffee, Target, Flag, CheckCircle, AlertCircle } from 'lucide-react';
+import { Clock, TrendingUp, Award, Zap, Coffee, Target, Flag, CheckCircle, AlertCircle, Calendar, Trophy } from 'lucide-react';
 import { getActivityMessage } from '../utils/activityMessages';
 import { formatHoursToHM } from '../utils/timeFormatters';
 
@@ -163,104 +163,129 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
         </div>
       </div>
 
-      {/* Milestone Indicators - 5 columns */}
-      <div className="grid grid-cols-5 gap-1.5 mb-4">
-        {/* No Attendance */}
-        <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus === 'none' 
-            ? 'bg-red-50 border-red-300 ring-2 ring-red-300' 
-            : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-medium text-gray-600">No Attendance</span>
-            {milestoneStatus === 'none' ? (
-              <AlertCircle className="w-3 h-3 text-red-500" />
-            ) : (
-              <AlertCircle className="w-3 h-3 text-gray-300" />
-            )}
+      {/* Milestone Indicators - Show different content for weekdays vs weekends */}
+      {!attendance.isWeekend ? (
+        <div className="grid grid-cols-5 gap-1.5 mb-4">
+          {/* No Attendance */}
+          <div className={`p-2 rounded-lg border transition-all ${
+            milestoneStatus === 'none'
+              ? 'bg-red-50 border-red-300 ring-2 ring-red-300'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-gray-600">No Attendance</span>
+              {milestoneStatus === 'none' ? (
+                <AlertCircle className="w-3 h-3 text-red-500" />
+              ) : (
+                <AlertCircle className="w-3 h-3 text-gray-300" />
+              )}
+            </div>
+            <p className="text-sm font-bold text-gray-900">&lt;{markers.halfAttendance}h</p>
+            <p className="text-[10px] text-gray-500">0% attendance</p>
           </div>
-          <p className="text-sm font-bold text-gray-900">&lt;{markers.halfAttendance}h</p>
-          <p className="text-[10px] text-gray-500">0% attendance</p>
-        </div>
 
-        {/* Half Day */}
-        <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus === 'half' 
-            ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-300' 
-            : milestoneStatus !== 'none'
-            ? 'bg-amber-50 border-amber-300'
-            : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-medium text-gray-600">Half Day</span>
-            {milestoneStatus !== 'none' ? (
-              <CheckCircle className="w-3 h-3 text-amber-500" />
-            ) : (
-              <AlertCircle className="w-3 h-3 text-gray-300" />
-            )}
+          {/* Half Day */}
+          <div className={`p-2 rounded-lg border transition-all ${
+            milestoneStatus === 'half'
+              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-300'
+              : milestoneStatus !== 'none'
+              ? 'bg-amber-50 border-amber-300'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-gray-600">Half Day</span>
+              {milestoneStatus !== 'none' ? (
+                <CheckCircle className="w-3 h-3 text-amber-500" />
+              ) : (
+                <AlertCircle className="w-3 h-3 text-gray-300" />
+              )}
+            </div>
+            <p className="text-sm font-bold text-gray-900">{markers.halfAttendance}h</p>
+            <p className="text-[10px] text-gray-500">50% attendance</p>
           </div>
-          <p className="text-sm font-bold text-gray-900">{markers.halfAttendance}h</p>
-          <p className="text-[10px] text-gray-500">50% attendance</p>
-        </div>
 
-        {/* Good Day */}
-        <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus === 'three-quarter'
-            ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-300'
-            : milestoneStatus === 'full' || milestoneStatus === 'extra'
-            ? 'bg-blue-50 border-blue-300' 
-            : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-medium text-gray-600">Good Day</span>
-            {milestoneStatus === 'three-quarter' || milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
-              <CheckCircle className="w-3 h-3 text-blue-500" />
-            ) : (
-              <Target className="w-3 h-3 text-gray-300" />
-            )}
+          {/* Good Day */}
+          <div className={`p-2 rounded-lg border transition-all ${
+            milestoneStatus === 'three-quarter'
+              ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-300'
+              : milestoneStatus === 'full' || milestoneStatus === 'extra'
+              ? 'bg-blue-50 border-blue-300'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-gray-600">Good Day</span>
+              {milestoneStatus === 'three-quarter' || milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
+                <CheckCircle className="w-3 h-3 text-blue-500" />
+              ) : (
+                <Target className="w-3 h-3 text-gray-300" />
+              )}
+            </div>
+            <p className="text-sm font-bold text-gray-900">{markers.threeQuarterAttendance}h</p>
+            <p className="text-[10px] text-gray-500">75% attendance</p>
           </div>
-          <p className="text-sm font-bold text-gray-900">{markers.threeQuarterAttendance}h</p>
-          <p className="text-[10px] text-gray-500">75% attendance</p>
-        </div>
 
-        {/* Full Day */}
-        <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus === 'full'
-            ? 'bg-green-50 border-green-300 ring-2 ring-green-300'
-            : milestoneStatus === 'extra'
-            ? 'bg-green-50 border-green-300' 
-            : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-medium text-gray-600">Full Day</span>
-            {milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
-              <Award className="w-3 h-3 text-green-500" />
-            ) : (
-              <Flag className="w-3 h-3 text-gray-300" />
-            )}
+          {/* Full Day */}
+          <div className={`p-2 rounded-lg border transition-all ${
+            milestoneStatus === 'full'
+              ? 'bg-green-50 border-green-300 ring-2 ring-green-300'
+              : milestoneStatus === 'extra'
+              ? 'bg-green-50 border-green-300'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-gray-600">Full Day</span>
+              {milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
+                <Award className="w-3 h-3 text-green-500" />
+              ) : (
+                <Flag className="w-3 h-3 text-gray-300" />
+              )}
+            </div>
+            <p className="text-sm font-bold text-gray-900">{markers.fullAttendance}h</p>
+            <p className="text-[10px] text-gray-500">100% attendance</p>
           </div>
-          <p className="text-sm font-bold text-gray-900">{markers.fullAttendance}h</p>
-          <p className="text-[10px] text-gray-500">100% attendance</p>
-        </div>
 
-        {/* Extra Mileage */}
-        <div className={`p-2 rounded-lg border transition-all ${
-          milestoneStatus === 'extra'
-            ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-300 animate-pulse' 
-            : 'bg-gray-50 border-gray-200'
-        }`}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-medium text-gray-600">Extra Mileage</span>
-            {milestoneStatus === 'extra' ? (
-              <Zap className="w-3 h-3 text-purple-500" />
-            ) : (
-              <Zap className="w-3 h-3 text-gray-300" />
-            )}
+          {/* Extra Mileage */}
+          <div className={`p-2 rounded-lg border transition-all ${
+            milestoneStatus === 'extra'
+              ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-300 animate-pulse'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-gray-600">Extra Mileage</span>
+              {milestoneStatus === 'extra' ? (
+                <Zap className="w-3 h-3 text-purple-500" />
+              ) : (
+                <Zap className="w-3 h-3 text-gray-300" />
+              )}
+            </div>
+            <p className="text-sm font-bold text-gray-900">&gt;{markers.fullAttendance}h</p>
+            <p className="text-[10px] text-gray-500">Flexibility earned</p>
           </div>
-          <p className="text-sm font-bold text-gray-900">&gt;{markers.fullAttendance}h</p>
-          <p className="text-[10px] text-gray-500">Flexibility earned</p>
         </div>
-      </div>
+      ) : (
+        /* Weekend message */
+        <div className="mb-4 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+          <div className="flex items-center justify-center space-x-3">
+            <div className="flex-shrink-0">
+              <div className="p-2 bg-purple-100 rounded-full">
+                <Calendar className="w-5 h-5 text-purple-600" />
+              </div>
+            </div>
+            <div className="text-center">
+              <h4 className="text-sm font-semibold text-purple-900">Weekend Work Session</h4>
+              <p className="text-xs text-purple-700 mt-1">
+                No attendance milestones on weekends • Hours count toward weekly total
+              </p>
+              <div className="flex items-center justify-center gap-2 mt-2">
+                <Trophy className="w-4 h-4 text-purple-500" />
+                <span className="text-xs font-medium text-purple-800">
+                  Keep going! Every hour contributes to your weekly marathon
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Enhanced Progress Bar */}
       <div className="relative mb-5">
@@ -342,20 +367,27 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
         {/* Achievement Status - Moved to top */}
         <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full animate-pulse" 
+            <div className="w-2 h-2 rounded-full animate-pulse"
                  style={{ backgroundColor: attendance.color }} />
-            <span className="text-xs text-gray-600">{isToday ? "Today's" : "Day's"} Achievement:</span>
+            <span className="text-xs text-gray-600">
+              {attendance.isWeekend ? "Weekend" : (isToday ? "Today's" : "Day's")} {attendance.isWeekend ? "Hours" : "Achievement"}:
+            </span>
             <span className="font-bold text-sm px-2 py-1 rounded-lg"
-                  style={{ 
+                  style={{
                     backgroundColor: `${attendance.color}15`,
                     color: attendance.color,
                     border: `1px solid ${attendance.color}30`
                   }}>
               {attendance.status}
             </span>
+            {attendance.isWeekend && (
+              <span className="text-xs text-purple-600 ml-2">
+                (No attendance on weekends, but hours count towards weekly total)
+              </span>
+            )}
           </div>
-          
-          {productiveHours > markers.fullAttendance && (
+
+          {productiveHours > markers.fullAttendance && !attendance.isWeekend && (
             <div className="flex items-center gap-1 animate-bounce">
               <Zap className="w-4 h-4 text-yellow-500" />
               <span className="text-xs font-bold text-yellow-600">
