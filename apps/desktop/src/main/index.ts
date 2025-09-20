@@ -187,8 +187,8 @@ const createWindow = () => {
       offscreen: false,
       // Explicitly enable hardware acceleration
       accelerated: true,
-      // Disable dev tools in production
-      devTools: process.env.NODE_ENV === 'development' || !app.isPackaged
+      // Enable dev tools
+      devTools: true
     },
     titleBarStyle: 'hiddenInset',
     minWidth: 1200,
@@ -252,25 +252,7 @@ const createWindow = () => {
       }
     }
 
-    // Block F12 and Ctrl/Cmd+Shift+I (dev tools shortcuts) in production
-    if (app.isPackaged) {
-      // F12 key
-      if (input.key === 'F12') {
-        event.preventDefault();
-      }
-      // Ctrl/Cmd+Shift+I
-      if ((input.control || input.meta) && input.shift && input.key === 'I') {
-        event.preventDefault();
-      }
-      // Ctrl/Cmd+Shift+C (inspect element)
-      if ((input.control || input.meta) && input.shift && input.key === 'C') {
-        event.preventDefault();
-      }
-      // Ctrl/Cmd+Shift+J (console)
-      if ((input.control || input.meta) && input.shift && input.key === 'J') {
-        event.preventDefault();
-      }
-    }
+    // Dev tools shortcuts are now enabled
   });
   
   // Also prevent zoom via mouse wheel with Ctrl/Cmd
@@ -293,15 +275,7 @@ const createWindow = () => {
       console.log('Forced window redraw for Retina display');
     }
 
-    // Disable right-click context menu in production to prevent "Inspect Element"
-    if (app.isPackaged) {
-      mainWindow!.webContents.executeJavaScript(`
-        document.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          return false;
-        });
-      `);
-    }
+    // Right-click context menu is now enabled
     
     // Log rendering information and apply DPI fixes
     // CRITICAL FIX: Use a simpler approach to avoid serialization errors

@@ -41,10 +41,11 @@
     "node_modules/uiohook-napi/**/*",
     "node_modules/sharp/**/*",
     "node_modules/@img/**/*",
-    "node_modules/screenshot-desktop/**/*"
+    "node_modules/screenshot-desktop/**/*",
+    "**/*.node"
   ],
-  "npmRebuild": false,
-  "buildDependenciesFromSource": false,
+  "npmRebuild": true,
+  "buildDependenciesFromSource": true,
   "mac": {
     "category": "public.app-category.productivity",
     "icon": "build/icon.icns",

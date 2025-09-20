@@ -41,7 +41,8 @@ export class ScreenshotsService {
     fullKey: string;
     thumbnailKey: string;
   }> {
-    const bucket = process.env.SCREENSHOTS_BUCKET || "ppv1-screenshots-dev";
+    const stage = process.env.STAGE || "dev";
+    const bucket = process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
     const s3 = this.getS3Client();
 
     // Extract userId from baseKey
@@ -100,8 +101,9 @@ export class ScreenshotsService {
     file: Express.Multer.File,
     userId: string
   ): Promise<{ fullUrl: string; thumbnailUrl: string }> {
+    const stage = process.env.STAGE || "dev";
     const bucket =
-      process.env.SCREENSHOTS_BUCKET || "pp-tracker-screenshots-dev";
+      process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
 
     // Create human-readable timestamp
     const now = new Date();
@@ -220,8 +222,9 @@ export class ScreenshotsService {
   }
 
   async generateViewSignedUrl(s3Url: string): Promise<string> {
+    const stage = process.env.STAGE || "dev";
     const bucket =
-      process.env.SCREENSHOTS_BUCKET || "pp-tracker-screenshots-dev";
+      process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
     const s3 = this.getS3Client();
 
     // Extract the S3 key from the URL

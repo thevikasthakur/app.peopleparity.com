@@ -27,7 +27,10 @@
       "Bash(curl:*)",
       "Read(//Users/thakur/Library/**)",
       "Read(//tmp/**)",
-      "Bash(sips:*)"
+      "Bash(sips:*)",
+      "Bash(npm rebuild:*)",
+      "Bash(arch -arm64 npx electron-rebuild -f -w better-sqlite3 -a arm64)",
+      "Bash(npx png-to-ico:*)"
     ],
     "deny": [],
     "ask": []
