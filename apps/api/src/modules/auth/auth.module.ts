@@ -9,6 +9,17 @@ import { LocalStrategy } from './local.strategy';
 import { MicrosoftSamlStrategy } from './saml.strategy';
 import { UsersModule } from '../users/users.module';
 
+// Only include SAML strategy if SAML_CERT is configured
+const providers = [AuthService, LocalStrategy, JwtStrategy];
+
+// Check if SAML is configured before adding the strategy
+if (process.env.SAML_CERT && process.env.SAML_CERT.trim() !== '') {
+  console.log('✅ SAML certificate found, enabling SAML authentication');
+  providers.push(MicrosoftSamlStrategy);
+} else {
+  console.log('⚠️ SAML certificate not found, SAML authentication disabled');
+}
+
 @Module({
   imports: [
     UsersModule,
@@ -24,7 +35,7 @@ import { UsersModule } from '../users/users.module';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy, MicrosoftSamlStrategy],
+  providers,
   controllers: [AuthController],
   exports: [AuthService],
 })

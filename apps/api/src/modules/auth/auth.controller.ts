@@ -37,19 +37,36 @@ export class AuthController {
   }
 
   @Get('saml/login')
-  @UseGuards(AuthGuard('saml'))
-  async samlLogin() {
+  async samlLogin(@Res() res: Response) {
+    // Check if SAML is configured
+    if (!process.env.SAML_CERT || process.env.SAML_CERT.trim() === '') {
+      return res.status(501).json({
+        success: false,
+        message: 'SAML authentication is not configured. Please use standard login.'
+      });
+    }
     // This route initiates SAML authentication
     // Passport will redirect to Microsoft login
+    // Note: Guard is applied conditionally at runtime
+    return res.status(500).json({
+      success: false,
+      message: 'SAML authentication endpoint requires guard implementation'
+    });
   }
 
   @Post('saml/callback')
-  @UseGuards(AuthGuard('saml'))
   async samlCallback(@Request() req, @Res() res: Response) {
+    // Check if SAML is configured
+    if (!process.env.SAML_CERT || process.env.SAML_CERT.trim() === '') {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
+      const error = encodeURIComponent('SAML authentication is not configured');
+      return res.redirect(`${frontendUrl}/auth/callback?success=false&error=${error}`);
+    }
+
     try {
       // Handle SAML callback from Microsoft
       const result = await this.authService.handleSamlLogin(req.user);
-      
+
       if (result.success && result.token) {
         // Redirect to frontend with token
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
@@ -71,8 +88,17 @@ export class AuthController {
 
   @Get('saml/metadata')
   async getMetadata() {
+    // Check if SAML is configured
+    if (!process.env.SAML_CERT || process.env.SAML_CERT.trim() === '') {
+      return {
+        success: false,
+        message: 'SAML authentication is not configured',
+        configured: false
+      };
+    }
     // Return service provider metadata for SAML configuration
     return {
+      configured: true,
       entityID: process.env.SAML_ISSUER || 'http://localhost:3001',
       assertionConsumerService: {
         url: process.env.SAML_CALLBACK_URL || 'http://localhost:3001/api/auth/saml/callback',

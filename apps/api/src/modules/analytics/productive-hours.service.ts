@@ -14,13 +14,24 @@ export class ProductiveHoursService {
   ) {}
 
   async getDailyProductiveHours(userId: string, date: Date) {
-    // Set date range to UTC midnight
-    const startOfDay = new Date(date);
-    startOfDay.setUTCHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setUTCHours(23, 59, 59, 999);
+    try {
+      if (!userId) {
+        console.error('❌ No userId provided to getDailyProductiveHours');
+        throw new Error('userId is required');
+      }
 
-    console.log('Fetching productive hours for:', { userId, startOfDay, endOfDay });
+      // Set date range to UTC midnight
+      const startOfDay = new Date(date);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+
+      console.log('📊 Fetching daily productive hours for:', {
+        userId,
+        date: date.toISOString(),
+        startOfDay: startOfDay.toISOString(),
+        endOfDay: endOfDay.toISOString()
+      });
 
     // Fetch all screenshots for the day with their activity periods
     const screenshots = await this.screenshotRepository.find({
@@ -113,21 +124,36 @@ export class ProductiveHoursService {
       validScreenshots: Math.floor(validMinutes / 10),
       date: date.toISOString().split('T')[0],
     };
+    } catch (error) {
+      console.error('❌ Error in getDailyProductiveHours:', error);
+      throw error;
+    }
   }
 
   async getWeeklyProductiveHours(userId: string, date: Date) {
-    // Get Monday of the week
-    const dayOfWeek = date.getDay();
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const startOfWeek = new Date(date);
-    startOfWeek.setDate(date.getDate() - daysToMonday);
-    startOfWeek.setUTCHours(0, 0, 0, 0);
+    try {
+      if (!userId) {
+        console.error('❌ No userId provided to getWeeklyProductiveHours');
+        throw new Error('userId is required');
+      }
 
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setUTCHours(23, 59, 59, 999);
+      // Get Monday of the week
+      const dayOfWeek = date.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const startOfWeek = new Date(date);
+      startOfWeek.setDate(date.getDate() - daysToMonday);
+      startOfWeek.setUTCHours(0, 0, 0, 0);
 
-    console.log('Fetching weekly hours from', startOfWeek, 'to', endOfWeek);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setUTCHours(23, 59, 59, 999);
+
+      console.log('📊 Fetching weekly productive hours for:', {
+        userId,
+        date: date.toISOString(),
+        startOfWeek: startOfWeek.toISOString(),
+        endOfWeek: endOfWeek.toISOString()
+      });
 
     // Fetch all screenshots for the week to calculate proper average
     const screenshots = await this.screenshotRepository.find({
@@ -212,6 +238,10 @@ export class ProductiveHoursService {
       weekStart: startOfWeek.toISOString().split('T')[0],
       weekEnd: endOfWeek.toISOString().split('T')[0],
     };
+    } catch (error) {
+      console.error('❌ Error in getWeeklyProductiveHours:', error);
+      throw error;
+    }
   }
 
   private calculateTop80Average(scores: number[]): number {

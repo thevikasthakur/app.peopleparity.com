@@ -1,5 +1,6 @@
 service: ppv1
 frameworkVersion: "4"
+useDotenv: true
 
 provider:
   name: aws
@@ -15,9 +16,36 @@ provider:
   tracing:
     lambda: true
   environment:
+    # Node / Server
     NODE_OPTIONS: --enable-source-maps
     STAGE: ${sls:stage}
-    SCREENSHOTS_BUCKET: ${self:custom.screenshotsBucket}
+    PORT: ${env:PORT}
+    NODE_ENV: ${env:NODE_ENV}
+
+    # Database
+    DATABASE_HOST: ${env:DATABASE_HOST}
+    DATABASE_PORT: ${env:DATABASE_PORT}
+    DATABASE_USER: ${env:DATABASE_USER}
+    DATABASE_PASSWORD: ${env:DATABASE_PASSWORD}
+    DATABASE_NAME: ${env:DATABASE_NAME}
+
+    # JWT
+    JWT_SECRET: ${env:JWT_SECRET}
+    JWT_EXPIRATION: ${env:JWT_EXPIRATION}
+
+    # Super Admin
+    SUPER_ADMIN_EMAIL: ${env:SUPER_ADMIN_EMAIL}
+    SUPER_ADMIN_PASSWORD: ${env:SUPER_ADMIN_PASSWORD}
+
+    # SAML
+    SAML_ENTRY_POINT: ${env:SAML_ENTRY_POINT}
+    SAML_ISSUER: ${env:SAML_ISSUER}
+    SAML_CLIENT_ID: ${env:SAML_CLIENT_ID}
+    SAML_CALLBACK_URL: ${env:SAML_CALLBACK_URL}
+    SAML_CERT: ${env:SAML_CERT}
+
+    # Frontend URL
+    FRONTEND_URL: ${env:FRONTEND_URL}
 
   # Lambda execution role permissions (scoped to this stage's bucket)
   iam:
@@ -93,7 +121,7 @@ resources:
           ServerSideEncryptionConfiguration:
             - ServerSideEncryptionByDefault:
                 SSEAlgorithm: AES256
-       
+
     ScreenshotsBucketPolicy:
       Type: AWS::S3::BucketPolicy
       Properties:

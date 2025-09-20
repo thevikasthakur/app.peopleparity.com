@@ -334,29 +334,48 @@ export class ApiSyncService {
 
   async fetchDailyProductiveHours(date: Date) {
     try {
-      console.log('Fetching daily productive hours from cloud for date:', date.toISOString());
-      
+      const token = this.store.get('authToken');
+      if (!token) {
+        console.error('❌ No auth token found - user not logged in or token expired');
+        return null;
+      }
+
+      console.log('🔄 Fetching daily productive hours from cloud for date:', date.toISOString());
+      console.log('🔑 Using auth token:', token.substring(0, 20) + '...');
+
       // Call the new productive hours endpoint
       const dateStr = date.toISOString().split('T')[0];
-      const response = await this.api.get(`/analytics/productive-hours/daily?date=${dateStr}`);
-      
-      console.log('Cloud API response for daily productive hours:', response.data);
-      
+      const url = `/analytics/productive-hours/daily?date=${dateStr}`;
+      console.log('📡 API URL:', this.api.defaults.baseURL + url);
+
+      const response = await this.api.get(url);
+
+      console.log('✅ Cloud API response for daily productive hours:', response.data);
+
       // Return the productive hours data
       if (response.data) {
-        return {
+        const result = {
           productiveHours: response.data.productiveHours || 0,
           averageActivityScore: response.data.averageActivityScore || 0,
           activityLevel: response.data.activityLevel || undefined,
           totalScreenshots: response.data.totalScreenshots || 0,
           validScreenshots: response.data.validScreenshots || 0
         };
+        console.log('📊 Returning cloud data:', result);
+        return result;
       }
-      
+
+      console.warn('⚠️ Cloud API returned empty data');
       return null;
     } catch (error: any) {
-      console.error('Failed to fetch daily productive hours from cloud:', error.message);
-      
+      console.error('❌ Failed to fetch daily productive hours from cloud:');
+      console.error('  Error message:', error.message);
+      console.error('  Error code:', error.code);
+      if (error.response) {
+        console.error('  Response status:', error.response.status);
+        console.error('  Response data:', error.response.data);
+      }
+
       // Return null to indicate fallback to local calculation
       return null;
     }
@@ -364,17 +383,27 @@ export class ApiSyncService {
 
   async fetchWeeklyProductiveHours(date: Date) {
     try {
-      console.log('Fetching weekly productive hours from cloud for date:', date.toISOString());
+      const token = this.store.get('authToken');
+      if (!token) {
+        console.error('❌ No auth token found - user not logged in or token expired');
+        return null;
+      }
+
+      console.log('🔄 Fetching weekly productive hours from cloud for date:', date.toISOString());
+      console.log('🔑 Using auth token:', token.substring(0, 20) + '...');
       
       // Call the new productive hours endpoint
       const dateStr = date.toISOString().split('T')[0];
-      const response = await this.api.get(`/analytics/productive-hours/weekly?date=${dateStr}`);
-      
-      console.log('Cloud API response for weekly productive hours:', response.data);
-      
+      const url = `/analytics/productive-hours/weekly?date=${dateStr}`;
+      console.log('📡 API URL:', this.api.defaults.baseURL + url);
+
+      const response = await this.api.get(url);
+
+      console.log('✅ Cloud API response for weekly productive hours:', response.data);
+
       // Return the productive hours data
       if (response.data) {
-        return {
+        const result = {
           productiveHours: response.data.productiveHours || 0,
           averageActivityScore: response.data.averageActivityScore || 0,
           activityLevel: response.data.activityLevel || undefined,
@@ -382,12 +411,21 @@ export class ApiSyncService {
           weekStart: response.data.weekStart,
           weekEnd: response.data.weekEnd
         };
+        console.log('📊 Returning cloud data:', result);
+        return result;
       }
-      
+
+      console.warn('⚠️ Cloud API returned empty data');
       return null;
     } catch (error: any) {
-      console.error('Failed to fetch weekly productive hours from cloud:', error.message);
-      
+      console.error('❌ Failed to fetch weekly productive hours from cloud:');
+      console.error('  Error message:', error.message);
+      console.error('  Error code:', error.code);
+      if (error.response) {
+        console.error('  Response status:', error.response.status);
+        console.error('  Response data:', error.response.data);
+      }
+
       // Return null to indicate fallback to local calculation
       return null;
     }

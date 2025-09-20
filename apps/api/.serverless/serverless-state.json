@@ -22,7 +22,23 @@
       "environment": {
         "NODE_OPTIONS": "--enable-source-maps",
         "STAGE": "prod",
-        "SCREENSHOTS_BUCKET": "ppv1-screenshots-prod"
+        "PORT": "3001",
+        "NODE_ENV": "development",
+        "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
+        "DATABASE_PORT": "6543",
+        "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
+        "DATABASE_PASSWORD": "FIr5FKZ3YqwRuxxv",
+        "DATABASE_NAME": "postgres",
+        "JWT_SECRET": "people-parity-secret-key-2024",
+        "JWT_EXPIRATION": "7d",
+        "SUPER_ADMIN_EMAIL": "admin@peopleparity.com",
+        "SUPER_ADMIN_PASSWORD": "Expressparity1!",
+        "SAML_ENTRY_POINT": "https://login.microsoftonline.com/383cc6fe-545e-4fab-8276-0c78ac6258f7/saml2",
+        "SAML_ISSUER": "PeopleParity",
+        "SAML_CLIENT_ID": "PeopleParity",
+        "SAML_CALLBACK_URL": "http://localhost:3001/api/auth/saml/callback",
+        "SAML_CERT": "-----BEGIN CERTIFICATE-----\nMIIC8DCCAdigAwIBAgIQcNr6w7TexKlOQiRcfM3EkTANBgkqhkiG9w0BAQsFADA0MTIwMAYDVQQD\nEylNaWNyb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTAeFw0yNTA4MjAxNzA4\nMDVaFw0yODA4MjAxNzA4MDVaMDQxMjAwBgNVBAMTKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQg\nU1NPIENlcnRpZmljYXRlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4B+KN+dY3vNS\nNOySyWE6KS90Eeg9TC54XpYrWZj/dKI0gtEcfvm2hSvqKfDX5pDLUBB/SOe00Gz0OELqDZ6Tgg78\nM5lyKNQHpxg7g0rnKzNpI+j2uc5gS9eMK27N1GQxpnS/GqpF3N4iXuQYP8X4s2yNTleRfmjttrHW\nf4YSlp9l5zGHjdt8cs+JaBNupcAxPKFh2vBBWkab95O+UpjsOv/E3BnIyp/+R+kXmyaHvSk5hAEG\n74UcMKmBrSUYpa0R+CTpIb6YtPMkzwYkESGoqtvQkNahaIAr0i94ZWC/H33gvaapqTO84GwUF/pJ\nzQkmCjTglK5V4OKMxuzA+N+wCQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQDGprNWc6nrUiEQmiF3\nNDgqumqmxhLafGe3iMFaEJhGkuZge4ZpiqU8AdaK6KYnvzZ8may/rm0uj5z4RIufs6hkAed0OVrC\nHTw2bVHqgwHc8iMXouy7gzz8tvn54yGq69rZkEWg3/spgvGFR1ZZudXHIPkQp5irLG9f63iyi1cF\nC2T0Wl5PgkGZVkM+s8hU0AiYshSYYd5i73IPNFEvDoLV69GqUU6RRobMUlm5oUuaNohht3+6ZRp7\ncfuxmh/dKbjYWc4jfB1/Na4YL+hmoaFRqtaY39AyLSQDkpvThq2Wgl55CbxKhlSnXlTao+4pDcBr\nXyQ9nY0Lnh+p0dOEqU8o\n-----END CERTIFICATE-----",
+        "FRONTEND_URL": "http://localhost:5174"
       },
       "iam": {
         "role": {
@@ -157,7 +173,7 @@
             "Properties": {
               "Code": {
                 "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
-                "S3Key": "serverless/ppv1/prod/1758359856290-2025-09-20T09:17:36.290Z/ppv1.zip"
+                "S3Key": "serverless/ppv1/prod/1758375569731-2025-09-20T13:39:29.731Z/ppv1.zip"
               },
               "Handler": "src/lambda.handler",
               "Runtime": "nodejs22.x",
@@ -171,7 +187,23 @@
                 "Variables": {
                   "NODE_OPTIONS": "--enable-source-maps",
                   "STAGE": "prod",
-                  "SCREENSHOTS_BUCKET": "ppv1-screenshots-prod"
+                  "PORT": "3001",
+                  "NODE_ENV": "development",
+                  "DATABASE_HOST": "aws-1-ap-south-1.pooler.supabase.com",
+                  "DATABASE_PORT": "6543",
+                  "DATABASE_USER": "postgres.wbqjfspfleboymnvkkte",
+                  "DATABASE_PASSWORD": "FIr5FKZ3YqwRuxxv",
+                  "DATABASE_NAME": "postgres",
+                  "JWT_SECRET": "people-parity-secret-key-2024",
+                  "JWT_EXPIRATION": "7d",
+                  "SUPER_ADMIN_EMAIL": "admin@peopleparity.com",
+                  "SUPER_ADMIN_PASSWORD": "Expressparity1!",
+                  "SAML_ENTRY_POINT": "https://login.microsoftonline.com/383cc6fe-545e-4fab-8276-0c78ac6258f7/saml2",
+                  "SAML_ISSUER": "PeopleParity",
+                  "SAML_CLIENT_ID": "PeopleParity",
+                  "SAML_CALLBACK_URL": "http://localhost:3001/api/auth/saml/callback",
+                  "SAML_CERT": "-----BEGIN CERTIFICATE-----\nMIIC8DCCAdigAwIBAgIQcNr6w7TexKlOQiRcfM3EkTANBgkqhkiG9w0BAQsFADA0MTIwMAYDVQQD\nEylNaWNyb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTAeFw0yNTA4MjAxNzA4\nMDVaFw0yODA4MjAxNzA4MDVaMDQxMjAwBgNVBAMTKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQg\nU1NPIENlcnRpZmljYXRlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4B+KN+dY3vNS\nNOySyWE6KS90Eeg9TC54XpYrWZj/dKI0gtEcfvm2hSvqKfDX5pDLUBB/SOe00Gz0OELqDZ6Tgg78\nM5lyKNQHpxg7g0rnKzNpI+j2uc5gS9eMK27N1GQxpnS/GqpF3N4iXuQYP8X4s2yNTleRfmjttrHW\nf4YSlp9l5zGHjdt8cs+JaBNupcAxPKFh2vBBWkab95O+UpjsOv/E3BnIyp/+R+kXmyaHvSk5hAEG\n74UcMKmBrSUYpa0R+CTpIb6YtPMkzwYkESGoqtvQkNahaIAr0i94ZWC/H33gvaapqTO84GwUF/pJ\nzQkmCjTglK5V4OKMxuzA+N+wCQIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQDGprNWc6nrUiEQmiF3\nNDgqumqmxhLafGe3iMFaEJhGkuZge4ZpiqU8AdaK6KYnvzZ8may/rm0uj5z4RIufs6hkAed0OVrC\nHTw2bVHqgwHc8iMXouy7gzz8tvn54yGq69rZkEWg3/spgvGFR1ZZudXHIPkQp5irLG9f63iyi1cF\nC2T0Wl5PgkGZVkM+s8hU0AiYshSYYd5i73IPNFEvDoLV69GqUU6RRobMUlm5oUuaNohht3+6ZRp7\ncfuxmh/dKbjYWc4jfB1/Na4YL+hmoaFRqtaY39AyLSQDkpvThq2Wgl55CbxKhlSnXlTao+4pDcBr\nXyQ9nY0Lnh+p0dOEqU8o\n-----END CERTIFICATE-----",
+                  "FRONTEND_URL": "http://localhost:5174"
                 }
               },
               "Role": {
@@ -185,14 +217,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersiontirr1NFZ8JBspW0if0Y8RlqXVh0cNpxV2IQMIXU": {
+          "ApiLambdaVersionNoJqLsh5mDqpL3dCpUOk9hvvBfdUz8sRhGygoaZPZQ": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "q5ujJMtVuSHKMcotpnHbzfWu3DIX76BWHNdhFqow4/o="
+              "CodeSha256": "13R/YvqVKVfbv/Gnj5FJ4WVKf8ydO+GRoP9xvN2joPE="
             }
           },
           "HttpApi": {
@@ -387,7 +419,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersiontirr1NFZ8JBspW0if0Y8RlqXVh0cNpxV2IQMIXU"
+              "Ref": "ApiLambdaVersionNoJqLsh5mDqpL3dCpUOk9hvvBfdUz8sRhGygoaZPZQ"
             },
             "Export": {
               "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
@@ -484,7 +516,7 @@
         "timeout": 31,
         "runtime": "nodejs22.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersiontirr1NFZ8JBspW0if0Y8RlqXVh0cNpxV2IQMIXU"
+        "versionLogicalId": "ApiLambdaVersionNoJqLsh5mDqpL3dCpUOk9hvvBfdUz8sRhGygoaZPZQ"
       }
     },
     "resources": {
@@ -549,6 +581,7 @@
     "initialServerlessConfig": {
       "service": "ppv1",
       "frameworkVersion": "4",
+      "useDotenv": true,
       "provider": {
         "$ref": "$[\"service\"][\"provider\"]"
       },
@@ -585,7 +618,7 @@
     "layers": {}
   },
   "package": {
-    "artifactDirectoryName": "serverless/ppv1/prod/1758359856290-2025-09-20T09:17:36.290Z",
+    "artifactDirectoryName": "serverless/ppv1/prod/1758375569731-2025-09-20T13:39:29.731Z",
     "artifact": "ppv1.zip"
   }
 }
