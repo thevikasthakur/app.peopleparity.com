@@ -883,21 +883,39 @@ export class ApiSyncService {
             
             // Handle concurrent session detection
             if (activityResponse.data.error === 'CONCURRENT_SESSION_DETECTED') {
-              console.error('🚫 CONCURRENT SESSION DETECTED! Another device is already tracking for this user.');
-              
-              // Only emit event once per detection period (5 minutes)
-              const now = Date.now();
-              if (!this.concurrentSessionDetected || (now - this.concurrentSessionHandledAt) > 5 * 60 * 1000) {
-                this.concurrentSessionDetected = true;
-                this.concurrentSessionHandledAt = now;
-                
-                // Emit event to stop tracking
-                const { app } = require('electron');
-                app.emit('concurrent-session-detected', {
-                  message: activityResponse.data.message,
-                  details: activityResponse.data.details,
-                  sessionId: data.sessionId
-                });
+              const details = activityResponse.data.details || {};
+              const otherDeviceInfo = details.activeDevice || details.deviceInfo || '';
+              const currentDeviceInfo = require('os').hostname();
+
+              console.log('🔍 Concurrent session check:', {
+                currentDevice: currentDeviceInfo,
+                otherDevice: otherDeviceInfo,
+                isSameDevice: otherDeviceInfo === currentDeviceInfo
+              });
+
+              // Only treat as concurrent session if it's from a DIFFERENT device
+              if (otherDeviceInfo && otherDeviceInfo !== currentDeviceInfo) {
+                console.error('🚫 CONCURRENT SESSION DETECTED! Another device is already tracking:', otherDeviceInfo);
+
+                // Only emit event once per detection period (5 minutes)
+                const now = Date.now();
+                if (!this.concurrentSessionDetected || (now - this.concurrentSessionHandledAt) > 5 * 60 * 1000) {
+                  this.concurrentSessionDetected = true;
+                  this.concurrentSessionHandledAt = now;
+
+                  // Emit event to stop tracking
+                  const { app } = require('electron');
+                  app.emit('concurrent-session-detected', {
+                    message: activityResponse.data.message,
+                    details: activityResponse.data.details,
+                    sessionId: data.sessionId,
+                    otherDevice: otherDeviceInfo
+                  });
+                }
+              } else {
+                console.log('⚠️ Concurrent session detected but from SAME device - ignoring');
+                // Don't treat as error if it's the same device
+                // This can happen when toggling tracking on/off quickly
               }
               
               // Mark this as a critical error that shouldn't be retried
@@ -993,29 +1011,45 @@ export class ApiSyncService {
       
       // Check for concurrent session detection
       if (error.response?.status === 409 || error.response?.data?.error === 'CONCURRENT_SESSION_DETECTED') {
-        console.error('🚫 CONCURRENT SESSION DETECTED DURING SYNC!');
         const details = error.response?.data?.details || {};
-        
-        // If this was a screenshot upload that failed due to concurrent session
-        if (item.entityType === 'screenshot') {
-          // Mark this screenshot as from a different device in the database
-          console.log('Marking screenshot as from different device:', item.entityId);
-          // Delete the local screenshot since it wasn't uploaded
-          this.db.deleteScreenshots([item.entityId]);
-          
-          // Optionally, you could create a placeholder entry indicating
-          // that this time slot was tracked on a different device
-          // But for now, we'll just delete it to clean up the UI
-        }
-        
-        // Emit event to stop tracking
-        const { app } = require('electron');
-        app.emit('concurrent-session-detected', {
-          message: error.response?.data?.message || 'Another device is tracking time',
-          details,
-          sessionId: details.sessionId,
-          timestamp: new Date()
+        const otherDeviceInfo = details.activeDevice || details.deviceInfo || '';
+        const currentDeviceInfo = require('os').hostname();
+
+        console.log('🔍 Concurrent session check during sync:', {
+          currentDevice: currentDeviceInfo,
+          otherDevice: otherDeviceInfo,
+          isSameDevice: otherDeviceInfo === currentDeviceInfo
         });
+
+        // Only treat as concurrent session if it's from a DIFFERENT device
+        if (otherDeviceInfo && otherDeviceInfo !== currentDeviceInfo) {
+          console.error('🚫 CONCURRENT SESSION DETECTED DURING SYNC! Other device:', otherDeviceInfo);
+
+          // If this was a screenshot upload that failed due to concurrent session
+          if (item.entityType === 'screenshot') {
+            // Mark this screenshot as from a different device in the database
+            console.log('Marking screenshot as from different device:', item.entityId);
+            // Delete the local screenshot since it wasn't uploaded
+            this.db.deleteScreenshots([item.entityId]);
+
+            // Optionally, you could create a placeholder entry indicating
+            // that this time slot was tracked on a different device
+            // But for now, we'll just delete it to clean up the UI
+          }
+
+          // Emit event to stop tracking
+          const { app } = require('electron');
+          app.emit('concurrent-session-detected', {
+            message: error.response?.data?.message || 'Another device is tracking time',
+            details,
+            sessionId: details.sessionId,
+            otherDevice: otherDeviceInfo,
+            timestamp: new Date()
+          });
+        } else {
+          console.log('⚠️ Concurrent session detected during sync but from SAME device - ignoring');
+          // Don't delete screenshots or stop tracking if it's the same device
+        }
         
         // Don't retry this sync
         return;

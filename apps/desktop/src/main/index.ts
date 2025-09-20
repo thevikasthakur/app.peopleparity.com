@@ -86,8 +86,34 @@ let browserBridge: BrowserExtensionBridge;
 let productiveHoursService: ProductiveHoursService;
 let permissionsService: PermissionsService;
 
+// Helper function to get app icon path
+const getAppIcon = () => {
+  const possiblePaths = [
+    path.join(__dirname, '../../build/icon.ico'),  // Development path
+    path.join(__dirname, '../../../build/icon.ico'),  // Production path
+    path.join(process.resourcesPath, 'icon.ico'),  // Packaged app resources
+    path.join(app.getAppPath(), 'build/icon.ico'),  // App path
+    path.join(app.getAppPath(), 'icon.ico'),  // Root of app
+  ];
+
+  for (const iconPath of possiblePaths) {
+    if (fs.existsSync(iconPath)) {
+      console.log('✅ Found app icon at:', iconPath);
+      return iconPath;
+    }
+  }
+
+  console.warn('⚠️ No app icon found in any expected location');
+  return undefined;
+};
+
 // Create custom menu without zoom options
 const createApplicationMenu = () => {
+  // Hide menu bar completely on Windows
+  if (process.platform === 'win32') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const template: any[] = [
     {
       label: 'People Parity',
@@ -120,7 +146,8 @@ const createApplicationMenu = () => {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        // Only show dev tools in development mode
+        ...(process.env.NODE_ENV === 'development' || !app.isPackaged ? [{ role: 'toggleDevTools' }] : []),
         { type: 'separator' },
         { role: 'togglefullscreen' }
         // Intentionally removed: zoomIn, zoomOut, resetZoom
@@ -159,7 +186,9 @@ const createWindow = () => {
       // Try enabling offscreen rendering for better Retina support
       offscreen: false,
       // Explicitly enable hardware acceleration
-      accelerated: true
+      accelerated: true,
+      // Disable dev tools in production
+      devTools: process.env.NODE_ENV === 'development' || !app.isPackaged
     },
     titleBarStyle: 'hiddenInset',
     minWidth: 1200,
@@ -169,9 +198,11 @@ const createWindow = () => {
     // Critical for Retina displays
     useContentSize: false,
     enableLargerThanScreen: false,
-    // Set window icon for Windows and Linux
+    // Hide menu bar on Windows
+    autoHideMenuBar: process.platform === 'win32',
+    // Set window icon for Windows and Linux - try multiple paths
     icon: process.platform === 'win32' || process.platform === 'linux'
-      ? path.join(__dirname, '../../build/icon.ico')
+      ? getAppIcon()
       : undefined
   };
   
@@ -210,7 +241,7 @@ const createWindow = () => {
   // Clear any stored zoom levels before loading
   mainWindow.webContents.session.setPermissionRequestHandler(() => {});
   
-  // Prevent zoom changes via keyboard shortcuts
+  // Prevent zoom changes via keyboard shortcuts and block dev tools in production
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Block zoom keyboard shortcuts
     if (input.control || input.meta) {
@@ -218,6 +249,26 @@ const createWindow = () => {
         event.preventDefault();
         // Reset to fixed zoom level if somehow changed
         mainWindow!.webContents.setZoomLevel(-2.0);
+      }
+    }
+
+    // Block F12 and Ctrl/Cmd+Shift+I (dev tools shortcuts) in production
+    if (app.isPackaged) {
+      // F12 key
+      if (input.key === 'F12') {
+        event.preventDefault();
+      }
+      // Ctrl/Cmd+Shift+I
+      if ((input.control || input.meta) && input.shift && input.key === 'I') {
+        event.preventDefault();
+      }
+      // Ctrl/Cmd+Shift+C (inspect element)
+      if ((input.control || input.meta) && input.shift && input.key === 'C') {
+        event.preventDefault();
+      }
+      // Ctrl/Cmd+Shift+J (console)
+      if ((input.control || input.meta) && input.shift && input.key === 'J') {
+        event.preventDefault();
       }
     }
   });
@@ -240,6 +291,16 @@ const createWindow = () => {
       mainWindow!.setSize(currentSize[0] + 1, currentSize[1]);
       mainWindow!.setSize(currentSize[0], currentSize[1]);
       console.log('Forced window redraw for Retina display');
+    }
+
+    // Disable right-click context menu in production to prevent "Inspect Element"
+    if (app.isPackaged) {
+      mainWindow!.webContents.executeJavaScript(`
+        document.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          return false;
+        });
+      `);
     }
     
     // Log rendering information and apply DPI fixes
@@ -301,8 +362,7 @@ const createWindow = () => {
     console.log('Loading production HTML from:', indexPath);
     mainWindow.loadFile(indexPath);
 
-    // Open dev tools to debug blank screen issue
-    mainWindow.webContents.openDevTools();
+    // Dev tools are disabled in production builds
 
     // Log any console messages from renderer
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -904,9 +964,10 @@ app.whenReady().then(async () => {
     
     // Use electron dialog to show alert (only once)
     const { dialog } = require('electron');
+    const otherDevice = event.otherDevice || 'another device';
     dialog.showErrorBox(
       'Concurrent Session Detected',
-      'Another device is already tracking time for your account. This session has been stopped to prevent duplicate time tracking.'
+      `Time tracking is already active on ${otherDevice}. This session has been stopped to prevent duplicate time tracking.`
     );
     
     // Re-enable auto session creation after 30 seconds
