@@ -52,22 +52,23 @@ export class ProductiveHoursService {
 
       if (scores.length === 0) continue;
 
-      // Weighted average calculation (same as desktop app)
-      let weightedScore: number;
-      if (scores.length === 1) {
-        weightedScore = scores[0];
-      } else if (scores.length === 2) {
-        weightedScore = scores[0] * 0.7 + scores[1] * 0.3;
+      // Match frontend's calculateScreenshotScore logic:
+      // >8 periods: take best 8, >4 periods: discard worst 1, <=4: simple avg
+      let scoresToAverage: number[];
+      if (scores.length > 8) {
+        scoresToAverage = scores.slice(0, 8); // Take best 8
+      } else if (scores.length > 4) {
+        scoresToAverage = scores.slice(0, -1); // Discard worst 1
       } else {
-        const topScore = scores[0];
-        const secondScore = scores[1];
-        const remainingAvg = scores.slice(2).reduce((a, b) => a + b, 0) / (scores.length - 2);
-        weightedScore = topScore * 0.5 + secondScore * 0.3 + remainingAvg * 0.2;
+        scoresToAverage = scores; // Take all
       }
+
+      // Calculate simple average of selected scores
+      const weightedScore = scoresToAverage.reduce((a, b) => a + b, 0) / scoresToAverage.length;
 
       // Convert to UI scale (0-10)
       const uiScore = weightedScore / 10;
-      
+
       if (uiScore > 0) {
         allScores.push(uiScore);
       }
@@ -96,9 +97,18 @@ export class ProductiveHoursService {
     // Calculate average activity score (top 80% average)
     const averageActivityScore = this.calculateTop80Average(allScores);
 
+    // Also calculate simple average for comparison
+    const simpleAverage = allScores.length > 0
+      ? allScores.reduce((a, b) => a + b, 0) / allScores.length
+      : 0;
+
+    // Calculate activity level label
+    const activityLevel = this.getActivityLevel(averageActivityScore);
+
     return {
       productiveHours: Math.round(productiveHours * 100) / 100,
       averageActivityScore: Math.round(averageActivityScore * 10) / 10,
+      activityLevel,
       totalScreenshots: screenshots.length,
       validScreenshots: Math.floor(validMinutes / 10),
       date: date.toISOString().split('T')[0],
@@ -112,42 +122,92 @@ export class ProductiveHoursService {
     const startOfWeek = new Date(date);
     startOfWeek.setDate(date.getDate() - daysToMonday);
     startOfWeek.setUTCHours(0, 0, 0, 0);
-    
+
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setUTCHours(23, 59, 59, 999);
 
     console.log('Fetching weekly hours from', startOfWeek, 'to', endOfWeek);
 
+    // Fetch all screenshots for the week to calculate proper average
+    const screenshots = await this.screenshotRepository.find({
+      where: {
+        userId,
+        capturedAt: Between(startOfWeek, endOfWeek),
+      },
+      relations: ['activityPeriods'],
+      order: {
+        capturedAt: 'ASC',
+      },
+    });
+
+    console.log(`Found ${screenshots.length} screenshots for the week`);
+
+    // Collect all individual screenshot scores for the week
+    const allWeeklyScores: number[] = [];
+
+    // Process each screenshot to get its weighted score
+    for (const screenshot of screenshots) {
+      if (!screenshot.activityPeriods || screenshot.activityPeriods.length === 0) {
+        continue;
+      }
+
+      const scores = screenshot.activityPeriods
+        .map(period => period.activityScore || 0)
+        .sort((a, b) => b - a);
+
+      if (scores.length === 0) continue;
+
+      // Match frontend's calculateScreenshotScore logic:
+      // >8 periods: take best 8, >4 periods: discard worst 1, <=4: simple avg
+      let scoresToAverage: number[];
+      if (scores.length > 8) {
+        scoresToAverage = scores.slice(0, 8); // Take best 8
+      } else if (scores.length > 4) {
+        scoresToAverage = scores.slice(0, -1); // Discard worst 1
+      } else {
+        scoresToAverage = scores; // Take all
+      }
+
+      // Calculate simple average of selected scores
+      const weightedScore = scoresToAverage.reduce((a, b) => a + b, 0) / scoresToAverage.length;
+
+      // Convert to UI scale (0-10)
+      const uiScore = weightedScore / 10;
+
+      if (uiScore > 0) {
+        allWeeklyScores.push(uiScore);
+      }
+    }
+
     // Get daily data for each day of the week
     const dailyData = [];
     let totalHours = 0;
-    const allScores: number[] = [];
 
     for (let i = 0; i < 7; i++) {
       const currentDate = new Date(startOfWeek);
       currentDate.setDate(startOfWeek.getDate() + i);
-      
+
       const dayData = await this.getDailyProductiveHours(userId, currentDate);
       dailyData.push({
         date: currentDate.toISOString().split('T')[0],
         hours: dayData.productiveHours,
         averageActivityScore: dayData.averageActivityScore,
       });
-      
+
       totalHours += dayData.productiveHours;
-      if (dayData.averageActivityScore > 0) {
-        allScores.push(dayData.averageActivityScore);
-      }
     }
 
-    const averageActivityScore = allScores.length > 0 
-      ? allScores.reduce((a, b) => a + b, 0) / allScores.length 
-      : 0;
+    // Use top 80% average of all weekly screenshot scores
+    const averageActivityScore = this.calculateTop80Average(allWeeklyScores);
+
+    // Calculate activity level label
+    const activityLevel = this.getActivityLevel(averageActivityScore);
 
     return {
       productiveHours: Math.round(totalHours * 100) / 100,
       averageActivityScore: Math.round(averageActivityScore * 10) / 10,
+      activityLevel,
       dailyData,
       weekStart: startOfWeek.toISOString().split('T')[0],
       weekEnd: endOfWeek.toISOString().split('T')[0],
@@ -157,15 +217,35 @@ export class ProductiveHoursService {
   private calculateTop80Average(scores: number[]): number {
     if (scores.length === 0) return 0;
     if (scores.length === 1) return scores[0];
-    
+
     // Sort scores descending
     const sorted = [...scores].sort((a, b) => b - a);
-    
+
     // Take top 80% of scores
     const count = Math.max(1, Math.ceil(scores.length * 0.8));
     const top80 = sorted.slice(0, count);
-    
+
     // Calculate average
-    return top80.reduce((sum, score) => sum + score, 0) / top80.length;
+    const result = top80.reduce((sum, score) => sum + score, 0) / top80.length;
+
+    console.log(`📊 [Top80% Calculation]:`, {
+      totalScores: scores.length,
+      top80Count: count,
+      excluded: scores.length - count,
+      allScores: sorted.slice(0, 5).map(s => Math.round(s * 10) / 10),
+      top80Scores: top80.slice(0, 5).map(s => Math.round(s * 10) / 10),
+      result: Math.round(result * 10) / 10
+    });
+
+    return result;
+  }
+
+  private getActivityLevel(score: number): string {
+    if (score >= 8.5) return 'Good';
+    if (score >= 7.0) return 'Fair';
+    if (score >= 5.5) return 'Low';
+    if (score >= 4.0) return 'Poor';
+    if (score >= 2.5) return 'Critical';
+    return 'Inactive';
   }
 }

@@ -864,8 +864,8 @@ function setupIpcHandlers() {
       }
     }
     
-    const averageActivityScore = allScores.length > 0 
-      ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
+    const averageActivityScore = allScores.length > 0
+      ? Math.round(calculateTop80Average(allScores, `CurrentSession-${session.id}`) * 10) / 10  // Round to 1 decimal
       : 0;
     
     console.log('Tracked time calculation:', {
@@ -1038,15 +1038,28 @@ function setupIpcHandlers() {
     const selectedDate = dateString ? new Date(dateString) : new Date();
     console.log('[productive-hours:get] Date from frontend:', dateString, '-> parsed as:', selectedDate.toISOString());
     console.log('[productive-hours:get] Local representation:', selectedDate.toString());
-    
+
     // Try to fetch from cloud API first (now with proper validation logic)
     let productiveHours;
+    let averageActivityScore;
+    let activityLevel;
     let isCloudData = false;
     try {
       const cloudData = await apiSyncService.fetchDailyProductiveHours(selectedDate);
+      console.log('📊 [DEBUG] Cloud data received:', JSON.stringify(cloudData, null, 2));
       if (cloudData && cloudData.productiveHours !== undefined) {
         console.log('Using productive hours from cloud:', cloudData);
         productiveHours = cloudData.productiveHours;
+        // Use cloud-provided average activity score if available
+        if (cloudData.averageActivityScore !== undefined) {
+          averageActivityScore = cloudData.averageActivityScore;
+          console.log('Using average activity score from cloud:', averageActivityScore);
+        }
+        // Use cloud-provided activity level if available
+        if (cloudData.activityLevel !== undefined) {
+          activityLevel = cloudData.activityLevel;
+          console.log('Using activity level from cloud:', activityLevel);
+        }
         isCloudData = true;
       }
     } catch (error) {
@@ -1059,53 +1072,57 @@ function setupIpcHandlers() {
     }
     console.log('Calculated productive hours:', productiveHours, 'for date:', selectedDate);
     
-    // Calculate average activity score for selected date
-    const db = (databaseService as any).localDb;
-    const startOfDay = new Date(selectedDate);
-    startOfDay.setUTCHours(0, 0, 0, 0);
-    const endOfDay = new Date(selectedDate);
-    endOfDay.setUTCHours(23, 59, 59, 999);
-    console.log('[productive-hours:get] Using UTC range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
-    
-    // Get all screenshots for today
-    const screenshots = db.db.prepare(`
-      SELECT s.id, s.capturedAt
-      FROM screenshots s
-      WHERE s.userId = ?
-      AND s.capturedAt >= ?
-      AND s.capturedAt <= ?
-      ORDER BY s.capturedAt
-    `).all(currentUser.id, startOfDay.getTime(), endOfDay.getTime());
-    
-    const allScores: number[] = [];
-    
-    for (const screenshot of screenshots) {
-      // Get all activity periods for this screenshot
-      const activityPeriods = db.db.prepare(`
-        SELECT activityScore
-        FROM activity_periods
-        WHERE screenshotId = ?
-        ORDER BY activityScore DESC
-      `).all(screenshot.id);
+    // Only calculate average activity score locally if not provided by cloud
+    if (averageActivityScore === undefined) {
+      console.log('Calculating average activity score locally...');
+      const db = (databaseService as any).localDb;
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      console.log('[productive-hours:get] Using UTC range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
       
-      const scores = activityPeriods.map((p: any) => p.activityScore);
+      // Get all screenshots for today
+      const screenshots = db.db.prepare(`
+        SELECT s.id, s.capturedAt
+        FROM screenshots s
+        WHERE s.userId = ?
+        AND s.capturedAt >= ?
+        AND s.capturedAt <= ?
+        ORDER BY s.capturedAt
+      `).all(currentUser.id, startOfDay.getTime(), endOfDay.getTime());
       
-      if (scores.length > 0) {
-        // Calculate weighted average using the same function as session
-        const weightedScore = calculateScreenshotScore(scores);
-        const uiScore = weightedScore / 10; // Convert to UI scale
+      const allScores: number[] = [];
+      
+      for (const screenshot of screenshots) {
+        // Get all activity periods for this screenshot
+        const activityPeriods = db.db.prepare(`
+          SELECT activityScore
+          FROM activity_periods
+          WHERE screenshotId = ?
+          ORDER BY activityScore DESC
+        `).all(screenshot.id);
         
-        if (uiScore > 0) {
-          allScores.push(uiScore);
+        const scores = activityPeriods.map((p: any) => p.activityScore);
+        
+        if (scores.length > 0) {
+          // Calculate weighted average using the same function as session
+          const weightedScore = calculateScreenshotScore(scores);
+          const uiScore = weightedScore / 10; // Convert to UI scale
+          
+          if (uiScore > 0) {
+            allScores.push(uiScore);
+          }
         }
       }
+
+      // Calculate top 80% average, excluding lowest 20% of scores
+      averageActivityScore = allScores.length > 0
+        ? Math.round(calculateTop80Average(allScores, 'LocalDaily') * 10) / 10  // Round to 1 decimal
+        : 0;
+
     }
-    
-    // Calculate top 80% average, excluding lowest 20% of scores
-    const averageActivityScore = allScores.length > 0 
-      ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
-      : 0;
-    
+
     // Get last activity score for context
     const currentActivity = await databaseService.getCurrentActivity();
     const lastActivityScore = currentActivity ? (currentActivity.activityScore / 10) : 5; // Convert to 0-10 scale
@@ -1132,7 +1149,7 @@ function setupIpcHandlers() {
       attendance
     });
 
-    // Calculate activity level based on score
+    // Calculate activity level based on score only if not provided by cloud
     const getActivityLevel = (score: number) => {
       if (score >= 8.5) return 'Good';
       if (score >= 7.0) return 'Fair';
@@ -1141,11 +1158,13 @@ function setupIpcHandlers() {
       if (score >= 2.5) return 'Critical';
       return 'Inactive';
     };
-    
+
+    const finalActivityLevel = activityLevel || getActivityLevel(averageActivityScore);
+
     return {
       productiveHours,
       averageActivityScore,
-      activityLevel: getActivityLevel(averageActivityScore),
+      activityLevel: finalActivityLevel,
       markers,
       message,
       attendance,
@@ -1165,12 +1184,24 @@ function setupIpcHandlers() {
     // Try to fetch from cloud API first (now with proper validation logic)
     let productiveHours;
     let dailyData;
+    let averageActivityScore;
+    let activityLevel;
     let isCloudData = false;
     try {
       const cloudData = await apiSyncService.fetchWeeklyProductiveHours(selectedDate);
       if (cloudData && cloudData.productiveHours !== undefined) {
         console.log('Using weekly productive hours from cloud:', cloudData);
         productiveHours = cloudData.productiveHours;
+        // Use cloud-provided average activity score if available
+        if (cloudData.averageActivityScore !== undefined) {
+          averageActivityScore = cloudData.averageActivityScore;
+          console.log('Using weekly average activity score from cloud:', averageActivityScore);
+        }
+        // Use cloud-provided activity level if available
+        if (cloudData.activityLevel !== undefined) {
+          activityLevel = cloudData.activityLevel;
+          console.log('Using weekly activity level from cloud:', activityLevel);
+        }
         
         // Transform cloud dailyData to match expected format
         const today = new Date();
@@ -1204,56 +1235,59 @@ function setupIpcHandlers() {
     
     const markers = productiveHoursService.getWeeklyMarkers();
     
-    // Calculate average activity score for the week of selected date (Monday as first day)
-    const db = (databaseService as any).localDb;
-    const startOfWeek = new Date(selectedDate);
-    const dayOfWeek = selectedDate.getDay();
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
-    startOfWeek.setDate(selectedDate.getDate() - daysToMonday);
-    startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(selectedDate);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
-    
-    // Get all screenshots for the week
-    const screenshots = db.db.prepare(`
-      SELECT s.id, s.capturedAt
-      FROM screenshots s
-      WHERE s.userId = ?
-      AND s.capturedAt >= ?
-      AND s.capturedAt <= ?
-      ORDER BY s.capturedAt
-    `).all(currentUser.id, startOfWeek.getTime(), endOfWeek.getTime());
-    
-    const allScores: number[] = [];
-    
-    for (const screenshot of screenshots) {
-      // Get all activity periods for this screenshot
-      const activityPeriods = db.db.prepare(`
-        SELECT activityScore
-        FROM activity_periods
-        WHERE screenshotId = ?
-        ORDER BY activityScore DESC
-      `).all(screenshot.id);
+    // Only calculate average activity score locally if not provided by cloud
+    if (averageActivityScore === undefined) {
+      console.log('Calculating weekly average activity score locally...');
+      const db = (databaseService as any).localDb;
+      const startOfWeek = new Date(selectedDate);
+      const dayOfWeek = selectedDate.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+      startOfWeek.setDate(selectedDate.getDate() - daysToMonday);
+      startOfWeek.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date(selectedDate);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
       
-      const scores = activityPeriods.map((p: any) => p.activityScore);
+      // Get all screenshots for the week
+      const screenshots = db.db.prepare(`
+        SELECT s.id, s.capturedAt
+        FROM screenshots s
+        WHERE s.userId = ?
+        AND s.capturedAt >= ?
+        AND s.capturedAt <= ?
+        ORDER BY s.capturedAt
+      `).all(currentUser.id, startOfWeek.getTime(), endOfWeek.getTime());
       
-      if (scores.length > 0) {
-        // Calculate weighted average using the same function as session
-        const weightedScore = calculateScreenshotScore(scores);
-        const uiScore = weightedScore / 10; // Convert to UI scale
+      const allScores: number[] = [];
+      
+      for (const screenshot of screenshots) {
+        // Get all activity periods for this screenshot
+        const activityPeriods = db.db.prepare(`
+          SELECT activityScore
+          FROM activity_periods
+          WHERE screenshotId = ?
+          ORDER BY activityScore DESC
+        `).all(screenshot.id);
         
-        if (uiScore > 0) {
-          allScores.push(uiScore);
+        const scores = activityPeriods.map((p: any) => p.activityScore);
+        
+        if (scores.length > 0) {
+          // Calculate weighted average using the same function as session
+          const weightedScore = calculateScreenshotScore(scores);
+          const uiScore = weightedScore / 10; // Convert to UI scale
+          
+          if (uiScore > 0) {
+            allScores.push(uiScore);
+          }
         }
       }
+      
+      // Calculate top 80% average, excluding lowest 20% of scores
+      averageActivityScore = allScores.length > 0
+        ? Math.round(calculateTop80Average(allScores, 'LocalWeekly') * 10) / 10  // Round to 1 decimal
+        : 0;
     }
-    
-    // Calculate top 80% average, excluding lowest 20% of scores
-    const averageActivityScore = allScores.length > 0 
-      ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
-      : 0;
-    
+
     // Calculate base attendance with daily breakdown
     const baseAttendance = productiveHoursService.calculateWeeklyAttendance(productiveHours, markers, dailyData, selectedDate);
     
@@ -1269,7 +1303,7 @@ function setupIpcHandlers() {
     
     const message = productiveHoursService.getWeeklyMessage(productiveHours, attendance, markers);
     
-    // Calculate activity level based on score
+    // Calculate activity level based on score only if not provided by cloud
     const getActivityLevel = (score: number) => {
       if (score >= 8.5) return 'Good';
       if (score >= 7.0) return 'Fair';
@@ -1282,7 +1316,7 @@ function setupIpcHandlers() {
     return {
       productiveHours,
       averageActivityScore,
-      activityLevel: getActivityLevel(averageActivityScore),
+      activityLevel: activityLevel || getActivityLevel(averageActivityScore),
       markers,
       attendance,
       message,

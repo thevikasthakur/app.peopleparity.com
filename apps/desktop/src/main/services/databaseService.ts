@@ -983,8 +983,8 @@ export class DatabaseService {
       const trackedMinutes = Math.min(validScreenshots * 10, elapsedMinutes); // Cap at elapsed time
       
       // Calculate top 80% average activity score, same as productive hours
-      const averageActivityScore = allScores.length > 0 
-        ? Math.round(calculateTop80Average(allScores) * 10) / 10  // Round to 1 decimal
+      const averageActivityScore = allScores.length > 0
+        ? Math.round(calculateTop80Average(allScores, `Session-${session.id}`) * 10) / 10  // Round to 1 decimal
         : 0;
       
       return {

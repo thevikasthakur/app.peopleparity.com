@@ -46,7 +46,6 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
   const loadHustleData = async () => {
     try {
       const data = await window.electronAPI.getProductiveHours(selectedDate.toISOString());
-      console.log('Loaded hustle data for date:', selectedDate, data);
       setHustleData(data);
     } catch (error) {
       console.error('Failed to load hustle data:', error);
@@ -72,17 +71,15 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
 
   const { productiveHours, averageActivityScore, activityLevel, markers, message, attendance } = hustleData;
   const percentage = Math.min((productiveHours / markers.maxScale) * 100, 100);
-  
+
   // Get activity level label - use server-provided value or fall back to local calculation
   const getActivityLevel = (score: number) => {
-    if (activityLevel) return activityLevel;
-    // Fallback for backward compatibility
-    if (score >= 8.5) return 'Good';
-    if (score >= 7.0) return 'Fair';
-    if (score >= 5.5) return 'Low';
-    if (score >= 4.0) return 'Poor';
-    if (score >= 2.5) return 'Critical';
-    return 'Inactive';
+    const localLevel = score >= 8.5 ? 'Good' :
+                      score >= 7.0 ? 'Fair' :
+                      score >= 5.5 ? 'Low' :
+                      score >= 4.0 ? 'Poor' :
+                      score >= 2.5 ? 'Critical' : 'Inactive';
+    return activityLevel || localLevel;
   };
   
   // Calculate marker positions as percentages

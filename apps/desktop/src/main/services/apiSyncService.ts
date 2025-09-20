@@ -347,6 +347,7 @@ export class ApiSyncService {
         return {
           productiveHours: response.data.productiveHours || 0,
           averageActivityScore: response.data.averageActivityScore || 0,
+          activityLevel: response.data.activityLevel || undefined,
           totalScreenshots: response.data.totalScreenshots || 0,
           validScreenshots: response.data.validScreenshots || 0
         };
@@ -376,6 +377,7 @@ export class ApiSyncService {
         return {
           productiveHours: response.data.productiveHours || 0,
           averageActivityScore: response.data.averageActivityScore || 0,
+          activityLevel: response.data.activityLevel || undefined,
           dailyData: response.data.dailyData || [],
           weekStart: response.data.weekStart,
           weekEnd: response.data.weekEnd

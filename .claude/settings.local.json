@@ -21,7 +21,8 @@
       "Read(//c/Users/Dhiraj/AppData/Roaming/People Parity/**)",
       "Bash(ls:*)",
       "Bash(cat:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

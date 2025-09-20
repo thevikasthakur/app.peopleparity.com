@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "AWS_PROFILE=pp-api AWS_SDK_LOAD_CONFIG=1 serverless offline --stage dev",
+    "prodfromlocal": "AWS_PROFILE=pp-api AWS_SDK_LOAD_CONFIG=1 serverless offline --stage prod",
     "dev:traditional": "node start-traditional.js",
     "build": "nest build",
     "start": "serverless offline --aws-profile pp-api  --stage dev",
