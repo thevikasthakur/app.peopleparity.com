@@ -168,7 +168,11 @@ const createWindow = () => {
     show: false,
     // Critical for Retina displays
     useContentSize: false,
-    enableLargerThanScreen: false
+    enableLargerThanScreen: false,
+    // Set window icon for Windows and Linux
+    icon: process.platform === 'win32' || process.platform === 'linux'
+      ? path.join(__dirname, '../../build/icon.ico')
+      : undefined
   };
   
   // For Retina displays, set the backing scale factor explicitly
