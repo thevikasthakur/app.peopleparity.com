@@ -487,21 +487,29 @@ export class LocalDatabase {
     ) as ActivityPeriod | undefined;
     
     if (existingPeriod) {
-      console.log(`Activity period already exists for ${normalizedStart.toISOString()} to ${normalizedEnd.toISOString()}, ID: ${existingPeriod.id}, existing score: ${existingPeriod.activityScore}, new score: ${data.activityScore}`);
-      // Always update the score if the new one is higher (for placeholder periods)
-      if (data.activityScore > existingPeriod.activityScore) {
+      // Apply 15% boost to activity score for updates too
+      const boostedScore = Math.min(100, data.activityScore * 1.15);
+      console.log(`Activity period already exists for ${normalizedStart.toISOString()} to ${normalizedEnd.toISOString()}, ID: ${existingPeriod.id}, existing score: ${existingPeriod.activityScore}, new score: ${data.activityScore}, boosted: ${boostedScore}`);
+
+      // Always update the score if the new boosted score is higher (for placeholder periods)
+      if (boostedScore > existingPeriod.activityScore) {
         const updateStmt = this.db.prepare(`
-          UPDATE activity_periods 
+          UPDATE activity_periods
           SET activityScore = ?, classification = ?, isSynced = 0
           WHERE id = ?
         `);
-        updateStmt.run(data.activityScore, data.classification || existingPeriod.classification, existingPeriod.id);
-        existingPeriod.activityScore = data.activityScore;
-        console.log(`Updated period ${existingPeriod.id} score from ${existingPeriod.activityScore} to ${data.activityScore}`);
+        updateStmt.run(boostedScore, data.classification || existingPeriod.classification, existingPeriod.id);
+        existingPeriod.activityScore = boostedScore;
+        console.log(`[Activity Score Boost] Updated period ${existingPeriod.id} from ${existingPeriod.activityScore} to ${boostedScore} (+15% boost)`);
       }
       return existingPeriod;
     }
     
+    // Apply 15% boost to activity score to make it easier for users to achieve higher scores
+    // This boost is applied at the storage level, so it affects all downstream calculations
+    const boostedScore = Math.min(100, data.activityScore * 1.15);
+    console.log(`[Activity Score Boost] Original: ${data.activityScore}, Boosted (+15%): ${boostedScore}`);
+
     const period = {
       id: data.id || crypto.randomUUID(),
       sessionId: data.sessionId,
@@ -511,7 +519,7 @@ export class LocalDatabase {
       periodEnd: normalizedEnd.getTime(),
       mode: data.mode,
       notes: null,
-      activityScore: data.activityScore,
+      activityScore: boostedScore,  // Use boosted score
       isValid: data.isValid ? 1 : 0,
       classification: data.classification || null,
       metricsBreakdown: data.metricsBreakdown ? JSON.stringify(data.metricsBreakdown) : null,

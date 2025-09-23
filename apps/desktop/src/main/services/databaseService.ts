@@ -975,8 +975,16 @@ export class DatabaseService {
         }
       }
       
-      // Calculate tracked minutes (each valid screenshot = 10 minutes)
-      const trackedMinutes = Math.min(validScreenshots * 10, elapsedMinutes); // Cap at elapsed time
+      // Calculate tracked minutes using same validation as productive hours
+      // Apply the same rules as getDateStats for consistency
+      const validatedScreenshots = this.validateScreenshotsForSession(
+        screenshots.map((s: any) => s.id),
+        session.id
+      );
+      const trackedMinutes = Math.min(validatedScreenshots * 10, elapsedMinutes); // Cap at elapsed time
+
+      // Log for debugging
+      console.log(`[Session ${session.id}] Screenshots: ${screenshots.length}, Validated: ${validatedScreenshots}, Tracked minutes: ${trackedMinutes}`)
       
       // Calculate top 80% average activity score, same as productive hours
       const averageActivityScore = allScores.length > 0
@@ -1123,5 +1131,113 @@ export class DatabaseService {
       console.error('Error getting last session:', error);
       return null;
     }
+  }
+
+  /**
+   * Validate screenshots for a session using the same rules as productive hours calculation
+   * This ensures consistency between session tracked time and daily productive hours
+   */
+  private validateScreenshotsForSession(screenshotIds: string[], sessionId: string): number {
+    if (screenshotIds.length === 0) return 0;
+
+    const { calculateScreenshotScore, calculateTop80Average } = require('../utils/activityScoreCalculator');
+
+    // Get all screenshots with their activity periods
+    const screenshotScores: { screenshotId: string, capturedAt: number, weightedScore: number }[] = [];
+
+    for (const screenshotId of screenshotIds) {
+      // Get screenshot details
+      const screenshot = (this.localDb as any).db.prepare(`
+        SELECT id, capturedAt FROM screenshots WHERE id = ?
+      `).get(screenshotId);
+
+      if (!screenshot) continue;
+
+      // Get activity periods for this screenshot
+      const periods = (this.localDb as any).db.prepare(`
+        SELECT activityScore FROM activity_periods WHERE screenshotId = ?
+        ORDER BY activityScore DESC
+      `).all(screenshotId);
+
+      if (periods.length === 0) continue;
+
+      const scores = periods.map((p: any) => p.activityScore);
+      const weightedScore = calculateScreenshotScore(scores);
+
+      screenshotScores.push({
+        screenshotId,
+        capturedAt: screenshot.capturedAt,
+        weightedScore
+      });
+    }
+
+    // Sort by capture time for neighbor checking
+    screenshotScores.sort((a, b) => a.capturedAt - b.capturedAt);
+
+    // Apply validation rules
+    let validCount = 0;
+
+    for (let i = 0; i < screenshotScores.length; i++) {
+      const current = screenshotScores[i];
+      const prev = i > 0 ? screenshotScores[i - 1] : null;
+      const next = i < screenshotScores.length - 1 ? screenshotScores[i + 1] : null;
+
+      let isValid = false;
+
+      // Rule 1: Valid if score >= 4.0 (40 on DB scale)
+      if (current.weightedScore >= 40) {
+        isValid = true;
+      }
+      // Rule 2 & 3: Critical (2.5-4.0) has two possible validation paths
+      else if (current.weightedScore >= 25 && current.weightedScore < 40) {
+        // Check Rule 2: if previous or next screenshot has score >= 4.0
+        if ((prev && prev.weightedScore >= 40) || (next && next.weightedScore >= 40)) {
+          isValid = true;
+        }
+        // Check Rule 3: hourly average condition
+        else {
+          // Get the hour of this screenshot
+          const screenshotTime = new Date(current.capturedAt);
+          const hourStart = new Date(screenshotTime);
+          hourStart.setMinutes(0, 0, 0);
+          const hourEnd = new Date(hourStart);
+          hourEnd.setHours(hourEnd.getHours() + 1);
+
+          // Find all screenshots in this hour within the same session
+          const hourScreenshots = screenshotScores.filter(s => {
+            return s.capturedAt >= hourStart.getTime() && s.capturedAt < hourEnd.getTime();
+          });
+
+          // Check if hour has 6+ screenshots
+          if (hourScreenshots.length >= 6) {
+            // Collect all activity period scores for the hour
+            const hourPeriodScores: number[] = [];
+            for (const hs of hourScreenshots) {
+              const periods = (this.localDb as any).db.prepare(`
+                SELECT activityScore FROM activity_periods WHERE screenshotId = ?
+              `).all(hs.screenshotId);
+              hourPeriodScores.push(...periods.map((p: any) => p.activityScore));
+            }
+
+            // Calculate top 80% average
+            if (hourPeriodScores.length > 0) {
+              const avgScore = calculateTop80Average(hourPeriodScores, `Session-${sessionId}-Hour`);
+
+              // Check if average >= 4.0 (40 on DB scale)
+              if (avgScore >= 40) {
+                isValid = true;
+              }
+            }
+          }
+        }
+      }
+      // Rule 4: Inactive (< 2.5) is never valid
+
+      if (isValid) {
+        validCount++;
+      }
+    }
+
+    return validCount;
   }
 }
