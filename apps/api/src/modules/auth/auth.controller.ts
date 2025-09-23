@@ -37,52 +37,36 @@ export class AuthController {
   }
 
   @Get('saml/login')
+  @UseGuards(AuthGuard('saml'))
   async samlLogin(@Res() res: Response) {
-    // Check if SAML is configured
-    if (!process.env.SAML_CERT || process.env.SAML_CERT.trim() === '') {
-      return res.status(501).json({
-        success: false,
-        message: 'SAML authentication is not configured. Please use standard login.'
-      });
-    }
     // This route initiates SAML authentication
     // Passport will redirect to Microsoft login
-    // Note: Guard is applied conditionally at runtime
-    return res.status(500).json({
-      success: false,
-      message: 'SAML authentication endpoint requires guard implementation'
-    });
+    // The guard handles the redirect automatically
   }
 
   @Post('saml/callback')
+  @UseGuards(AuthGuard('saml'))
   async samlCallback(@Request() req, @Res() res: Response) {
-    // Check if SAML is configured
-    if (!process.env.SAML_CERT || process.env.SAML_CERT.trim() === '') {
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-      const error = encodeURIComponent('SAML authentication is not configured');
-      return res.redirect(`${frontendUrl}/auth/callback?success=false&error=${error}`);
-    }
-
     try {
       // Handle SAML callback from Microsoft
       const result = await this.authService.handleSamlLogin(req.user);
 
       if (result.success && result.token) {
-        // Redirect to frontend with token
+        // Redirect to frontend with token (using hash routing)
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-        res.redirect(`${frontendUrl}/auth/callback?token=${result.token}&success=true`);
+        res.redirect(`${frontendUrl}/#/auth/callback?token=${result.token}&success=true`);
       } else {
-        // Handle login failure
+        // Handle login failure (using hash routing)
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
         const error = encodeURIComponent('SAML login failed');
-        res.redirect(`${frontendUrl}/auth/callback?success=false&error=${error}`);
+        res.redirect(`${frontendUrl}/#/auth/callback?success=false&error=${error}`);
       }
     } catch (error) {
       // Handle unexpected errors
       console.error('SAML callback error:', error);
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
       const errorMsg = encodeURIComponent('Authentication failed. Please try again.');
-      res.redirect(`${frontendUrl}/auth/callback?success=false&error=${errorMsg}`);
+      res.redirect(`${frontendUrl}/#/auth/callback?success=false&error=${errorMsg}`);
     }
   }
 
