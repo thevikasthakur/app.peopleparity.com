@@ -14,13 +14,18 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
 
     console.log('user', user)
-    
+
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Check if user has a password (local auth) or is SSO-only
+    if (!user.password) {
+      throw new UnauthorizedException('Please use SSO login for this account');
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
-    
+
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }

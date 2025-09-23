@@ -26,7 +26,7 @@
     "build:renderer": "vite build && node scripts/fix-paths.js",
     "start": "electron .",
     "dist": "electron-builder",
-    "dist:mac": "npm run build && npm run rebuild:prod && electron-builder --mac",
+    "dist:mac": "npm run build && npm run rebuild:prod && electron-builder --mac -c.mac.identity=null",
     "rebuild:prod": "electron-rebuild -f -w sharp,better-sqlite3,uiohook-napi",
     "dist:win": "npm run build && npm run rebuild:prod && electron-builder --win",
     "dist:linux": "npm run build && npm run rebuild:prod && electron-builder --linux",
