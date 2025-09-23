@@ -184,8 +184,7 @@ export class ScreenshotsService {
     userId: string,
     startDate?: Date,
     endDate?: Date,
-    includeDeviceInfo = false,
-    includeActivityScores = false
+    includeDeviceInfo = false
   ) {
     const query = this.screenshotsRepository
       .createQueryBuilder("screenshot")
@@ -207,117 +206,15 @@ export class ScreenshotsService {
 
     const screenshots = await query.getMany();
 
-    // If we need activity scores, fetch them separately based on time windows
-    let activityScoreMap: Map<string, number> = new Map();
-    if (includeActivityScores) {
-      // Fetch all activity periods for this user in the date range
-      const periodsQuery = this.activityPeriodsRepository
-        .createQueryBuilder("period")
-        .where("period.userId = :userId", { userId })
-        .andWhere("period.isValid = :isValid", { isValid: true });
-
-      if (startDate) {
-        periodsQuery.andWhere("period.periodStart >= :startDate", { startDate });
-      }
-
-      if (endDate) {
-        periodsQuery.andWhere("period.periodEnd <= :endDate", { endDate });
-      }
-
-      const allPeriods = await periodsQuery.getMany();
-
-      // Group periods by 10-minute windows and calculate scores
-      for (const screenshot of screenshots) {
-        const capturedAt = new Date(screenshot.capturedAt);
-        const windowStart = new Date(capturedAt);
-        windowStart.setMinutes(Math.floor(windowStart.getMinutes() / 10) * 10, 0, 0);
-        const windowEnd = new Date(windowStart);
-        windowEnd.setMinutes(windowEnd.getMinutes() + 10);
-
-        // Find periods that overlap with this screenshot's window
-        const windowPeriods = allPeriods.filter(p => {
-          const periodStart = new Date(p.periodStart);
-          return periodStart >= windowStart && periodStart < windowEnd;
-        });
-
-        if (windowPeriods.length > 0) {
-          const scores = windowPeriods.map(p => p.activityScore);
-          activityScoreMap.set(screenshot.id, this.calculateScreenshotScore(scores));
-        } else {
-          activityScoreMap.set(screenshot.id, 0);
-        }
-      }
-    }
-
-    // Process screenshots to ensure proper URLs and include activity scores
-    const processedScreenshots = screenshots.map((screenshot) => {
-      let processedThumbnailUrl = screenshot.thumbnailUrl;
-
-      // If thumbnailUrl exists and is not a full URL, convert it to public S3 URL
-      if (screenshot.thumbnailUrl && !screenshot.thumbnailUrl.startsWith('http')) {
-        const stage = process.env.STAGE || "dev";
-        const bucket = process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
-        const region = process.env.AWS_REGION || "ap-south-1";
-        processedThumbnailUrl = `https://${bucket}.s3.${region}.amazonaws.com/${screenshot.thumbnailUrl}`;
-      }
-
-      const result: any = {
+    // Map to include device info if available
+    if (includeDeviceInfo) {
+      return screenshots.map((screenshot) => ({
         ...screenshot,
-        thumbnailUrl: processedThumbnailUrl
-      };
-
-      // Include device info if requested
-      if (includeDeviceInfo && screenshot.session) {
-        result.deviceInfo = screenshot.session.deviceInfo || null;
-      }
-
-      // Include activity score if requested
-      if (includeActivityScores) {
-        result.activityScore = activityScoreMap.get(screenshot.id) || 0;
-      }
-
-      return result;
-    });
-
-    return processedScreenshots;
-  }
-
-  /**
-   * Calculate weighted average for screenshot (10-minute window)
-   * Uses thresholds: >8 periods = best 8, >4 periods = discard worst 1, <=4 = simple avg
-   * This mirrors the desktop app's calculateScreenshotScore function
-   */
-  private calculateScreenshotScore(scores: number[]): number {
-    if (!scores || scores.length === 0) {
-      return 0;
+        deviceInfo: screenshot.session?.deviceInfo || null,
+      }));
     }
 
-    // Sort scores in descending order (best to worst)
-    const sortedScores = [...scores].sort((a, b) => b - a);
-    const count = sortedScores.length;
-
-    let scoresToAverage: number[];
-
-    if (count > 8) {
-      // More than 8 periods: take best 8 scores
-      scoresToAverage = sortedScores.slice(0, 8);
-    } else if (count > 4) {
-      // Between 4 and 8: discard worst 1
-      scoresToAverage = sortedScores.slice(0, -1);
-    } else {
-      // 4 or less: take simple average
-      scoresToAverage = sortedScores;
-    }
-
-    // Calculate average
-    if (scoresToAverage.length === 0) {
-      return 0;
-    }
-
-    const sum = scoresToAverage.reduce((acc, score) => acc + score, 0);
-    const average = sum / scoresToAverage.length;
-    // Convert from 0-100 scale to 0-10 scale with 1 decimal place
-    return Math.round((average / 10) * 10) / 10;
+    return screenshots;
   }
 
   async findById(id: string) {
