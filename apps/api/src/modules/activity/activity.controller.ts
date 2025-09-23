@@ -31,6 +31,7 @@ export class ActivityController {
         periodStart: new Date(restDto.periodStart),
         periodEnd: new Date(restDto.periodEnd),
         userId: req.user.userId,
+        screenshotId: restDto.screenshotId, // Make sure screenshotId is passed through
         metrics: metricsBreakdown || restDto.metrics, // Use metricsBreakdown if provided, fallback to metrics
       });
       return { success: true, period };
@@ -77,6 +78,7 @@ export class ActivityController {
           periodStart: new Date(restPeriod.periodStart),
           periodEnd: new Date(restPeriod.periodEnd),
           userId: req.user.userId,
+          screenshotId: restPeriod.screenshotId, // Make sure screenshotId is passed through
           metrics: metricsBreakdown || restPeriod.metrics, // Use metricsBreakdown if provided, fallback to metrics
         });
       })

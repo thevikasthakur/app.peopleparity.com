@@ -69,7 +69,7 @@ const Layout = () => {
           </div>
         </div>
       </nav>
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="px-4 py-6">
         <Outlet />
       </main>
     </div>

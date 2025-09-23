@@ -40,7 +40,10 @@
       "Bash(npm create:*)",
       "Bash(npx tailwindcss init:*)",
       "Bash(npx tsx:*)",
-      "Bash(npx prisma generate:*)"
+      "Bash(npx prisma generate:*)",
+      "Bash(psql:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

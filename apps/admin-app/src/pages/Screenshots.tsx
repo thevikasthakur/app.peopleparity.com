@@ -1,35 +1,61 @@
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import axios from 'axios'
-import { format, parseISO, startOfDay, endOfDay } from 'date-fns'
+import { format, parseISO, startOfDay, endOfDay, addDays, subDays, startOfWeek, isToday, isSameDay, getHours, getMinutes } from 'date-fns'
 import {
   Calendar,
   User,
   Clock,
   Activity,
   Monitor,
-  TrendingUp,
   ChevronLeft,
   ChevronRight,
   Download,
   ZoomIn,
-  RefreshCw
+  RefreshCw,
+  Maximize2,
+  X,
+  Image,
+  AlertCircle,
+  TrendingUp,
+  Coffee,
+  Zap,
+  Trophy
 } from 'lucide-react'
 
 interface Screenshot {
   id: string
   userId: string
   timestamp: string
-  imageUrl: string
-  windowTitle: string
-  applicationName: string
+  createdAt?: string
+  capturedAt?: string
+  url: string
+  thumbnailUrl: string
+  windowTitle?: string
+  applicationName?: string
+  activityScore?: number
+  task?: string
+  notes?: string
+  mode?: string
 }
 
 interface UserOption {
   id: string
   name: string
   email: string
+}
+
+interface DayStats {
+  date: Date
+  totalHours: number
+  activeHours: number
+  screenshotCount: number
+}
+
+interface HourRow {
+  hour: number
+  label: string
+  screenshots: (Screenshot | null)[]
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
@@ -43,101 +69,160 @@ axios.interceptors.request.use((config) => {
   return config
 })
 
+// Get activity level info based on score (0-10 scale)
+function getActivityLevel(score: number): { name: string; color: string; bgColor: string; textColor: string } {
+  if (score >= 8.5) {
+    return { name: 'Good', color: '#10B981', bgColor: 'bg-green-600', textColor: 'text-green-700' }
+  } else if (score >= 7.0) {
+    return { name: 'Fair', color: '#84CC16', bgColor: 'bg-lime-500', textColor: 'text-lime-700' }
+  } else if (score >= 5.5) {
+    return { name: 'Low', color: '#FFA500', bgColor: 'bg-orange-500', textColor: 'text-orange-700' }
+  } else if (score >= 4.0) {
+    return { name: 'Poor', color: '#FF4444', bgColor: 'bg-red-500', textColor: 'text-red-700' }
+  } else if (score >= 2.5) {
+    return { name: 'Critical', color: '#B71C1C', bgColor: 'bg-red-800', textColor: 'text-red-900' }
+  } else {
+    return { name: 'Inactive', color: '#9CA3AF', bgColor: 'bg-gray-300', textColor: 'text-gray-500' }
+  }
+}
+
 const Screenshots = () => {
   const { user } = useAuth()
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [selectedUserId, setSelectedUserId] = useState('')
+  const [screenshots, setScreenshots] = useState<Screenshot[]>([])
+  const [users, setUsers] = useState<UserOption[]>([])
+  const [selectedUserId, setSelectedUserId] = useState<string>(user?.id || '')
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const screenshotsPerPage = 12
+  const [weekStats, setWeekStats] = useState<DayStats[]>([])
+  const [isChangingDate, setIsChangingDate] = useState(false)
+  const [fullImageUrl, setFullImageUrl] = useState<string | null>(null)
 
-  // Get users list for admins
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      if (!user?.isAdmin) return []
-      const response = await axios.get(`${API_URL}/api/users`)
-      return response.data
-    },
-    enabled: user?.isAdmin
-  })
-
-  // Set default selected user once users are loaded
+  // Load users if admin
   useEffect(() => {
-    if (!selectedUserId) {
-      if (user?.isAdmin && users.length > 0) {
-        setSelectedUserId(users[0].id)
-      } else if (user?.id) {
-        setSelectedUserId(user.id)
-      }
+    if (user?.isAdmin) {
+      loadUsers()
+    } else {
+      setSelectedUserId(user?.id || '')
     }
-  }, [user, users, selectedUserId])
+  }, [user])
 
-  // Fetch screenshots
-  const { data: screenshots = [], isLoading, refetch } = useQuery({
-    queryKey: ['screenshots', selectedDate, selectedUserId],
-    queryFn: async () => {
-      if (!selectedUserId) return []
+  // Load screenshots when date or user changes
+  useEffect(() => {
+    if (selectedUserId && !isChangingDate) {
+      loadScreenshots()
+      loadWeekStats()
+    }
+  }, [selectedUserId, selectedDate, isChangingDate])
 
-      const startDate = startOfDay(new Date(selectedDate))
-      const endDate = endOfDay(new Date(selectedDate))
+  // Fetch full-size image when screenshot is selected
+  useEffect(() => {
+    if (selectedScreenshot) {
+      // Get signed URL for the full image
+      axios.get(`${API_URL}/api/screenshots/${selectedScreenshot.id}/signed-url`)
+        .then(response => {
+          if (response.data?.signedUrl) {
+            setFullImageUrl(response.data.signedUrl)
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching full image URL:', error)
+          // Fall back to thumbnail
+          setFullImageUrl(null)
+        })
+    } else {
+      setFullImageUrl(null)
+    }
+  }, [selectedScreenshot])
 
-      // Admin can see all users' screenshots, regular users only see their own
-      const userId = user?.isAdmin ? selectedUserId : user?.id
+  const loadUsers = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/users`)
+      setUsers(response.data)
+    } catch (error) {
+      console.error('Failed to load users:', error)
+    }
+  }
+
+  const loadScreenshots = async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      // Format date range for API
+      const startDate = startOfDay(selectedDate).toISOString()
+      const endDate = endOfDay(selectedDate).toISOString()
+
+      const response = await axios.get(`${API_URL}/api/screenshots`, {
+        params: {
+          userId: selectedUserId,
+          startDate,
+          endDate,
+          includeActivityScores: 'true'
+        }
+      })
+
+      setScreenshots(response.data || [])
+    } catch (error: any) {
+      console.error('Failed to load screenshots:', error)
+      setError(error.response?.data?.message || 'Failed to load screenshots')
+      setScreenshots([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const loadWeekStats = async () => {
+    const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 })
+    const stats: DayStats[] = []
+
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(weekStart, i)
 
       try {
         const response = await axios.get(`${API_URL}/api/screenshots`, {
           params: {
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString()
+            userId: selectedUserId,
+            startDate: startOfDay(date).toISOString(),
+            endDate: endOfDay(date).toISOString()
           }
         })
 
-        // If admin is viewing another user's screenshots, filter by userId
-        if (user?.isAdmin && userId !== user?.id) {
-          return response.data.filter((s: Screenshot) => s.userId === userId)
-        }
+        const dayScreenshots = response.data || []
+        const screenshotCount = dayScreenshots.length
+        const totalHours = screenshotCount * 10 / 60 // Each screenshot = 10 minutes
+        const activeHours = totalHours * 0.85 // Assume 85% active
 
-        return response.data
+        stats.push({
+          date,
+          totalHours,
+          activeHours,
+          screenshotCount
+        })
       } catch (error) {
-        console.error('Error fetching screenshots:', error)
-        return []
+        stats.push({
+          date,
+          totalHours: 0,
+          activeHours: 0,
+          screenshotCount: 0
+        })
       }
-    },
-    enabled: !!selectedUserId
-  })
+    }
 
-  // Get dashboard stats
-  const { data: stats } = useQuery({
-    queryKey: ['dashboard-stats', selectedDate, selectedUserId],
-    queryFn: async () => {
-      if (!selectedUserId) return null
+    setWeekStats(stats)
+  }
 
-      try {
-        const response = await axios.get(`${API_URL}/api/dashboard/stats`)
-        return response.data
-      } catch (error) {
-        console.error('Error fetching stats:', error)
-        return null
-      }
-    },
-    enabled: !!selectedUserId
-  })
+  const handleDateChange = async (date: Date) => {
+    if (isChangingDate) return
 
-  const totalPages = Math.ceil(screenshots.length / screenshotsPerPage)
-  const startIndex = (currentPage - 1) * screenshotsPerPage
-  const endIndex = startIndex + screenshotsPerPage
-  const currentScreenshots = screenshots.slice(startIndex, endIndex)
+    setIsChangingDate(true)
+    setSelectedDate(date)
 
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [selectedDate, selectedUserId])
-
-  const handleDateChange = (direction: 'prev' | 'next') => {
-    const currentDate = parseISO(selectedDate)
-    const newDate = new Date(currentDate)
-    newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1))
-    setSelectedDate(format(newDate, 'yyyy-MM-dd'))
+    // Show loading for 2 seconds to ensure data loads
+    setTimeout(() => {
+      setIsChangingDate(false)
+    }, 2000)
   }
 
   const handleDownloadScreenshot = async (screenshot: Screenshot) => {
@@ -151,8 +236,45 @@ const Screenshots = () => {
     }
   }
 
+  const navigateDate = (direction: 'prev' | 'next') => {
+    const newDate = direction === 'prev'
+      ? subDays(selectedDate, 1)
+      : addDays(selectedDate, 1)
+    handleDateChange(newDate)
+  }
+
+  // Organize screenshots by hour (6 per row = 1 hour)
+  const hourlyScreenshots = useMemo(() => {
+    const rows: HourRow[] = []
+
+    // Create rows for each hour from 0 to 23
+    for (let hour = 0; hour < 24; hour++) {
+      const hourLabel = format(new Date().setHours(hour, 0, 0, 0), 'ha')
+      rows.push({
+        hour,
+        label: hourLabel,
+        screenshots: new Array(6).fill(null)
+      })
+    }
+
+    // Place screenshots in their correct time slots
+    screenshots.forEach(screenshot => {
+      const timestamp = parseISO(screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt || '')
+      const hour = getHours(timestamp)
+      const minute = getMinutes(timestamp)
+      const slot = Math.floor(minute / 10) // 0-5 for each 10-minute interval
+
+      if (rows[hour]) {
+        rows[hour].screenshots[slot] = screenshot
+      }
+    })
+
+    // Filter to only show hours with screenshots
+    return rows.filter(row => row.screenshots.some(s => s !== null))
+  }, [screenshots])
+
   // Calculate metrics from screenshots
-  const calculateMetrics = () => {
+  const metrics = useMemo(() => {
     if (!screenshots.length) {
       return {
         totalHours: 0,
@@ -164,23 +286,32 @@ const Screenshots = () => {
     }
 
     const screenshotCount = screenshots.length
-    const totalHours = screenshotCount * 10 / 60 // Each screenshot represents 10 minutes
-    const activeHours = totalHours * 0.85 // Assume 85% active time
+    const totalHours = screenshotCount * 10 / 60 // Each screenshot = 10 minutes
+    const activeHours = totalHours * 0.85 // Assume 85% active
 
-    // Calculate top applications
-    const appCounts: Record<string, number> = {}
-    screenshots.forEach(s => {
-      if (s.applicationName) {
-        appCounts[s.applicationName] = (appCounts[s.applicationName] || 0) + 1
-      }
-    })
+    // Calculate average productivity score using real activity scores
+    const scores = screenshots
+      .map(s => s.activityScore || 0)
+      .filter(score => score > 0)
+    const productivityScore = scores.length > 0
+      ? scores.reduce((a, b) => a + b, 0) / scores.length
+      : 0
+
+    // Get top applications
+    const appCounts = screenshots.reduce((acc, s) => {
+      const app = s.applicationName || 'Unknown'
+      acc[app] = (acc[app] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
 
     const topApplications = Object.entries(appCounts)
-      .map(([name, count]) => ({ name, duration: count * 10 / 60 }))
-      .sort((a, b) => b.duration - a.duration)
+      .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-
-    const productivityScore = Math.min(95, Math.round((activeHours / 8) * 100))
+      .map(([app, count]) => ({
+        name: app,
+        count,
+        percentage: Math.round((count / screenshotCount) * 100)
+      }))
 
     return {
       totalHours,
@@ -189,228 +320,364 @@ const Screenshots = () => {
       productivityScore,
       topApplications
     }
+  }, [screenshots])
+
+  const formatTime = (hours: number) => {
+    const h = Math.floor(hours)
+    const m = Math.round((hours - h) * 60)
+    return h > 0 ? `${h}h ${m}m` : `${m}m`
   }
 
-  const metrics = calculateMetrics()
+  const selectedUser = users.find(u => u.id === selectedUserId)
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Activity Dashboard</h1>
-        <p className="text-gray-600 mt-1">Monitor work activity and productivity</p>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Full Width Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+              <Activity className="w-7 h-7 text-blue-600" />
+              Activity Tracker
+            </h1>
 
-      {/* Date and User Selection */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="flex flex-wrap gap-4 items-end">
-          {user?.isAdmin && users.length > 0 && (
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <User className="inline w-4 h-4 mr-1" />
-                Select User
-              </label>
-              <select
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              >
-                {users.map((u: UserOption) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleDateChange('prev')}
-              className="p-2 hover:bg-gray-100 rounded-md transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Calendar className="inline w-4 h-4 mr-1" />
-                Date
-              </label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                max={format(new Date(), 'yyyy-MM-dd')}
-                className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            <button
-              onClick={() => handleDateChange('next')}
-              disabled={selectedDate === format(new Date(), 'yyyy-MM-dd')}
-              className="p-2 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-
-          <button
-            onClick={() => refetch()}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between mb-2">
-            <Clock className="w-5 h-5 text-blue-500" />
-            <span className="text-2xl font-bold">{metrics.totalHours.toFixed(1)}h</span>
-          </div>
-          <p className="text-sm text-gray-600">Total Hours</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between mb-2">
-            <Activity className="w-5 h-5 text-green-500" />
-            <span className="text-2xl font-bold">{metrics.activeHours.toFixed(1)}h</span>
-          </div>
-          <p className="text-sm text-gray-600">Active Hours</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between mb-2">
-            <Monitor className="w-5 h-5 text-purple-500" />
-            <span className="text-2xl font-bold">{metrics.screenshotCount}</span>
-          </div>
-          <p className="text-sm text-gray-600">Screenshots</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between mb-2">
-            <TrendingUp className="w-5 h-5 text-orange-500" />
-            <span className="text-2xl font-bold">{metrics.productivityScore}%</span>
-          </div>
-          <p className="text-sm text-gray-600">Productivity Score</p>
-        </div>
-      </div>
-
-      {/* Top Applications */}
-      {metrics.topApplications.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h3 className="text-lg font-semibold mb-4">Top Applications</h3>
-          <div className="space-y-3">
-            {metrics.topApplications.map((app, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <span className="text-sm font-medium">{app.name}</span>
+            <div className="flex items-center gap-4">
+              {/* User Selector for Admins */}
+              {user?.isAdmin && users.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <div className="w-32 bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full"
-                      style={{ width: `${(app.duration / metrics.totalHours) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-sm text-gray-600 w-16 text-right">
-                    {app.duration.toFixed(1)}h
+                  <User className="w-4 h-4 text-gray-500" />
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select User</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Date Navigation */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => navigateDate('prev')}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  disabled={isChangingDate}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium">
+                    {isToday(selectedDate)
+                      ? 'Today'
+                      : format(selectedDate, 'MMM d, yyyy')}
                   </span>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Screenshots Grid */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold">
-            Screenshots ({screenshots.length} total)
-          </h3>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : screenshots.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No screenshots found for the selected date.</p>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-6">
-              {currentScreenshots.map((screenshot) => (
-                <div
-                  key={screenshot.id}
-                  className="relative group cursor-pointer rounded-lg overflow-hidden shadow-sm hover:shadow-lg transition-shadow"
-                  onClick={() => setSelectedScreenshot(screenshot)}
+                <button
+                  onClick={() => navigateDate('next')}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  disabled={isChangingDate || isToday(selectedDate)}
                 >
-                  <img
-                    src={screenshot.imageUrl}
-                    alt={screenshot.windowTitle}
-                    className="w-full h-32 object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement
-                      target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="200"%3E%3Crect width="400" height="200" fill="%23f3f4f6"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%239ca3af" font-family="sans-serif"%3ENo Preview%3C/text%3E%3C/svg%3E'
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-opacity flex items-center justify-center">
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedScreenshot(screenshot)
-                        }}
-                        className="p-2 bg-white rounded-full hover:bg-gray-100"
-                      >
-                        <ZoomIn className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDownloadScreenshot(screenshot)
-                        }}
-                        className="p-2 bg-white rounded-full hover:bg-gray-100"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                    </div>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                onClick={loadScreenshots}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* User Info */}
+          {selectedUser && (
+            <div className="text-sm text-gray-600 mt-2">
+              Viewing activity for: <span className="font-medium text-gray-900">{selectedUser.name}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex">
+        {/* Left Sidebar - Stats */}
+        <div className="w-80 bg-white border-r h-[calc(100vh-73px)] overflow-y-auto">
+          <div className="p-6 space-y-6">
+            {/* Today's Hustle */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Coffee className="w-5 h-5 text-blue-600" />
+                Today's Hustle
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="text-3xl font-bold text-gray-900">
+                    {formatTime(metrics.totalHours)}
                   </div>
-                  <div className="p-2">
-                    <p className="text-xs text-gray-600 truncate">{screenshot.applicationName || 'Unknown'}</p>
-                    <p className="text-xs text-gray-500">
-                      {screenshot.timestamp ? format(parseISO(screenshot.timestamp), 'HH:mm:ss') : 'N/A'}
-                    </p>
+                  <div className="text-sm text-gray-500">Total Time</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xl font-semibold text-green-600">
+                      {formatTime(metrics.activeHours)}
+                    </div>
+                    <div className="text-xs text-gray-500">Active Time</div>
+                  </div>
+
+                  <div>
+                    <div className="text-xl font-semibold text-blue-600">
+                      {metrics.screenshotCount}
+                    </div>
+                    <div className="text-xs text-gray-500">Screenshots</div>
                   </div>
                 </div>
-              ))}
+
+                {/* Productivity Score */}
+                <div className="pt-4 border-t">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-600">Productivity</span>
+                    <span className="text-sm font-semibold" style={{ color: getActivityLevel(metrics.productivityScore).color }}>
+                      {getActivityLevel(metrics.productivityScore).name}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="h-2 rounded-full transition-all"
+                      style={{
+                        width: `${(metrics.productivityScore / 10) * 100}%`,
+                        backgroundColor: getActivityLevel(metrics.productivityScore).color
+                      }}
+                    />
+                  </div>
+                  <div className="mt-1 text-right">
+                    <span className="text-xs text-gray-500">
+                      Score: {metrics.productivityScore.toFixed(1)}/10
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 p-4 border-t">
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-gray-600">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
+            {/* Weekly Marathon */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-600" />
+                Weekly Marathon
+              </h3>
+
+              <div className="space-y-2">
+                {weekStats.map((stat, index) => {
+                  const isSelected = isSameDay(stat.date, selectedDate)
+                  const dayName = format(stat.date, 'EEE')
+                  const dayNum = format(stat.date, 'd')
+
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => handleDateChange(stat.date)}
+                      disabled={isChangingDate}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all ${
+                        isSelected
+                          ? 'bg-blue-50 border border-blue-200'
+                          : 'hover:bg-gray-50 border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="text-left">
+                          <div className="text-sm font-medium">{dayName}</div>
+                          <div className="text-xs text-gray-500">{dayNum}</div>
+                        </div>
+
+                        {stat.totalHours > 0 && (
+                          <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 bg-green-500 rounded-full" />
+                            <span className="text-sm text-gray-700">
+                              {formatTime(stat.totalHours)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {stat.totalHours > 0 && (
+                        <div className="text-xs text-gray-500">
+                          {stat.screenshotCount} shots
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Top Applications */}
+            {metrics.topApplications.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Monitor className="w-5 h-5 text-blue-600" />
+                  Top Applications
+                </h3>
+
+                <div className="space-y-2">
+                  {metrics.topApplications.map((app, index) => (
+                    <div key={index} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-1">
+                        <div className="text-sm font-medium truncate">
+                          {app.name}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-gray-500">
+                          {app.percentage}%
+                        </div>
+                        <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className="h-1.5 bg-blue-600 rounded-full"
+                            style={{ width: `${app.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
-          </>
-        )}
+          </div>
+        </div>
+
+        {/* Main Content - Screenshots Grid (Full Width) */}
+        <div className="flex-1 bg-gray-50">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Image className="w-5 h-5 text-blue-600" />
+                {isToday(selectedDate) ? "Today's" : format(selectedDate, 'MMM d')} Snapshots
+              </h2>
+
+              <span className="text-sm text-gray-500">
+                {isLoading ? 'Loading...' : `${screenshots.length} moments captured`}
+              </span>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                {error}
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="text-center">
+                  <RefreshCw className="w-8 h-8 text-gray-400 animate-spin mx-auto mb-2" />
+                  <p className="text-gray-500">Loading screenshots...</p>
+                </div>
+              </div>
+            ) : screenshots.length === 0 ? (
+              <div className="text-center py-20">
+                <Image className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No screenshots captured</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {isToday(selectedDate) ? 'Screenshots will appear here as they are captured' : 'No activity recorded on this date'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Screenshots organized by hour */}
+                {hourlyScreenshots.map((hourRow) => (
+                  <div key={hourRow.hour} className="bg-white rounded-lg p-4">
+                    {/* Hour Label */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <Clock className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700">
+                        {hourRow.label}
+                      </span>
+                      <div className="flex-1 h-px bg-gray-200" />
+                    </div>
+
+                    {/* 6 Screenshots Grid (1 hour = 6 x 10-minute slots) */}
+                    <div className="grid grid-cols-6 gap-3">
+                      {hourRow.screenshots.map((screenshot, slotIndex) => {
+                        const slotTime = `${hourRow.hour.toString().padStart(2, '0')}:${(slotIndex * 10).toString().padStart(2, '0')}`
+
+                        if (!screenshot) {
+                          // Empty slot
+                          return (
+                            <div
+                              key={`empty-${hourRow.hour}-${slotIndex}`}
+                              className="aspect-video bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center"
+                            >
+                              <div className="text-xs text-gray-400">{slotTime}</div>
+                              <div className="text-xs text-gray-400">No activity</div>
+                            </div>
+                          )
+                        }
+
+                        const activityScore = screenshot.activityScore || 0
+                        const level = getActivityLevel(activityScore)
+
+                        return (
+                          <div
+                            key={screenshot.id}
+                            className="group relative bg-gray-50 rounded-lg overflow-hidden hover:shadow-lg transition-all cursor-pointer"
+                            onClick={() => setSelectedScreenshot(screenshot)}
+                          >
+                            {/* Screenshot Image */}
+                            <div className="aspect-video relative">
+                              <img
+                                src={screenshot.thumbnailUrl}
+                                alt="Screenshot"
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+
+                              {/* Activity Score Badge */}
+                              <div className="absolute top-1 right-1">
+                                <div
+                                  className="px-1.5 py-0.5 rounded text-white text-xs font-semibold"
+                                  style={{ backgroundColor: level.color }}
+                                >
+                                  {activityScore.toFixed(1)}
+                                </div>
+                              </div>
+
+                              {/* Time Label */}
+                              <div className="absolute bottom-1 left-1 bg-black bg-opacity-60 text-white text-xs px-1 py-0.5 rounded">
+                                {format(parseISO(screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt || ''), 'HH:mm')}
+                              </div>
+                            </div>
+
+                            {/* Screenshot Info */}
+                            <div className="p-2">
+                              <p className="text-xs font-medium text-gray-700 truncate">
+                                {screenshot.applicationName || 'Unknown'}
+                              </p>
+                              {screenshot.task && (
+                                <p className="text-xs text-gray-500 truncate">
+                                  {screenshot.task}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Screenshot Modal */}
@@ -419,43 +686,95 @@ const Screenshots = () => {
           className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedScreenshot(null)}
         >
-          <div className="relative max-w-6xl max-h-[90vh] overflow-auto">
-            <img
-              src={selectedScreenshot.imageUrl}
-              alt={selectedScreenshot.windowTitle}
-              className="w-full h-auto"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement
-                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="800" height="600"%3E%3Crect width="800" height="600" fill="%23f3f4f6"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%239ca3af" font-family="sans-serif" font-size="24"%3ENo Preview Available%3C/text%3E%3C/svg%3E'
-              }}
-            />
-            <div className="absolute top-4 right-4 flex gap-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleDownloadScreenshot(selectedScreenshot)
-                }}
-                className="p-2 bg-white rounded-full hover:bg-gray-100"
-              >
-                <Download className="w-5 h-5" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setSelectedScreenshot(null)
-                }}
-                className="p-2 bg-white rounded-full hover:bg-gray-100"
-              >
-                ✕
-              </button>
+          <div
+            className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold">Screenshot Details</h3>
+                {selectedScreenshot.activityScore && (
+                  <div
+                    className="px-2 py-1 rounded text-white text-xs font-semibold"
+                    style={{ backgroundColor: getActivityLevel(selectedScreenshot.activityScore).color }}
+                  >
+                    {getActivityLevel(selectedScreenshot.activityScore).name} - {selectedScreenshot.activityScore.toFixed(1)}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadScreenshot(selectedScreenshot)}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setSelectedScreenshot(null)}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg">
-              <p className="text-sm font-medium">{selectedScreenshot.applicationName}</p>
-              <p className="text-xs text-gray-600">{selectedScreenshot.windowTitle}</p>
-              <p className="text-xs text-gray-500">
-                {format(parseISO(selectedScreenshot.timestamp), 'PPpp')}
-              </p>
+
+            {/* Modal Body */}
+            <div className="p-4 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <img
+                src={fullImageUrl || selectedScreenshot.thumbnailUrl}
+                alt="Screenshot"
+                className="w-full rounded-lg"
+              />
+
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Application</p>
+                  <p className="font-medium">{selectedScreenshot.applicationName || 'Unknown'}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Time</p>
+                  <p className="font-medium">
+                    {selectedScreenshot.capturedAt || selectedScreenshot.timestamp
+                      ? format(parseISO(selectedScreenshot.capturedAt || selectedScreenshot.timestamp || ''), 'HH:mm:ss')
+                      : 'N/A'}
+                  </p>
+                </div>
+
+                {selectedScreenshot.task && (
+                  <div className="col-span-2">
+                    <p className="text-sm text-gray-500">Task</p>
+                    <p className="font-medium">{selectedScreenshot.task}</p>
+                  </div>
+                )}
+
+                {selectedScreenshot.windowTitle && (
+                  <div className="col-span-2">
+                    <p className="text-sm text-gray-500">Window Title</p>
+                    <p className="font-medium">{selectedScreenshot.windowTitle}</p>
+                  </div>
+                )}
+
+                {selectedScreenshot.notes && (
+                  <div className="col-span-2">
+                    <p className="text-sm text-gray-500">Notes</p>
+                    <p className="font-medium">{selectedScreenshot.notes}</p>
+                  </div>
+                )}
+              </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading overlay when changing dates */}
+      {isChangingDate && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-5 shadow-xl flex flex-col items-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-300 border-t-blue-600 mb-2"></div>
+            <p className="text-gray-600 text-sm">Loading...</p>
           </div>
         </div>
       )}

@@ -37,12 +37,25 @@ export class ScreenshotsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('includeDeviceInfo') includeDeviceInfo?: string,
+    @Query('includeActivityScores') includeActivityScores?: string,
+    @Query('userId') userId?: string, // Admin can specify a userId
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
     const includeDevice = includeDeviceInfo === 'true';
-    
-    return this.screenshotsService.findByUser(req.user.userId, start, end, includeDevice);
+    const includeScores = includeActivityScores === 'true';
+
+    // If userId is provided, check if user is admin
+    let targetUserId = req.user.userId;
+    if (userId && userId !== req.user.userId) {
+      // Check if the requesting user is an admin
+      if (req.user.role !== 'super_admin' && req.user.role !== 'org_admin') {
+        throw new HttpException('Unauthorized to view other users screenshots', HttpStatus.FORBIDDEN);
+      }
+      targetUserId = userId;
+    }
+
+    return this.screenshotsService.findByUser(targetUserId, start, end, includeDevice, includeScores);
   }
 
   @UseGuards(JwtAuthGuard)
