@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import axios from 'axios'
 import { format, parseISO, startOfDay, endOfDay, addDays, subDays, startOfWeek, isToday, isSameDay, getHours, getMinutes } from 'date-fns'
+import moment from 'moment-timezone'
 import {
   Calendar,
   User,
@@ -20,7 +21,9 @@ import {
   TrendingUp,
   Coffee,
   Zap,
-  Trophy
+  Trophy,
+  Award,
+  Target
 } from 'lucide-react'
 
 interface Screenshot {
@@ -98,13 +101,26 @@ const Screenshots = () => {
   const [weekStats, setWeekStats] = useState<DayStats[]>([])
   const [isChangingDate, setIsChangingDate] = useState(false)
   const [fullImageUrl, setFullImageUrl] = useState<string | null>(null)
+  const [userTimezone, setUserTimezone] = useState<string>('UTC')
 
-  // Load users if admin
+  // Load users if admin and load timezone preference
   useEffect(() => {
     if (user?.isAdmin) {
       loadUsers()
     } else {
       setSelectedUserId(user?.id || '')
+    }
+
+    // Load timezone preference
+    const savedTimezone = localStorage.getItem('userTimezone')
+    if (savedTimezone) {
+      console.log('Loading saved timezone:', savedTimezone)
+      setUserTimezone(savedTimezone)
+    } else {
+      // Default to browser timezone
+      const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      console.log('Using browser timezone:', browserTimezone)
+      setUserTimezone(browserTimezone || 'UTC')
     }
   }, [user])
 
@@ -150,9 +166,10 @@ const Screenshots = () => {
     setError(null)
 
     try {
-      // Format date range for API
-      const startDate = startOfDay(selectedDate).toISOString()
-      const endDate = endOfDay(selectedDate).toISOString()
+      // Format date range for API using user's timezone
+      // Create start and end of day in the user's timezone
+      const startDate = moment.tz(selectedDate, userTimezone).startOf('day').utc().toISOString()
+      const endDate = moment.tz(selectedDate, userTimezone).endOf('day').utc().toISOString()
 
       const response = await axios.get(`${API_URL}/api/screenshots`, {
         params: {
@@ -184,8 +201,8 @@ const Screenshots = () => {
         const response = await axios.get(`${API_URL}/api/screenshots`, {
           params: {
             userId: selectedUserId,
-            startDate: startOfDay(date).toISOString(),
-            endDate: endOfDay(date).toISOString()
+            startDate: moment.tz(date, userTimezone).startOf('day').utc().toISOString(),
+            endDate: moment.tz(date, userTimezone).endOf('day').utc().toISOString()
           }
         })
 
@@ -245,49 +262,160 @@ const Screenshots = () => {
 
   // Organize screenshots by hour (6 per row = 1 hour)
   const hourlyScreenshots = useMemo(() => {
-    const rows: HourRow[] = []
+    console.log('Creating hourly screenshots with timezone:', userTimezone)
+    const groups: { [hour: string]: (Screenshot | null)[] } = {}
 
-    // Create rows for each hour from 0 to 23
-    for (let hour = 0; hour < 24; hour++) {
-      const hourLabel = format(new Date().setHours(hour, 0, 0, 0), 'ha')
-      rows.push({
-        hour,
-        label: hourLabel,
-        screenshots: new Array(6).fill(null)
-      })
-    }
+    // Similar to desktop app - group screenshots by hour
+    screenshots.forEach((screenshot, index) => {
+      const timestampStr = screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt || ''
 
-    // Place screenshots in their correct time slots
-    screenshots.forEach(screenshot => {
-      const timestamp = parseISO(screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt || '')
-      const hour = getHours(timestamp)
-      const minute = getMinutes(timestamp)
-      const slot = Math.floor(minute / 10) // 0-5 for each 10-minute interval
+      // Debug first few screenshots
+      if (index < 3) {
+        console.log(`Screenshot ${index}:`, {
+          original: timestampStr,
+          timezone: userTimezone,
+          utc: moment.utc(timestampStr).format(),
+          converted: moment.utc(timestampStr).tz(userTimezone).format()
+        })
+      }
 
-      if (rows[hour]) {
-        rows[hour].screenshots[slot] = screenshot
+      // Convert UTC timestamp to user's timezone using moment-timezone
+      const momentInUserTz = moment.utc(timestampStr).tz(userTimezone)
+      const hour = momentInUserTz.hour()
+      const minute = momentInUserTz.minute()
+      const hourKey = `${hour.toString().padStart(2, '0')}:00`
+
+      // Calculate which slot (0-5) this screenshot belongs to
+      const slotIndex = Math.floor(minute / 10)
+
+      // Initialize array for this hour if it doesn't exist
+      if (!groups[hourKey]) {
+        groups[hourKey] = new Array(6).fill(null)
+      }
+
+      // Place screenshot in its correct slot
+      // If there's already a screenshot in that slot, keep the latest one
+      if (!groups[hourKey][slotIndex] ||
+          moment.utc(screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt).tz(userTimezone).valueOf() >
+          moment.utc(groups[hourKey][slotIndex]!.capturedAt || groups[hourKey][slotIndex]!.timestamp || groups[hourKey][slotIndex]!.createdAt).tz(userTimezone).valueOf()) {
+        groups[hourKey][slotIndex] = screenshot
       }
     })
 
-    // Filter to only show hours with screenshots
-    return rows.filter(row => row.screenshots.some(s => s !== null))
-  }, [screenshots])
+    // Convert groups to array of HourRow objects
+    const rows: HourRow[] = []
+    Object.keys(groups).sort().forEach(hourKey => {
+      const hour = parseInt(hourKey.split(':')[0])
+
+      // Format the hour label properly (e.g., "9am", "2pm")
+      let hourLabel: string
+      if (hour === 0) {
+        hourLabel = '12am'
+      } else if (hour < 12) {
+        hourLabel = `${hour}am`
+      } else if (hour === 12) {
+        hourLabel = '12pm'
+      } else {
+        hourLabel = `${hour - 12}pm`
+      }
+
+      rows.push({
+        hour,
+        label: hourLabel,
+        screenshots: groups[hourKey]
+      })
+    })
+
+    return rows
+  }, [screenshots, userTimezone])
+
+  // Calculate productive hours (filters out inactive periods)
+  const calculateProductiveHours = (screenshots: Screenshot[]) => {
+    // Filter screenshots based on activity score
+    // Only count screenshots with activityScore >= 2.5 (Critical, Poor, Fair, Good)
+    // This matches the desktop app logic
+    const productiveScreenshots = screenshots.filter(s => (s.activityScore || 0) >= 2.5)
+    return (productiveScreenshots.length * 10) / 60 // Each screenshot is 10 minutes
+  }
+
+  // Get achievement status based on hours
+  const getAchievementStatus = (hours: number, date: Date) => {
+    // Check if it's a weekend
+    const dayOfWeek = date.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+    if (isWeekend) {
+      return {
+        status: 'Weekend Hours',
+        color: '#8b5cf6', // purple
+        percentage: 0,
+        description: 'No attendance on weekends'
+      }
+    }
+
+    // Weekday thresholds (matching desktop app)
+    const markers = {
+      halfAttendance: 4.5,
+      threeQuarterAttendance: 7,
+      fullAttendance: 9,
+      maxScale: 13
+    }
+
+    let status = 'No Attendance'
+    let color = '#ef4444' // red
+    let percentage = 0
+    let description = '< 4.5h'
+
+    if (hours >= markers.fullAttendance) {
+      if (hours > markers.fullAttendance) {
+        status = 'Extra Mileage'
+        color = '#9333ea' // purple
+        percentage = 100
+        description = '> 9h • Flexibility earned'
+      } else {
+        status = 'Full Day'
+        color = '#10b981' // green
+        percentage = 100
+        description = '9h • 100% attendance'
+      }
+    } else if (hours >= markers.threeQuarterAttendance) {
+      status = 'Good Day'
+      color = '#3b82f6' // blue
+      percentage = 75
+      description = '7h • 75% attendance'
+    } else if (hours >= markers.halfAttendance) {
+      status = 'Half Day'
+      color = '#f59e0b' // amber
+      percentage = 50
+      description = '4.5h • 50% attendance'
+    } else {
+      status = 'No Attendance'
+      color = '#ef4444' // red
+      percentage = 0
+      description = '< 4.5h • 0% attendance'
+    }
+
+    return { status, color, percentage, description }
+  }
 
   // Calculate metrics from screenshots
   const metrics = useMemo(() => {
     if (!screenshots.length) {
       return {
         totalHours: 0,
-        activeHours: 0,
+        productiveHours: 0,
         screenshotCount: 0,
         productivityScore: 0,
+        activityLevel: 'Inactive',
+        activityColor: '#9CA3AF',
+        achievement: getAchievementStatus(0, selectedDate),
         topApplications: []
       }
     }
 
     const screenshotCount = screenshots.length
     const totalHours = screenshotCount * 10 / 60 // Each screenshot = 10 minutes
-    const activeHours = totalHours * 0.85 // Assume 85% active
+    const productiveHours = calculateProductiveHours(screenshots)
 
     // Calculate average productivity score using real activity scores
     const scores = screenshots
@@ -296,6 +424,9 @@ const Screenshots = () => {
     const productivityScore = scores.length > 0
       ? scores.reduce((a, b) => a + b, 0) / scores.length
       : 0
+
+    const activityLevel = getActivityLevel(productivityScore)
+    const achievement = getAchievementStatus(productiveHours, selectedDate)
 
     // Get top applications
     const appCounts = screenshots.reduce((acc, s) => {
@@ -315,12 +446,15 @@ const Screenshots = () => {
 
     return {
       totalHours,
-      activeHours,
+      productiveHours,
       screenshotCount,
       productivityScore,
+      activityLevel: activityLevel.name,
+      activityColor: activityLevel.color,
+      achievement,
       topApplications
     }
-  }, [screenshots])
+  }, [screenshots, selectedDate])
 
   const formatTime = (hours: number) => {
     const h = Math.floor(hours)
@@ -420,51 +554,106 @@ const Screenshots = () => {
               </h3>
 
               <div className="space-y-4">
-                <div>
-                  <div className="text-3xl font-bold text-gray-900">
-                    {formatTime(metrics.totalHours)}
+                {/* Main Stats Row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="w-4 h-4 text-gray-400" />
+                      <div className="text-xs text-gray-500">Tracked Today</div>
+                    </div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {formatTime(metrics.productiveHours)}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-500">Total Time</div>
+
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Activity className="w-4 h-4 text-gray-400" />
+                      <div className="text-xs text-gray-500">Activity Level</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-bold">
+                        {metrics.productivityScore.toFixed(1)}
+                      </span>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{
+                          backgroundColor: `${metrics.activityColor}15`,
+                          color: metrics.activityColor,
+                          border: `1px solid ${metrics.activityColor}30`
+                        }}
+                      >
+                        {metrics.activityLevel}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xl font-semibold text-green-600">
-                      {formatTime(metrics.activeHours)}
+                {/* Achievement Status */}
+                <div
+                  className="rounded-lg p-4 border-2"
+                  style={{
+                    backgroundColor: `${metrics.achievement.color}08`,
+                    borderColor: `${metrics.achievement.color}30`
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Award className="w-5 h-5" style={{ color: metrics.achievement.color }} />
+                      <span className="text-sm font-medium text-gray-600">Today's Achievement</span>
                     </div>
-                    <div className="text-xs text-gray-500">Active Time</div>
+                    <div className="flex items-center gap-2">
+                      <Target className="w-4 h-4" style={{ color: metrics.achievement.color }} />
+                      <span className="text-sm font-bold" style={{ color: metrics.achievement.color }}>
+                        {metrics.achievement.percentage}%
+                      </span>
+                    </div>
                   </div>
-
-                  <div>
-                    <div className="text-xl font-semibold text-blue-600">
-                      {metrics.screenshotCount}
-                    </div>
-                    <div className="text-xs text-gray-500">Screenshots</div>
+                  <div
+                    className="text-lg font-bold mb-1"
+                    style={{ color: metrics.achievement.color }}
+                  >
+                    {metrics.achievement.status}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {metrics.achievement.description}
                   </div>
                 </div>
 
-                {/* Productivity Score */}
+                {/* Progress Bar */}
                 <div className="pt-4 border-t">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Productivity</span>
-                    <span className="text-sm font-semibold" style={{ color: getActivityLevel(metrics.productivityScore).color }}>
-                      {getActivityLevel(metrics.productivityScore).name}
+                    <span className="text-sm text-gray-600">Daily Progress</span>
+                    <span className="text-sm font-semibold text-gray-700">
+                      {((metrics.productiveHours / 9) * 100).toFixed(0)}% of full day
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-gray-200 rounded-full h-3 relative">
                     <div
-                      className="h-2 rounded-full transition-all"
+                      className="h-3 rounded-full transition-all"
                       style={{
-                        width: `${(metrics.productivityScore / 10) * 100}%`,
-                        backgroundColor: getActivityLevel(metrics.productivityScore).color
+                        width: `${Math.min((metrics.productiveHours / 9) * 100, 100)}%`,
+                        backgroundColor: metrics.achievement.color
                       }}
                     />
+                    {/* Milestone markers */}
+                    <div className="absolute top-0 left-[50%] w-0.5 h-3 bg-gray-400 opacity-50" />
+                    <div className="absolute top-0 left-[77.7%] w-0.5 h-3 bg-gray-400 opacity-50" />
                   </div>
-                  <div className="mt-1 text-right">
-                    <span className="text-xs text-gray-500">
-                      Score: {metrics.productivityScore.toFixed(1)}/10
-                    </span>
+                  <div className="flex justify-between mt-1">
+                    <span className="text-xs text-gray-500">0h</span>
+                    <span className="text-xs text-gray-500">4.5h</span>
+                    <span className="text-xs text-gray-500">7h</span>
+                    <span className="text-xs text-gray-500">9h</span>
                   </div>
+                </div>
+
+                {/* Screenshot Count */}
+                <div className="flex items-center justify-between pt-3 border-t">
+                  <span className="text-sm text-gray-600">Screenshots Captured</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {metrics.screenshotCount}
+                  </span>
                 </div>
               </div>
             </div>
@@ -653,7 +842,7 @@ const Screenshots = () => {
 
                               {/* Time Label */}
                               <div className="absolute bottom-1 left-1 bg-black bg-opacity-60 text-white text-xs px-1 py-0.5 rounded">
-                                {format(parseISO(screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt || ''), 'HH:mm')}
+                                {moment.utc(screenshot.capturedAt || screenshot.timestamp || screenshot.createdAt || '').tz(userTimezone).format('HH:mm')}
                               </div>
                             </div>
 
@@ -738,7 +927,7 @@ const Screenshots = () => {
                   <p className="text-sm text-gray-500">Time</p>
                   <p className="font-medium">
                     {selectedScreenshot.capturedAt || selectedScreenshot.timestamp
-                      ? format(parseISO(selectedScreenshot.capturedAt || selectedScreenshot.timestamp || ''), 'HH:mm:ss')
+                      ? moment.utc(selectedScreenshot.capturedAt || selectedScreenshot.timestamp || '').tz(userTimezone).format('HH:mm:ss')
                       : 'N/A'}
                   </p>
                 </div>

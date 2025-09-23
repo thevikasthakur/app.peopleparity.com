@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Users, Camera, LogOut } from 'lucide-react'
+import { Users, Camera, LogOut, Settings } from 'lucide-react'
 
 const Layout = () => {
   const { user, logout } = useAuth()
@@ -15,6 +15,7 @@ const Layout = () => {
   const navItems = [
     { path: '/screenshots', label: 'Screenshots', icon: Camera, adminOnly: false },
     { path: '/members', label: 'Members', icon: Users, adminOnly: true },
+    { path: '/settings', label: 'Settings', icon: Settings, adminOnly: false },
   ]
 
   const visibleNavItems = navItems.filter(item => !item.adminOnly || user?.isAdmin)

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Login from './pages/Login'
 import Members from './pages/Members'
 import Screenshots from './pages/Screenshots'
+import Settings from './pages/Settings'
 import Layout from './components/Layout'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -27,6 +28,7 @@ function App() {
               <Route index element={<Navigate to="/screenshots" replace />} />
               <Route path="screenshots" element={<Screenshots />} />
               <Route path="members" element={<Members />} />
+              <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>
         </Router>
