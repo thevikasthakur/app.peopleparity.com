@@ -174,7 +174,7 @@
             "Properties": {
               "Code": {
                 "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
-                "S3Key": "serverless/ppv1/prod/1758631403688-2025-09-23T12:43:23.688Z/ppv1.zip"
+                "S3Key": "serverless/ppv1/prod/1758631794620-2025-09-23T12:49:54.620Z/ppv1.zip"
               },
               "Handler": "src/lambda.handler",
               "Runtime": "nodejs22.x",
@@ -219,14 +219,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersion1WO5jdMvuXUf68v3p4dX70pyFhl7HeAiVoTZ5Xo3Xg": {
+          "ApiLambdaVersionMQ1qaIJtBt11ZvT1qy2XeGIE9Z6Z63BUGrKIu7EQ": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "WtfKD8CBWIWGjxKO4vyEq/lmaXvFKhppRk9evgmRahk="
+              "CodeSha256": "0lYXfX/h0Lv6U2qTLOqupd3qxoASBCXHjzri03yN8RA="
             }
           },
           "HttpApi": {
@@ -421,7 +421,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersion1WO5jdMvuXUf68v3p4dX70pyFhl7HeAiVoTZ5Xo3Xg"
+              "Ref": "ApiLambdaVersionMQ1qaIJtBt11ZvT1qy2XeGIE9Z6Z63BUGrKIu7EQ"
             },
             "Export": {
               "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
@@ -518,7 +518,7 @@
         "timeout": 31,
         "runtime": "nodejs22.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersion1WO5jdMvuXUf68v3p4dX70pyFhl7HeAiVoTZ5Xo3Xg"
+        "versionLogicalId": "ApiLambdaVersionMQ1qaIJtBt11ZvT1qy2XeGIE9Z6Z63BUGrKIu7EQ"
       }
     },
     "resources": {
@@ -620,7 +620,7 @@
     "layers": {}
   },
   "package": {
-    "artifactDirectoryName": "serverless/ppv1/prod/1758631403688-2025-09-23T12:43:23.688Z",
+    "artifactDirectoryName": "serverless/ppv1/prod/1758631794620-2025-09-23T12:49:54.620Z",
     "artifact": "ppv1.zip"
   }
 }
