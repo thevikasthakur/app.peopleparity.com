@@ -30,7 +30,17 @@
       "Bash(sips:*)",
       "Bash(npm rebuild:*)",
       "Bash(arch -arm64 npx electron-rebuild -f -w better-sqlite3 -a arm64)",
-      "Bash(npx png-to-ico:*)"
+      "Bash(npx png-to-ico:*)",
+      "Bash(sudo xattr:*)",
+      "Bash(codesign:*)",
+      "Bash(hdiutil attach:*)",
+      "Bash(hdiutil detach:*)",
+      "Bash(security find-identity:*)",
+      "Bash(npx create-react-app:*)",
+      "Bash(npm create:*)",
+      "Bash(npx tailwindcss init:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npx prisma generate:*)"
     ],
     "deny": [],
     "ask": []
