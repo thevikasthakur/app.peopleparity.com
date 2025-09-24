@@ -50,7 +50,14 @@ export class ProductiveHoursService {
     let validMinutes = 0;
     const allScores: number[] = [];
 
-    // Process each screenshot
+    // Build array of screenshot scores for neighbor checking
+    const screenshotScores: Array<{
+      screenshot: Screenshot;
+      weightedScore: number;
+      uiScore: number;
+    }> = [];
+
+    // First pass: calculate scores for all screenshots
     for (const screenshot of screenshots) {
       if (!screenshot.activityPeriods || screenshot.activityPeriods.length === 0) {
         continue;
@@ -74,7 +81,7 @@ export class ProductiveHoursService {
         scoresToAverage = scores; // Take all
       }
 
-      // Calculate simple average of selected scores
+      // Calculate simple average of selected scores (DB scale 0-100)
       const weightedScore = scoresToAverage.reduce((a, b) => a + b, 0) / scoresToAverage.length;
 
       // Convert to UI scale (0-10)
@@ -84,23 +91,86 @@ export class ProductiveHoursService {
         allScores.push(uiScore);
       }
 
-      // Apply validation rules (same as desktop app)
-      // >= 4.0: Always valid (10 minutes)
-      // 2.5-4.0: Valid only if within work hours or adjacent to high activity
-      // < 2.5: Never valid
-      if (uiScore >= 4.0) {
-        validMinutes += 10; // Each screenshot represents 10 minutes
-      } else if (uiScore >= 2.5 && uiScore < 4.0) {
-        // Check work hours (9 AM - 7 PM in UTC)
-        const capturedHour = new Date(screenshot.capturedAt).getUTCHours();
-        const isWorkHours = capturedHour >= 9 && capturedHour < 19;
-        
-        if (isWorkHours) {
-          validMinutes += 10;
-        }
-        // Could also check for adjacent high-activity screenshots here
+      screenshotScores.push({
+        screenshot,
+        weightedScore,
+        uiScore
+      });
+    }
+
+    // Second pass: apply validation rules with neighbor checking
+    for (let i = 0; i < screenshotScores.length; i++) {
+      const current = screenshotScores[i];
+      const prev = i > 0 ? screenshotScores[i - 1] : null;
+      const next = i < screenshotScores.length - 1 ? screenshotScores[i + 1] : null;
+
+      let isValid = false;
+
+      // Rule 1: Valid if score >= 4.0 (40 on DB scale)
+      if (current.weightedScore >= 40) {
+        isValid = true;
+        console.log(`Screenshot ${i}: Score ${current.uiScore.toFixed(1)} >= 4.0 -> VALID`);
       }
-      // < 2.5: Don't count
+      // Rule 2 & 3: Critical (2.5-4.0) has two possible validation paths
+      else if (current.weightedScore >= 25 && current.weightedScore < 40) {
+        // Rule 2: Check if previous or next screenshot has score >= 4.0
+        if ((prev && prev.weightedScore >= 40) || (next && next.weightedScore >= 40)) {
+          isValid = true;
+          const neighborInfo = prev && prev.weightedScore >= 40
+            ? `prev=${prev.uiScore.toFixed(1)}`
+            : `next=${next?.uiScore.toFixed(1)}`;
+          console.log(`Screenshot ${i}: Critical score ${current.uiScore.toFixed(1)} with neighbor >= 4.0 (${neighborInfo}) -> VALID`);
+        }
+        // Rule 3: Check hourly average condition
+        else {
+          // Get the hour of this screenshot
+          const screenshotTime = new Date(current.screenshot.capturedAt);
+          const hourStart = new Date(screenshotTime);
+          hourStart.setMinutes(0, 0, 0);
+          const hourEnd = new Date(hourStart);
+          hourEnd.setHours(hourEnd.getHours() + 1);
+
+          // Find all screenshots in this hour
+          const hourScreenshots = screenshotScores.filter(s => {
+            const time = new Date(s.screenshot.capturedAt).getTime();
+            return time >= hourStart.getTime() && time < hourEnd.getTime();
+          });
+
+          // Check if hour has 6+ screenshots
+          if (hourScreenshots.length >= 6) {
+            // Collect all activity period scores for the hour
+            const hourPeriodScores: number[] = [];
+            for (const hs of hourScreenshots) {
+              const periodScores = hs.screenshot.activityPeriods
+                ?.map(p => p.activityScore || 0) || [];
+              hourPeriodScores.push(...periodScores);
+            }
+
+            // Calculate top 80% average
+            if (hourPeriodScores.length > 0) {
+              const avgScore = this.calculateTop80Average(hourPeriodScores.map(s => s / 10));
+
+              // Check if average >= 4.0 (40 on DB scale)
+              if (avgScore >= 4.0) {
+                isValid = true;
+                console.log(`Screenshot ${i}: Critical score ${current.uiScore.toFixed(1)} with hourly avg ${avgScore.toFixed(1)} >= 4.0 (${hourScreenshots.length} screenshots in hour) -> VALID`);
+              } else {
+                console.log(`Screenshot ${i}: Critical score ${current.uiScore.toFixed(1)} with hourly avg ${avgScore.toFixed(1)} < 4.0 -> INVALID`);
+              }
+            }
+          } else {
+            console.log(`Screenshot ${i}: Critical score ${current.uiScore.toFixed(1)} with only ${hourScreenshots.length} screenshots in hour (< 6 required) -> INVALID`);
+          }
+        }
+      }
+      // Rule 4: Inactive (< 2.5) is never valid
+      else {
+        console.log(`Screenshot ${i}: Score ${current.uiScore.toFixed(1)} < 2.5 -> INVALID`);
+      }
+
+      if (isValid) {
+        validMinutes += 10; // Each screenshot represents 10 minutes
+      }
     }
 
     const productiveHours = validMinutes / 60;

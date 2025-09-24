@@ -82,9 +82,17 @@ export class ActivityService {
     }
     
     try {
-      const period = this.activityPeriodsRepository.create(createActivityDto);
+      // Apply 15% boost to activity score to make it easier for users to achieve higher scores
+      // This boost is applied at the storage level, so it affects all downstream calculations
+      const boostedScore = Math.min(100, createActivityDto.activityScore * 1.15);
+      console.log(`[Activity Score Boost] Original: ${createActivityDto.activityScore}, Boosted (+15%): ${boostedScore}`);
+
+      const period = this.activityPeriodsRepository.create({
+        ...createActivityDto,
+        activityScore: boostedScore  // Use boosted score
+      });
       const savedPeriod = await this.activityPeriodsRepository.save(period);
-      console.log('Activity period created successfully:', savedPeriod.id);
+      console.log('Activity period created successfully with boosted score:', savedPeriod.id);
       return savedPeriod;
     } catch (error: any) {
       console.error('Error creating activity period:', error.message);

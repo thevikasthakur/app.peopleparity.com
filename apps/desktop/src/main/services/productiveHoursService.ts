@@ -102,7 +102,7 @@ export class ProductiveHoursService {
     
     // Total productive hours (already filtered by activity level)
     const productiveHours = dateStats.clientHours + dateStats.commandHours;
-    console.log('Total productive hours:', productiveHours);
+    console.log('[ProductiveHours] Date:', date.toISOString(), 'Client hours:', dateStats.clientHours, 'Command hours:', dateStats.commandHours, 'Total productive hours:', productiveHours);
     
     return productiveHours;
   }
