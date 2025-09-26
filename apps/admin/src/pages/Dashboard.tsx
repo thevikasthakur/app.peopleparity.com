@@ -54,6 +54,28 @@ export function Dashboard() {
     enabled: user?.isAdmin === true,
   });
 
+  // Get selected developer's timezone when admin is viewing a specific user
+  const selectedDeveloperTimezone = useMemo(() => {
+    if (!user?.isAdmin || !selectedUserId || !teamMembers) return undefined;
+    const selectedMember = teamMembers.find((m: any) => m.id === selectedUserId);
+    console.log('DEBUG - Selected developer timezone:', {
+      selectedUserId,
+      selectedMember,
+      timezone: selectedMember?.timezone,
+      teamMembers
+    });
+    return selectedMember?.timezone;
+  }, [user?.isAdmin, selectedUserId, teamMembers]);
+
+  const isViewingAsAdmin = user?.isAdmin && selectedUserId !== null;
+
+  console.log('DEBUG - Props being passed to ScreenshotGrid:', {
+    userTimezone: user?.timezone,
+    developerTimezone: selectedDeveloperTimezone,
+    isViewingAsAdmin,
+    selectedUserId
+  });
+
   // Fetch screenshots for the user/team and date
   const { data: screenshots, isLoading: isLoadingScreenshots } = useQuery({
     queryKey: ['screenshots', effectiveUserId, selectedDate.toISOString(), refreshKey],
@@ -255,6 +277,8 @@ export function Dashboard() {
                 onRefresh={handleRefresh}
                 userRole={user?.role}
                 userTimezone={user?.timezone}
+                developerTimezone={selectedDeveloperTimezone}
+                isViewingAsAdmin={isViewingAsAdmin}
               />
             )}
           </div>

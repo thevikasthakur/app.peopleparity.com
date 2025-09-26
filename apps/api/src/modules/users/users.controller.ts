@@ -22,7 +22,8 @@ export class UsersController {
         email: user.email,
         role: user.role,
         organizationId: user.organizationId,
-        organizationName: user.organization?.name
+        organizationName: user.organization?.name,
+        timezone: user.timezone
       }));
     }
 
@@ -35,7 +36,8 @@ export class UsersController {
         email: user.email,
         role: user.role,
         organizationId: user.organizationId,
-        organizationName: user.organization?.name
+        organizationName: user.organization?.name,
+        timezone: user.timezone
       }));
     }
 
@@ -46,7 +48,8 @@ export class UsersController {
       email: currentUser.email,
       role: currentUser.role,
       organizationId: currentUser.organizationId,
-      organizationName: currentUser.organization?.name
+      organizationName: currentUser.organization?.name,
+      timezone: currentUser.timezone
     }];
   }
 

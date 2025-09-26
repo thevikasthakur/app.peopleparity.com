@@ -65,10 +65,51 @@ interface ScreenshotGridProps {
   onRefresh: () => void;
   userRole?: string;
   userTimezone?: string;
+  developerTimezone?: string;
+  isViewingAsAdmin?: boolean;
 }
 
 function percentageToTenScale(percentage: number): number {
   return Math.round(percentage) / 10;
+}
+
+function getTimezoneAbbr(date: Date, timezone: string): string {
+  let tzName = date.toLocaleTimeString('en-US', {
+    timeZone: timezone,
+    timeZoneName: 'short'
+  }).split(' ').pop() || timezone;
+
+  // Remove GMT+x or GMT-y and replace with abbreviated names
+  if (tzName.startsWith('GMT')) {
+    // Map common timezone offsets to their abbreviations
+    const offset = tzName.substring(3);
+    const offsetMap: { [key: string]: string } = {
+      '+5:30': 'IST',
+      '+0': 'UTC',
+      '-8': 'PT',
+      '-7': 'MT',
+      '-6': 'CT',
+      '-5': 'ET',
+      '+10': 'AET',
+      '+11': 'AET',
+      '+9': 'JST',
+      '+8': 'SGT',
+      '+1': 'CET',
+      '+4': 'GST',
+    };
+    tzName = offsetMap[offset] || tzName;
+  }
+
+  // Only remove S or D suffix for timezones that observe daylight saving
+  // Timezones like IST, JST, SGT, etc. don't observe DST, so keep them as-is
+  const dstObservingTimezones = ['PDT', 'PST', 'MDT', 'MST', 'CDT', 'CST', 'EDT', 'EST', 'AEST', 'AEDT', 'CEST', 'CET', 'BST', 'GMT'];
+
+  if (dstObservingTimezones.includes(tzName)) {
+    // Remove S or D suffix - e.g., AEST/AEDT -> AET, PDT/PST -> PT
+    tzName = tzName.replace(/([A-Z]+)[SD]T$/, '$1T');
+  }
+
+  return tzName;
 }
 
 function getActivityLevel(score: number): { name: string; color: string; bgColor: string; textColor: string } {
@@ -87,7 +128,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
-export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone, developerTimezone, isViewingAsAdmin }: ScreenshotGridProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -252,7 +293,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
 
   const groupScreenshotsByHour = () => {
     const groups: { [hour: string]: (Screenshot | null)[] } = {};
-    const tz = userTimezone || 'Asia/Kolkata';
+    // Use developer's timezone for grouping/ordering
+    const tz = developerTimezone || userTimezone || 'Asia/Kolkata';
 
     screenshots.forEach(screenshot => {
       const timestamp = new Date(getTimestamp(screenshot));
@@ -298,17 +340,27 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
 
   const getLocalDateString = (timestamp: string) => {
     const date = new Date(timestamp);
-    const tz = userTimezone || 'Asia/Kolkata';
+    const tz = developerTimezone || userTimezone || 'Asia/Kolkata';
     const dateStr = date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
       timeZone: tz
     });
-    const timezone = date.toLocaleTimeString('en-US', {
-      timeZoneName: 'short',
-      timeZone: tz
-    }).split(' ').pop();
+    const timezone = getTimezoneAbbr(date, tz);
+
+    if (isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone) {
+      const adminTz = userTimezone || 'Asia/Kolkata';
+      const adminDateStr = date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        timeZone: adminTz
+      });
+      const adminTimezone = getTimezoneAbbr(date, adminTz);
+      return `${dateStr} (${timezone}) • ${adminDateStr} (${adminTimezone})`;
+    }
+
     return `${dateStr} (${timezone})`;
   };
 
@@ -343,6 +395,54 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
         const hour = hourKey.split('T')[1];
 
         const validScreenshots = hourScreenshots.filter(s => s !== null) as Screenshot[];
+
+        // Calculate admin's hour for this time slot (if viewing as admin with different timezone)
+        let adminHour = hour;
+        if (isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone) {
+          // The hourKey represents a time in the developer's timezone
+          // We need to convert "YYYY-MM-DD HH:00 in developer's TZ" to admin's TZ
+
+          // Create a formatter to parse the date in developer's timezone
+          const dateTimeStr = hourKey.replace('T', ' ') + ':00'; // "2025-09-26 20:00:00"
+
+          // Create a Date object that we'll manipulate
+          // First, interpret the string as if it were in UTC
+          const [datePart, timePart] = hourKey.split('T');
+          const utcDate = new Date(`${datePart}T${timePart}:00Z`);
+
+          // Get the time string in developer's timezone to understand the offset
+          const devTimeStr = utcDate.toLocaleString('en-US', {
+            timeZone: developerTimezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+
+          // Calculate offset: the hourKey time should match in developer's TZ
+          const [devDate, devTime] = devTimeStr.split(', ');
+          const [devMonth, devDay, devYear] = devDate.split('/');
+          const [devHour, devMinute] = devTime.split(':');
+
+          const targetHour = parseInt(hour.split(':')[0]);
+          const actualDevHour = parseInt(devHour);
+          const hourDiff = targetHour - actualDevHour;
+
+          // Adjust the UTC date by the difference
+          const adjustedDate = new Date(utcDate);
+          adjustedDate.setUTCHours(adjustedDate.getUTCHours() + hourDiff);
+
+          // Now get this time in admin's timezone
+          const adminTz = userTimezone || 'Asia/Kolkata';
+          adminHour = adjustedDate.toLocaleString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: adminTz
+          });
+        }
         const hourScore = validScreenshots.length > 0
           ? validScreenshots.reduce((sum, s) => sum + percentageToTenScale(s.activityScore || 0), 0) / validScreenshots.length
           : 0;
@@ -408,8 +508,19 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
             )}
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="w-4 h-4" />
-              <span className="font-medium">{hour}</span>
-              <span className="text-gray-400">({validScreenshots.length} captures)</span>
+              {isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone ? (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{hour} {getTimezoneAbbr(new Date(), developerTimezone)}</span>
+                  <span className="text-gray-400">({adminHour} {getTimezoneAbbr(new Date(), userTimezone || 'Asia/Kolkata')})</span>
+                  <span className="text-gray-400">·</span>
+                  <span className="text-gray-400">{validScreenshots.length} captures</span>
+                </div>
+              ) : (
+                <>
+                  <span className="font-medium">{hour}</span>
+                  <span className="text-gray-400">({validScreenshots.length} captures)</span>
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-6 gap-2">
@@ -511,12 +622,29 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
                         {(screenshot.mode === 'client' || screenshot.mode === 'client_hours') ? 'CLIENT' : 'CMD'}
                       </div>
                       <div className="px-2 py-1 rounded text-xs font-semibold backdrop-blur text-white bg-black/70">
-                        {new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                          timeZone: userTimezone || 'Asia/Kolkata'
-                        })}
+                        {isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone ? (
+                          <div className="flex flex-col gap-0.5">
+                            <div>{new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                              timeZone: developerTimezone
+                            })} {getTimezoneAbbr(new Date(getTimestamp(screenshot)), developerTimezone)}</div>
+                            <div className="text-[10px] opacity-75">{new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                              timeZone: userTimezone || 'Asia/Kolkata'
+                            })} {getTimezoneAbbr(new Date(getTimestamp(screenshot)), userTimezone || 'Asia/Kolkata')}</div>
+                          </div>
+                        ) : (
+                          new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: developerTimezone || userTimezone || 'Asia/Kolkata'
+                          })
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -594,11 +722,26 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
                   `}>
                     {(selectedScreenshot.mode === 'client' || selectedScreenshot.mode === 'client_hours') ? 'CLIENT' : 'COMMAND'}
                   </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(getTimestamp(selectedScreenshot)).toLocaleString('en-US', {
-                      timeZone: userTimezone || 'Asia/Kolkata'
-                    })}
-                  </span>
+                  {isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone ? (
+                    <div className="flex flex-col text-sm">
+                      <span className="text-gray-700 font-medium">
+                        {new Date(getTimestamp(selectedScreenshot)).toLocaleString('en-US', {
+                          timeZone: developerTimezone
+                        })} {getTimezoneAbbr(new Date(getTimestamp(selectedScreenshot)), developerTimezone)}
+                      </span>
+                      <span className="text-gray-500 text-xs">
+                        {new Date(getTimestamp(selectedScreenshot)).toLocaleString('en-US', {
+                          timeZone: userTimezone || 'Asia/Kolkata'
+                        })} {getTimezoneAbbr(new Date(getTimestamp(selectedScreenshot)), userTimezone || 'Asia/Kolkata')} (your time)
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-gray-500">
+                      {new Date(getTimestamp(selectedScreenshot)).toLocaleString('en-US', {
+                        timeZone: userTimezone || 'Asia/Kolkata'
+                      })}
+                    </span>
+                  )}
                   {getActivityName(selectedScreenshot) && (
                     <span className="text-sm text-gray-700 ml-2">
                       {getActivityName(selectedScreenshot)}
@@ -735,18 +878,34 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone 
                         {activityPeriods.map((period, index) => {
                           const scoreOutOf10 = percentageToTenScale(period.activityScore || 0);
                           const level = getActivityLevel(scoreOutOf10);
+                          const tz = developerTimezone || userTimezone || 'Asia/Kolkata';
                           const periodEndTime = new Date(period.periodEnd).toLocaleTimeString('en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
                             hour12: false,
-                            timeZone: userTimezone || 'Asia/Kolkata'
+                            timeZone: tz
                           });
+                          const periodEndTimeAdmin = isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone
+                            ? new Date(period.periodEnd).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: false,
+                                timeZone: userTimezone || 'Asia/Kolkata'
+                              })
+                            : null;
 
                           return (
                             <div key={period.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">{periodEndTime}</span>
+                                  {isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone && periodEndTimeAdmin ? (
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium">{periodEndTime} {getTimezoneAbbr(new Date(period.periodEnd), tz)}</span>
+                                      <span className="text-xs text-gray-500">{periodEndTimeAdmin} {getTimezoneAbbr(new Date(period.periodEnd), userTimezone || 'Asia/Kolkata')}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm font-medium">{periodEndTime}</span>
+                                  )}
                                   <button
                                     onClick={() => {
                                       const newExpanded = new Set(expandedMinutes);
