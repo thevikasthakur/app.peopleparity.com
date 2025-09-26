@@ -125,58 +125,59 @@ export function Dashboard() {
       <div className="p-6">
         <div className="w-full space-y-4">
 
-          {/* Header - exactly like desktop */}
-          <div className="glass-card p-4 bounce-in shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-6">
-                <div className="flex flex-col items-center">
-                  <img src={logoImage} alt="People Parity Logo" className="w-12 h-12 object-contain" />
-                  <span className="text-xs text-gray-600 mt-1">People Parity</span>
-                </div>
+          {/* Header - Compact version */}
+          <div className="glass-card px-4 py-2 bounce-in shadow-lg relative z-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img src={logoImage} alt="People Parity Logo" className="w-8 h-8 object-contain" />
+                <span className="text-sm font-semibold text-gray-700">People Parity</span>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 {/* Show team selector only for admins */}
                 {user?.isAdmin && teamMembers && (
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-gray-500" />
-                    <select
-                      value={selectedUserId || ''}
-                      onChange={(e) => {
-                        const newUserId = e.target.value || null;
-                        setSelectedUserId(newUserId);
-                        const newParams = new URLSearchParams(searchParams);
-                        if (newUserId) {
-                          newParams.set('userId', newUserId);
-                        } else {
-                          newParams.delete('userId');
-                        }
-                        setSearchParams(newParams);
-                      }}
-                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="">All Team Members</option>
-                      {teamMembers.map((member: any) => (
-                        <option key={member.id} value={member.id}>
-                          {member.name || member.email}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="relative">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors">
+                      <Users className="w-3.5 h-3.5 text-indigo-600" />
+                      <select
+                        value={selectedUserId || ''}
+                        onChange={(e) => {
+                          const newUserId = e.target.value || null;
+                          setSelectedUserId(newUserId);
+                          const newParams = new URLSearchParams(searchParams);
+                          if (newUserId) {
+                            newParams.set('userId', newUserId);
+                          } else {
+                            newParams.delete('userId');
+                          }
+                          setSearchParams(newParams);
+                        }}
+                        className="text-sm font-medium text-gray-700 bg-transparent border-none focus:outline-none focus:ring-0 cursor-pointer pr-6 appearance-none"
+                        style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236366f1\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.25rem center', backgroundSize: '1.25rem' }}
+                      >
+                        <option value="">All Team Members</option>
+                        {teamMembers.map((member: any) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name || member.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 )}
 
                 {/* Date Navigation */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => changeDate('prev')}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
                     disabled={isChangingDate}
                   >
-                    <ChevronLeft className="w-5 h-5 text-gray-600" />
+                    <ChevronLeft className="w-4 h-4 text-gray-600" />
                   </button>
 
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-indigo-600" />
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
                     <input
                       type="date"
                       value={selectedDate.toISOString().split('T')[0]}
@@ -184,12 +185,12 @@ export function Dashboard() {
                         const newDate = new Date(e.target.value + 'T00:00:00Z');
                         handleDateChange(newDate);
                       }}
-                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="text-sm font-medium text-gray-700 bg-transparent border-none focus:outline-none focus:ring-0 cursor-pointer"
                       disabled={isChangingDate}
                     />
                     {isToday && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                        <span className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></span>
                         Today
                       </span>
                     )}
@@ -197,37 +198,26 @@ export function Dashboard() {
 
                   <button
                     onClick={() => changeDate('next')}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
                     disabled={isToday || isChangingDate}
                   >
-                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                    <ChevronRight className="w-4 h-4 text-gray-600" />
                   </button>
                 </div>
+
+                {/* Current Session Display - if active */}
+                {currentSession && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs font-medium text-green-700">
+                      {currentSession.activityName || currentSession.task || 'Working'}
+                    </span>
+                  </div>
+                )}
 
                 {/* Profile Dropdown */}
                 <ProfileDropdown user={user} />
               </div>
-            </div>
-
-            {/* Second row with current session */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-              </div>
-
-              {/* Current Session Display - if active */}
-              {currentSession && (
-                <div className="px-4 py-2 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-300">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <div>
-                      <div className="text-xs text-green-600 font-medium">Active Session</div>
-                      <div className="text-sm font-bold text-green-700">
-                        {currentSession.activityName || currentSession.task || 'Working'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -263,6 +253,7 @@ export function Dashboard() {
                 screenshots={screenshots || []}
                 isLoading={isLoadingScreenshots}
                 onRefresh={handleRefresh}
+                userRole={user?.role}
               />
             )}
           </div>

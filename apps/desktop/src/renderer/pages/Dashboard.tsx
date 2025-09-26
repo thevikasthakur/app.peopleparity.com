@@ -440,7 +440,18 @@ export function Dashboard() {
               {currentSession && (
                 <CurrentSessionInfo currentSession={currentSession} />
               )}
-              
+
+              {/* Tracking Stopped Reminder */}
+              {!currentSession && (
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-orange-900">Tracking Stopped</p>
+                    <p className="text-xs text-orange-700">Please start tracking to resume monitoring your work hours</p>
+                  </div>
+                </div>
+              )}
+
               {!currentSession ? (
                 <button
                   onClick={handleStartTracking}

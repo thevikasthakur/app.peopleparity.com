@@ -91,25 +91,32 @@ export class ScreenshotsController {
     }
 
     const currentUser = await this.usersService.findById(req.user.userId);
+    console.log('👤 Current user:', { userId: currentUser.id, role: currentUser.role, screenshotUserId: screenshot.userId });
 
     let canAccess = false;
 
     if (currentUser.role === 'super_admin') {
       canAccess = true;
+      console.log('✅ Access granted: super_admin');
     } else if (currentUser.role === 'org_admin' && currentUser.organizationId) {
       const screenshotUser = await this.usersService.findById(screenshot.userId);
       if (screenshotUser?.organizationId === currentUser.organizationId) {
         canAccess = true;
+        console.log('✅ Access granted: org_admin');
       }
     } else if (screenshot.userId === req.user.userId) {
       canAccess = true;
+      console.log('✅ Access granted: own screenshot');
     }
 
     if (!canAccess) {
+      console.log('❌ Access denied');
       throw new HttpException('Unauthorized', HttpStatus.FORBIDDEN);
     }
 
+    console.log('🔐 Generating signed URL for:', screenshot.url);
     const signedUrl = await this.screenshotsService.generateViewSignedUrl(screenshot.url);
+    console.log('✅ Signed URL generated successfully');
 
     return {
       success: true,

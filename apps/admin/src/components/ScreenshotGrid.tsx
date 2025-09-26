@@ -63,6 +63,7 @@ interface ScreenshotGridProps {
   screenshots: Screenshot[];
   isLoading: boolean;
   onRefresh: () => void;
+  userRole?: string;
 }
 
 function percentageToTenScale(percentage: number): number {
@@ -85,7 +86,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
-export function ScreenshotGrid({ screenshots, isLoading }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotGridProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -311,7 +312,7 @@ export function ScreenshotGrid({ screenshots, isLoading }: ScreenshotGridProps) 
 
   return (
     <div className="space-y-4">
-      {Object.entries(hourGroups).map(([hour, hourScreenshots]) => {
+      {Object.entries(hourGroups).sort((a, b) => a[0].localeCompare(b[0])).map(([hour, hourScreenshots]) => {
         const validScreenshots = hourScreenshots.filter(s => s !== null) as Screenshot[];
         const hourScore = validScreenshots.length > 0
           ? validScreenshots.reduce((sum, s) => sum + percentageToTenScale(s.activityScore || 0), 0) / validScreenshots.length
@@ -566,6 +567,11 @@ export function ScreenshotGrid({ screenshots, isLoading }: ScreenshotGridProps) 
                   <span className="text-sm text-gray-500">
                     {new Date(getTimestamp(selectedScreenshot)).toLocaleString()}
                   </span>
+                  {getActivityName(selectedScreenshot) && (
+                    <span className="text-sm text-gray-700 ml-2">
+                      {getActivityName(selectedScreenshot)}
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => {
@@ -662,25 +668,6 @@ export function ScreenshotGrid({ screenshots, isLoading }: ScreenshotGridProps) 
                           })()}
                         </div>
                       </div>
-                      <div>
-                        <label className="text-xs text-gray-500 uppercase tracking-wider">Date & Time</label>
-                        <p className="text-sm font-medium mt-1">
-                          {new Date(getTimestamp(selectedScreenshot)).toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          })}
-                        </p>
-                        <p className="text-sm text-gray-600 mt-0.5">
-                          {new Date(getTimestamp(selectedScreenshot)).toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            timeZoneName: 'short'
-                          })}
-                        </p>
-                      </div>
                       {selectedScreenshot.userName && (
                         <div>
                           <label className="text-xs text-gray-500 uppercase tracking-wider">User</label>
@@ -693,16 +680,12 @@ export function ScreenshotGrid({ screenshots, isLoading }: ScreenshotGridProps) 
                           <p className="text-sm font-medium mt-1">{selectedScreenshot.deviceInfo}</p>
                         </div>
                       )}
-                      {getActivityName(selectedScreenshot) && (
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">Activity / Notes</label>
-                          <p className="text-sm text-gray-700 mt-1">{getActivityName(selectedScreenshot)}</p>
+                      {(userRole === 'super_admin' || userRole === 'org_admin') && (
+                        <div className="pt-2 border-t">
+                          <label className="text-xs text-gray-500 uppercase tracking-wider">Screenshot ID</label>
+                          <p className="text-xs text-gray-500 mt-1 font-mono break-all">{selectedScreenshot.id}</p>
                         </div>
                       )}
-                      <div className="pt-2 border-t">
-                        <label className="text-xs text-gray-500 uppercase tracking-wider">Screenshot ID</label>
-                        <p className="text-xs text-gray-500 mt-1 font-mono break-all">{selectedScreenshot.id}</p>
-                      </div>
                     </div>
                   </div>
 

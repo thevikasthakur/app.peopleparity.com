@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog, Menu, Tray, nativeImage, Notification } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { ActivityTrackerV2 } from './services/activityTrackerV2';
@@ -876,6 +876,77 @@ app.whenReady().then(async () => {
     if (mainWindow) {
       mainWindow.webContents.send('session-update', { isActive: false });
     }
+
+    // Schedule recurring reminder notifications using Fibonacci sequence (10 x [1,1,2,3,5,8...])
+    // Skipping first two (0,1), so: 10min, 20min, 30min, 50min, 80min, 130min...
+    let fibPrev = 1;
+    let fibCurrent = 1;
+    let reminderIndex = 0;
+    const timeouts: NodeJS.Timeout[] = [];
+
+    const scheduleNextReminder = () => {
+      const activeSession = databaseService?.getActiveSession();
+      if (!activeSession || !activeSession.isActive) {
+        // Calculate next Fibonacci number
+        let nextFib: number;
+        if (reminderIndex === 0) {
+          nextFib = 1;
+        } else if (reminderIndex === 1) {
+          nextFib = 1;
+        } else {
+          nextFib = fibPrev + fibCurrent;
+          fibPrev = fibCurrent;
+          fibCurrent = nextFib;
+        }
+
+        const delayMinutes = nextFib * 10;
+        const delayMs = delayMinutes * 60 * 1000;
+
+        console.log(`🔔 Scheduling reminder #${reminderIndex + 1} in ${delayMinutes} minutes`);
+
+        const timeout = setTimeout(() => {
+          const activeSession = databaseService?.getActiveSession();
+          if (!activeSession || !activeSession.isActive) {
+            // Still no tracking, show reminder notification
+            const notification = new Notification({
+              title: 'People Parity - Tracking Reminder',
+              body: 'Your tracking is stopped. Please start tracking to monitor your work hours properly.',
+              silent: false,
+              urgency: 'normal'
+            });
+
+            notification.on('click', () => {
+              if (mainWindow) {
+                mainWindow.show();
+                mainWindow.focus();
+              }
+            });
+
+            notification.show();
+            console.log(`🔔 Tracking reminder notification #${reminderIndex + 1} shown after ${delayMinutes} minutes`);
+
+            // Schedule next reminder
+            reminderIndex++;
+            scheduleNextReminder();
+          } else {
+            // Session started, clear all pending timeouts
+            timeouts.forEach(t => clearTimeout(t));
+            console.log('✅ Tracking started, reminder notifications cancelled');
+          }
+        }, delayMs);
+
+        timeouts.push(timeout);
+
+        if (reminderIndex === 0) {
+          // Start the sequence
+          reminderIndex++;
+          scheduleNextReminder();
+        }
+      }
+    };
+
+    // Start the reminder sequence
+    scheduleNextReminder();
   });
   
   // Listen for session start events to start screenshot service

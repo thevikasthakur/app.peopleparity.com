@@ -244,22 +244,28 @@ export class ScreenshotsService {
   }
 
   async generateViewSignedUrl(s3Url: string): Promise<string> {
-    const stage = process.env.STAGE || "dev";
-    const bucket =
-      process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
     const s3 = this.getS3Client();
 
     console.log('🔍 Generating signed URL for:', s3Url);
 
-    // Extract the S3 key from the URL
+    // Extract both bucket and key from the URL
     // URL format: https://bucket.s3.region.amazonaws.com/key
+    let bucket: string;
     let key: string;
 
     if (s3Url.includes(".s3.")) {
-      // Standard S3 URL format
-      const urlParts = s3Url.split(".amazonaws.com/");
+      // Standard S3 URL format: https://bucket.s3.region.amazonaws.com/key
+      const urlParts = s3Url.split(".s3.");
       if (urlParts.length === 2) {
-        key = decodeURIComponent(urlParts[1]);
+        // Extract bucket name from the first part
+        bucket = urlParts[0].replace('https://', '');
+        // Extract key from after .amazonaws.com/
+        const afterDomain = s3Url.split(".amazonaws.com/");
+        if (afterDomain.length === 2) {
+          key = decodeURIComponent(afterDomain[1]);
+        } else {
+          throw new Error("Invalid S3 URL format");
+        }
       } else {
         throw new Error("Invalid S3 URL format");
       }
@@ -267,10 +273,12 @@ export class ScreenshotsService {
       // Alternative S3 URL format
       const urlParts = s3Url.split("s3.amazonaws.com/")[1];
       const keyParts = urlParts.split("/");
-      keyParts.shift(); // Remove bucket name
+      bucket = keyParts.shift(); // First part is bucket name
       key = decodeURIComponent(keyParts.join("/"));
     } else {
-      // Assume it's already just the key
+      // Fallback to environment bucket if URL format is not recognized
+      const stage = process.env.STAGE || "dev";
+      bucket = process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
       key = s3Url;
     }
 
@@ -281,7 +289,7 @@ export class ScreenshotsService {
     const signedUrl = await s3.getSignedUrlPromise("getObject", {
       Bucket: bucket,
       Key: key,
-      Expires: 300, // URL expires in 1 hour
+      Expires: 300, // URL expires in 5 minutes
     });
 
     console.log('✅ Generated signed URL:', signedUrl);
