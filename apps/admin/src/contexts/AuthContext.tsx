@@ -8,6 +8,7 @@ interface User {
   role?: string;
   isAdmin?: boolean;
   isDeveloper?: boolean;
+  timezone?: string;
 }
 
 interface AuthContextType {
@@ -17,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -81,6 +83,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    const currentToken = token || localStorage.getItem('auth_token');
+    if (currentToken) {
+      try {
+        const userData = await authService.getCurrentUser(currentToken);
+        const isAdminRole = userData.role === 'super_admin' || userData.role === 'org_admin';
+        const enrichedUserData = {
+          ...userData,
+          isDeveloper: userData.role === 'developer',
+          isAdmin: isAdminRole
+        };
+        setUser(enrichedUserData);
+      } catch (error) {
+        console.error('Failed to refresh user data:', error);
+      }
+    }
+  }, [token]);
+
   const value = {
     user,
     token,
@@ -88,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login,
     logout,
+    refreshUser,
   };
 
   return (

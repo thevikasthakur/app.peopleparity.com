@@ -55,6 +55,7 @@ export class AuthService {
         organizationId: user.organizationId,
         organizationName: user.organization?.name || null,
         role: user.role,
+        timezone: user.timezone,
       },
       token: this.jwtService.sign(payload),
       projects,
@@ -85,6 +86,7 @@ export class AuthService {
           organizationId: user.organizationId,
           organizationName: user.organization?.name || null,
           role: user.role,
+          timezone: user.timezone,
         },
       };
     } catch (error) {

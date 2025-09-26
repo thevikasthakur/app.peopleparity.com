@@ -23,7 +23,7 @@ const TIMEZONES = [
 ];
 
 export function Settings() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [timezone, setTimezone] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -53,6 +53,7 @@ export function Settings() {
 
     try {
       await apiService.updateUserSettings({ timezone });
+      await refreshUser();
       setSuccessMessage('Settings saved successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (error) {

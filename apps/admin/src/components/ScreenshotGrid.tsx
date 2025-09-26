@@ -64,6 +64,7 @@ interface ScreenshotGridProps {
   isLoading: boolean;
   onRefresh: () => void;
   userRole?: string;
+  userTimezone?: string;
 }
 
 function percentageToTenScale(percentage: number): number {
@@ -86,7 +87,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
-export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone }: ScreenshotGridProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -251,12 +252,34 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
 
   const groupScreenshotsByHour = () => {
     const groups: { [hour: string]: (Screenshot | null)[] } = {};
+    const tz = userTimezone || 'Asia/Kolkata';
 
     screenshots.forEach(screenshot => {
       const timestamp = new Date(getTimestamp(screenshot));
-      const hour = timestamp.getHours();
-      const minute = timestamp.getMinutes();
-      const hourKey = `${hour.toString().padStart(2, '0')}:00`;
+      const year = timestamp.toLocaleString('en-US', {
+        year: 'numeric',
+        timeZone: tz
+      });
+      const month = timestamp.toLocaleString('en-US', {
+        month: '2-digit',
+        timeZone: tz
+      });
+      const day = timestamp.toLocaleString('en-US', {
+        day: '2-digit',
+        timeZone: tz
+      });
+      const hour = parseInt(timestamp.toLocaleString('en-US', {
+        hour: 'numeric',
+        hour12: false,
+        timeZone: tz
+      }));
+      const minute = parseInt(timestamp.toLocaleString('en-US', {
+        minute: 'numeric',
+        timeZone: tz
+      }));
+
+      // Include date in key to properly sort across multiple days
+      const hourKey = `${year}-${month}-${day}T${hour.toString().padStart(2, '0')}:00`;
 
       const slotIndex = Math.floor(minute / 10);
 
@@ -275,13 +298,16 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
 
   const getLocalDateString = (timestamp: string) => {
     const date = new Date(timestamp);
+    const tz = userTimezone || 'Asia/Kolkata';
     const dateStr = date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: tz
     });
     const timezone = date.toLocaleTimeString('en-US', {
-      timeZoneName: 'short'
+      timeZoneName: 'short',
+      timeZone: tz
     }).split(' ').pop();
     return `${dateStr} (${timezone})`;
   };
@@ -312,7 +338,10 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
 
   return (
     <div className="space-y-4">
-      {Object.entries(hourGroups).sort((a, b) => a[0].localeCompare(b[0])).map(([hour, hourScreenshots]) => {
+      {Object.entries(hourGroups).sort((a, b) => a[0].localeCompare(b[0])).map(([hourKey, hourScreenshots]) => {
+        // Extract just the hour part from the key (format: YYYY-MM-DDTHH:00)
+        const hour = hourKey.split('T')[1];
+
         const validScreenshots = hourScreenshots.filter(s => s !== null) as Screenshot[];
         const hourScore = validScreenshots.length > 0
           ? validScreenshots.reduce((sum, s) => sum + percentageToTenScale(s.activityScore || 0), 0) / validScreenshots.length
@@ -366,7 +395,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
         }
 
         return (
-          <div key={hour} className="space-y-2">
+          <div key={hourKey} className="space-y-2">
             {showDateSeparator && (
               <div className="flex items-center gap-3 py-2 mt-4 first:mt-0">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
@@ -485,7 +514,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
                         {new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit',
-                          hour12: true
+                          hour12: true,
+                          timeZone: userTimezone || 'Asia/Kolkata'
                         })}
                       </div>
                     </div>
@@ -565,7 +595,9 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
                     {(selectedScreenshot.mode === 'client' || selectedScreenshot.mode === 'client_hours') ? 'CLIENT' : 'COMMAND'}
                   </span>
                   <span className="text-sm text-gray-500">
-                    {new Date(getTimestamp(selectedScreenshot)).toLocaleString()}
+                    {new Date(getTimestamp(selectedScreenshot)).toLocaleString('en-US', {
+                      timeZone: userTimezone || 'Asia/Kolkata'
+                    })}
                   </span>
                   {getActivityName(selectedScreenshot) && (
                     <span className="text-sm text-gray-700 ml-2">
@@ -706,7 +738,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole }: ScreenshotG
                           const periodEndTime = new Date(period.periodEnd).toLocaleTimeString('en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
-                            hour12: false
+                            hour12: false,
+                            timeZone: userTimezone || 'Asia/Kolkata'
                           });
 
                           return (

@@ -254,6 +254,7 @@ export function Dashboard() {
                 isLoading={isLoadingScreenshots}
                 onRefresh={handleRefresh}
                 userRole={user?.role}
+                userTimezone={user?.timezone}
               />
             )}
           </div>

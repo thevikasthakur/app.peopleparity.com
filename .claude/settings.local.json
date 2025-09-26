@@ -50,7 +50,8 @@
       "Bash(export PGPASSWORD=postgres)",
       "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT ''UTC'';\")",
       "Bash(echo $STAGE)",
-      "Bash(echo $SCREENSHOTS_BUCKET)"
+      "Bash(echo $SCREENSHOTS_BUCKET)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
