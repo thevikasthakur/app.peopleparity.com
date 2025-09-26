@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Provider } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -10,7 +10,7 @@ import { MicrosoftSamlStrategy } from './saml.strategy';
 import { UsersModule } from '../users/users.module';
 
 // Only include SAML strategy if SAML_CERT is configured
-const providers = [AuthService, LocalStrategy, JwtStrategy];
+const providers: Provider[] = [AuthService, LocalStrategy, JwtStrategy];
 
 // Check if SAML is configured before adding the strategy
 if (process.env.SAML_CERT && process.env.SAML_CERT.trim() !== '') {

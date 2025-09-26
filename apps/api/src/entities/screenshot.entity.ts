@@ -31,7 +31,7 @@ export class Screenshot {
   @Column({ type: 'varchar', nullable: true })
   thumbnailUrl: string;
 
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamptz' })
   capturedAt: Date;
 
   @Column({

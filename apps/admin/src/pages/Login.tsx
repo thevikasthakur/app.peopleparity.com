@@ -1,0 +1,227 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { Eye, EyeOff, Loader2, Coffee, Code2, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
+
+const funnyLoadingMessages = [
+  "Waking up the hamsters... 🐹",
+  "Convincing the server you're cool... 😎",
+  "Checking if you're a robot... 🤖",
+  "Summoning authentication spirits... 👻",
+  "Decrypting your awesomeness... 🔐"
+];
+
+const loginQuotes = [
+  "Ready to manage the team? 📊",
+  "Time to see everyone's productivity! 👀",
+  "Welcome back, admin warrior! ⚔️",
+  "Let's check those dashboards! 🎯",
+  "Another day, another team to manage! 💪"
+];
+
+export function Login() {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [loadingMessage, setLoadingMessage] = useState('');
+
+  const randomQuote = loginQuotes[Math.floor(Math.random() * loginQuotes.length)];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    const messageInterval = setInterval(() => {
+      setLoadingMessage(funnyLoadingMessages[Math.floor(Math.random() * funnyLoadingMessages.length)]);
+    }, 1000);
+
+    try {
+      await login(email, password);
+      navigate('/dashboard');
+    } catch (err: any) {
+      console.error('Login failed:', err);
+      setError(err.response?.data?.message || 'Invalid credentials. Please try again.');
+    } finally {
+      clearInterval(messageInterval);
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md"
+      >
+        <div className="glass-card p-8">
+          {/* Logo and Title */}
+          <div className="text-center mb-8">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 260, damping: 20 }}
+              className="w-20 h-20 mx-auto mb-4 flex items-center justify-center"
+            >
+              <img src={logoImage} alt="People Parity Logo" className="w-20 h-20 object-contain" />
+            </motion.div>
+
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+              People Parity Admin
+            </h1>
+            <p className="text-gray-600 mt-2">Team Management Dashboard</p>
+            <p className="text-sm text-gray-500 italic mt-2">{randomQuote}</p>
+          </div>
+
+          {/* Login Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all"
+                placeholder="admin@company.com"
+                required
+                disabled={isLoading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 pr-12 rounded-lg border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all"
+                  placeholder="Your admin password"
+                  required
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  disabled={isLoading}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5 text-gray-500" />
+                  ) : (
+                    <Eye className="w-5 h-5 text-gray-500" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm"
+              >
+                {error}
+              </motion.div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={`
+                w-full py-3 px-4 rounded-lg font-medium transition-all
+                ${isLoading
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg hover:scale-[1.02]'
+                }
+              `}
+            >
+              {isLoading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>{loadingMessage || 'Logging in...'}</span>
+                </div>
+              ) : (
+                "Access Admin Dashboard 🚀"
+              )}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Or continue with</span>
+            </div>
+          </div>
+
+          {/* Microsoft Sign In Button */}
+          <button
+            onClick={() => {
+              // Redirect to API SAML login
+              window.location.href = `${API_URL}/api/auth/saml/login`;
+            }}
+            disabled={isLoading}
+            className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 border-gray-300 hover:border-gray-400 flex items-center justify-center gap-3 hover:shadow-md"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+              <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            Sign in with Microsoft
+          </button>
+
+          {/* Fun Stats */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <Coffee className="w-6 h-6 mx-auto text-gray-400 mb-1" />
+                <div className="text-2xl font-bold text-gray-700">15</div>
+                <div className="text-xs text-gray-500">Team members</div>
+              </div>
+              <div>
+                <Code2 className="w-6 h-6 mx-auto text-gray-400 mb-1" />
+                <div className="text-2xl font-bold text-gray-700">120k</div>
+                <div className="text-xs text-gray-500">Hours tracked</div>
+              </div>
+              <div>
+                <Clock className="w-6 h-6 mx-auto text-gray-400 mb-1" />
+                <div className="text-2xl font-bold text-gray-700">24/7</div>
+                <div className="text-xs text-gray-500">Monitoring</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-6 text-center">
+            <p className="text-xs text-gray-500">
+              Admin access for team monitoring and management
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              View team productivity across all devices
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';

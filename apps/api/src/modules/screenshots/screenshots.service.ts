@@ -186,10 +186,13 @@ export class ScreenshotsService {
     endDate?: Date,
     includeDeviceInfo = false
   ) {
+    console.log(`📸 Finding screenshots for userId: ${userId}, startDate: ${startDate?.toISOString()}, endDate: ${endDate?.toISOString()}`);
+
     const query = this.screenshotsRepository
       .createQueryBuilder("screenshot")
+      .leftJoinAndSelect("screenshot.activityPeriods", "activityPeriod")
       .where("screenshot.userId = :userId", { userId })
-      .andWhere("screenshot.isDeleted = :isDeleted", { isDeleted: false });
+      .andWhere("(screenshot.isDeleted IS NULL OR screenshot.isDeleted = :isDeleted)", { isDeleted: false });
 
     // Include session relation to get device info if requested
     if (includeDeviceInfo) {
@@ -205,20 +208,39 @@ export class ScreenshotsService {
     }
 
     const screenshots = await query.getMany();
+    console.log(`📸 Found ${screenshots.length} screenshots`);
 
-    // Map to include device info if available
-    if (includeDeviceInfo) {
-      return screenshots.map((screenshot) => ({
+    // Map to include device info and calculate average activity score
+    return screenshots.map((screenshot) => {
+      const activityPeriods = screenshot.activityPeriods || [];
+      const validPeriods = activityPeriods.filter(p => p.isValid);
+      const activityScore = validPeriods.length > 0
+        ? validPeriods.reduce((sum, p) => sum + p.activityScore, 0) / validPeriods.length
+        : 0;
+
+      return {
         ...screenshot,
-        deviceInfo: screenshot.session?.deviceInfo || null,
-      }));
-    }
-
-    return screenshots;
+        activityScore,
+        deviceInfo: includeDeviceInfo ? (screenshot.session?.deviceInfo || null) : undefined,
+        activityPeriods: undefined,
+      };
+    });
   }
 
   async findById(id: string) {
     return this.screenshotsRepository.findOne({ where: { id } });
+  }
+
+  async findByIdWithDetails(id: string) {
+    return this.screenshotsRepository.findOne({
+      where: { id },
+      relations: ['activityPeriods'],
+      order: {
+        activityPeriods: {
+          periodEnd: 'ASC'
+        }
+      }
+    });
   }
 
   async generateViewSignedUrl(s3Url: string): Promise<string> {
@@ -226,6 +248,8 @@ export class ScreenshotsService {
     const bucket =
       process.env.SCREENSHOTS_BUCKET || `ppv1-screenshots-${stage}`;
     const s3 = this.getS3Client();
+
+    console.log('🔍 Generating signed URL for:', s3Url);
 
     // Extract the S3 key from the URL
     // URL format: https://bucket.s3.region.amazonaws.com/key
@@ -250,12 +274,17 @@ export class ScreenshotsService {
       key = s3Url;
     }
 
+    console.log('🔑 Extracted key:', key);
+    console.log('🪣 Bucket:', bucket);
+
     // Generate a signed URL for viewing (GET request)
     const signedUrl = await s3.getSignedUrlPromise("getObject", {
       Bucket: bucket,
       Key: key,
       Expires: 300, // URL expires in 1 hour
     });
+
+    console.log('✅ Generated signed URL:', signedUrl);
 
     return signedUrl;
   }

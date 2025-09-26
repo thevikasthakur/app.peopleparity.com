@@ -40,7 +40,17 @@
       "Bash(npm create:*)",
       "Bash(npx tailwindcss init:*)",
       "Bash(npx tsx:*)",
-      "Bash(npx prisma generate:*)"
+      "Bash(npx prisma generate:*)",
+      "Bash(mkdir:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -t)",
+      "Bash(psql:*)",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT id, \"\"capturedAt\"\", \"\"capturedAt\"\"::text, EXTRACT(TIMEZONE FROM \"\"capturedAt\"\") as tz_offset FROM screenshots WHERE id IN (''d2061cc0-522c-4f95-997d-35cac6e384d8'', ''d54d6d19-ee80-4c7f-9823-1c852aebf600'', ''697b1dce-942b-406a-907d-266aa0786c18'', ''a272e8ad-f1bd-4d30-8b64-9025c6e4d944'', ''9d9aa220-a2b4-4bb1-8545-c54eb1458298'', ''f5ef4fd0-491e-466c-8469-e322f1a3a0f4'') ORDER BY \"\"capturedAt\"\";\")",
+      "Bash(export PGPASSWORD=postgres)",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT ''UTC'';\")",
+      "Bash(echo $STAGE)",
+      "Bash(echo $SCREENSHOTS_BUCKET)"
     ],
     "deny": [],
     "ask": []

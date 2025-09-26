@@ -99,6 +99,13 @@ export class UsersService {
     }));
   }
 
+  async getAllUsers() {
+    return this.usersRepository.find({
+      relations: ['organization'],
+      order: { name: 'ASC' },
+    });
+  }
+
   async getOrganizationUsers(organizationId: string) {
     return this.usersRepository.find({
       where: { organizationId },
@@ -177,7 +184,17 @@ export class UsersService {
 
     user.microsoftId = microsoftId;
     user.authProvider = 'microsoft';
-    
+
+    return this.usersRepository.save(user);
+  }
+
+  async updateTimezone(userId: string, timezone: string) {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.timezone = timezone;
     return this.usersRepository.save(user);
   }
 }

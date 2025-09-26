@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { ActivityPeriod } from '../../entities/activity-period.entity';
 import { Session } from '../../entities/session.entity';
+import { ProductiveHoursService } from '../analytics/productive-hours.service';
 
 @Injectable()
 export class DashboardService {
@@ -11,21 +12,29 @@ export class DashboardService {
     private activityPeriodsRepository: Repository<ActivityPeriod>,
     @InjectRepository(Session)
     private sessionsRepository: Repository<Session>,
+    @Inject(ProductiveHoursService)
+    private productiveHoursService: ProductiveHoursService,
   ) {}
 
-  async getStats(userId: string) {
-    // Get today's date range
-    const todayStart = new Date();
+  async getStats(userId: string, date: Date = new Date()) {
+    // Get productive hours for the specified date using the correct calculation
+    const todayProductiveHours = await this.productiveHoursService.getDailyProductiveHours(userId, date);
+
+    // Get week's productive hours for the week containing the specified date
+    const weekProductiveHours = await this.productiveHoursService.getWeeklyProductiveHours(userId, date);
+
+    // Get date range for activity periods (for client/command breakdown)
+    const todayStart = new Date(date);
     todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
+    const todayEnd = new Date(date);
     todayEnd.setHours(23, 59, 59, 999);
 
-    // Get week's date range (last 7 days)
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - 6);
+    // Get week's date range (7 days ending on the specified date)
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - 6);
     weekStart.setHours(0, 0, 0, 0);
 
-    // Fetch today's activity periods
+    // Fetch today's activity periods for client/command breakdown
     const todayPeriods = await this.activityPeriodsRepository.find({
       where: {
         userId,
@@ -33,7 +42,7 @@ export class DashboardService {
       },
     });
 
-    // Fetch week's activity periods
+    // Fetch week's activity periods for client/command breakdown
     const weekPeriods = await this.activityPeriodsRepository.find({
       where: {
         userId,
@@ -41,37 +50,38 @@ export class DashboardService {
       },
     });
 
-    // Calculate today's stats
-    const todayStats = this.calculateStats(todayPeriods);
-    
-    // Calculate week's stats
-    const weekStats = this.calculateStats(weekPeriods);
+    // Calculate client/command breakdown from activity periods
+    const todayBreakdown = this.calculateModeBreakdown(todayPeriods, todayProductiveHours.productiveHours);
+    const weekBreakdown = this.calculateModeBreakdown(weekPeriods, weekProductiveHours.productiveHours);
 
     return {
       today: {
-        clientHours: todayStats.clientHours,
-        commandHours: todayStats.commandHours,
-        totalHours: todayStats.totalHours,
-        focusMinutes: Math.round(todayStats.totalHours * 60 * 0.7),
-        handsOnMinutes: Math.round(todayStats.totalHours * 60 * 0.6),
-        researchMinutes: Math.round(todayStats.totalHours * 60 * 0.2),
-        aiMinutes: Math.round(todayStats.totalHours * 60 * 0.1),
+        clientHours: todayBreakdown.clientHours,
+        commandHours: todayBreakdown.commandHours,
+        totalHours: todayProductiveHours.productiveHours,
+        averageActivityScore: todayProductiveHours.averageActivityScore,
+        focusMinutes: Math.round(todayProductiveHours.productiveHours * 60 * 0.7),
+        handsOnMinutes: Math.round(todayProductiveHours.productiveHours * 60 * 0.6),
+        researchMinutes: Math.round(todayProductiveHours.productiveHours * 60 * 0.2),
+        aiMinutes: Math.round(todayProductiveHours.productiveHours * 60 * 0.1),
       },
       week: {
-        clientHours: weekStats.clientHours,
-        commandHours: weekStats.commandHours,
-        totalHours: weekStats.totalHours,
+        clientHours: weekBreakdown.clientHours,
+        commandHours: weekBreakdown.commandHours,
+        totalHours: weekProductiveHours.productiveHours,
+        averageActivityScore: weekProductiveHours.averageActivityScore,
       },
     };
   }
 
-  private calculateStats(periods: ActivityPeriod[]) {
+  private calculateModeBreakdown(periods: ActivityPeriod[], totalProductiveHours: number) {
+    // Calculate the proportion of client vs command time from activity periods
     let clientMinutes = 0;
     let commandMinutes = 0;
 
     for (const period of periods) {
       const duration = (new Date(period.periodEnd).getTime() - new Date(period.periodStart).getTime()) / 1000 / 60;
-      
+
       if (period.mode === 'client_hours') {
         clientMinutes += duration;
       } else {
@@ -79,10 +89,23 @@ export class DashboardService {
       }
     }
 
+    const totalMinutes = clientMinutes + commandMinutes;
+
+    // If no activity periods, default to all client hours
+    if (totalMinutes === 0) {
+      return {
+        clientHours: totalProductiveHours,
+        commandHours: 0,
+      };
+    }
+
+    // Distribute productive hours proportionally based on activity period modes
+    const clientRatio = clientMinutes / totalMinutes;
+    const commandRatio = commandMinutes / totalMinutes;
+
     return {
-      clientHours: Math.round((clientMinutes / 60) * 100) / 100,
-      commandHours: Math.round((commandMinutes / 60) * 100) / 100,
-      totalHours: Math.round(((clientMinutes + commandMinutes) / 60) * 100) / 100,
+      clientHours: Math.round(totalProductiveHours * clientRatio * 100) / 100,
+      commandHours: Math.round(totalProductiveHours * commandRatio * 100) / 100,
     };
   }
 }

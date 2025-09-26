@@ -46,6 +46,9 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   lastLogin: Date;
 
+  @Column({ type: 'varchar', default: 'Asia/Kolkata' })
+  timezone: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -17,6 +17,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ScreenshotsService } from './screenshots.service';
 import { SessionsService } from '../sessions/sessions.service';
+import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -27,6 +28,7 @@ export class ScreenshotsController {
   constructor(
     @Inject(ScreenshotsService) private screenshotsService: ScreenshotsService,
     @Inject(SessionsService) private sessionsService: SessionsService,
+    @Inject(UsersService) private usersService: UsersService,
     @InjectRepository(Screenshot) private screenshotsRepository: Repository<Screenshot>
   ) {}
 
@@ -37,43 +39,89 @@ export class ScreenshotsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('includeDeviceInfo') includeDeviceInfo?: string,
+    @Query('userId') userId?: string,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
     const includeDevice = includeDeviceInfo === 'true';
-    
-    return this.screenshotsService.findByUser(req.user.userId, start, end, includeDevice);
+
+    const targetUserId = userId || req.user.userId;
+
+    return this.screenshotsService.findByUser(targetUserId, start, end, includeDevice);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/details')
+  async getScreenshotDetails(@Param('id') id: string, @Request() req) {
+    const screenshot = await this.screenshotsService.findByIdWithDetails(id);
+
+    if (!screenshot) {
+      throw new HttpException('Screenshot not found', HttpStatus.NOT_FOUND);
+    }
+
+    const currentUser = await this.usersService.findById(req.user.userId);
+
+    if (currentUser.role === 'super_admin') {
+      return screenshot;
+    }
+
+    if (currentUser.role === 'org_admin' && currentUser.organizationId) {
+      const screenshotUser = await this.usersService.findById(screenshot.userId);
+      if (screenshotUser?.organizationId === currentUser.organizationId) {
+        return screenshot;
+      }
+    }
+
+    if (screenshot.userId === req.user.userId) {
+      return screenshot;
+    }
+
+    throw new HttpException('Unauthorized', HttpStatus.FORBIDDEN);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/signed-url')
+  async getSignedUrl(@Param('id') id: string, @Request() req) {
+    const screenshot = await this.screenshotsService.findById(id);
+
+    console.log('📸 Screenshot found:', { id: screenshot?.id, url: screenshot?.url, thumbnailUrl: screenshot?.thumbnailUrl });
+
+    if (!screenshot) {
+      throw new HttpException('Screenshot not found', HttpStatus.NOT_FOUND);
+    }
+
+    const currentUser = await this.usersService.findById(req.user.userId);
+
+    let canAccess = false;
+
+    if (currentUser.role === 'super_admin') {
+      canAccess = true;
+    } else if (currentUser.role === 'org_admin' && currentUser.organizationId) {
+      const screenshotUser = await this.usersService.findById(screenshot.userId);
+      if (screenshotUser?.organizationId === currentUser.organizationId) {
+        canAccess = true;
+      }
+    } else if (screenshot.userId === req.user.userId) {
+      canAccess = true;
+    }
+
+    if (!canAccess) {
+      throw new HttpException('Unauthorized', HttpStatus.FORBIDDEN);
+    }
+
+    const signedUrl = await this.screenshotsService.generateViewSignedUrl(screenshot.url);
+
+    return {
+      success: true,
+      signedUrl,
+      expiresIn: 300
+    };
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async getScreenshot(@Param('id') id: string) {
     return this.screenshotsService.findById(id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':id/signed-url')
-  async getSignedUrl(@Param('id') id: string, @Request() req) {
-    // Get the screenshot to verify it exists and user has access
-    const screenshot = await this.screenshotsService.findById(id);
-    
-    if (!screenshot) {
-      throw new HttpException('Screenshot not found', HttpStatus.NOT_FOUND);
-    }
-    
-    // Verify the user owns this screenshot
-    if (screenshot.userId !== req.user.userId) {
-      throw new HttpException('Unauthorized', HttpStatus.FORBIDDEN);
-    }
-    
-    // Generate a signed URL for viewing the full image
-    const signedUrl = await this.screenshotsService.generateViewSignedUrl(screenshot.url);
-    
-    return {
-      success: true,
-      signedUrl,
-      expiresIn: 300
-    };
   }
 
   @UseGuards(JwtAuthGuard)

@@ -6,9 +6,13 @@ import { AnalyticsController } from './analytics.controller';
 import { ActivityPeriod } from '../../entities/activity-period.entity';
 import { Screenshot } from '../../entities/screenshot.entity';
 import { User } from '../../entities/user.entity';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ActivityPeriod, Screenshot, User])],
+  imports: [
+    TypeOrmModule.forFeature([ActivityPeriod, Screenshot, User]),
+    UsersModule
+  ],
   providers: [AnalyticsService, ProductiveHoursService],
   controllers: [AnalyticsController],
   exports: [AnalyticsService, ProductiveHoursService],
