@@ -610,11 +610,11 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     </div>
 
                     <div className="absolute bottom-2 left-2 flex flex-col gap-1">
-                      <div className={`px-2 py-1 rounded text-xs font-medium backdrop-blur text-white ${
+                      <div className={`px-[2px] py-0.5 rounded text-[9px] font-medium backdrop-blur text-white ${
                         (screenshot.mode === 'client' || screenshot.mode === 'client_hours')
                           ? 'bg-indigo-500/80'
                           : 'bg-emerald-500/80'
-                      }`}>
+                      }`} style={{ width: '27px' }}>
                         {(screenshot.mode === 'client' || screenshot.mode === 'client_hours') ? 'CLIENT' : 'CMD'}
                       </div>
                       <div className="px-2 py-1 rounded text-xs font-semibold backdrop-blur text-white bg-black/70">
@@ -626,7 +626,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                               hour12: true,
                               timeZone: developerTimezone
                             })} {getTimezoneAbbr(new Date(getTimestamp(screenshot)), developerTimezone)}</div>
-                            <div className="text-[10px] opacity-75">{new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
+                            <div className="opacity-75">{new Date(getTimestamp(screenshot)).toLocaleTimeString('en-US', {
                               hour: '2-digit',
                               minute: '2-digit',
                               hour12: true,

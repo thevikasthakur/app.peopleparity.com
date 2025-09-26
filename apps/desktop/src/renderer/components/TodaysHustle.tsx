@@ -87,12 +87,12 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
   const threeQuarterMarkerPos = (markers.threeQuarterAttendance / markers.maxScale) * 100;
   const fullMarkerPos = (markers.fullAttendance / markers.maxScale) * 100;
 
-  // Determine milestone status
+  // Determine milestone status - Only ONE status should be active
   const getMilestoneStatus = () => {
     if (productiveHours > markers.fullAttendance) return 'extra';
-    if (productiveHours >= markers.fullAttendance) return 'full';
-    if (productiveHours >= markers.threeQuarterAttendance) return 'three-quarter';
-    if (productiveHours >= markers.halfAttendance) return 'half';
+    if (productiveHours >= markers.fullAttendance && productiveHours <= markers.fullAttendance) return 'full';
+    if (productiveHours >= markers.threeQuarterAttendance && productiveHours < markers.fullAttendance) return 'three-quarter';
+    if (productiveHours >= markers.halfAttendance && productiveHours < markers.threeQuarterAttendance) return 'half';
     return 'none';
   };
 
@@ -188,13 +188,11 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
           <div className={`p-2 rounded-lg border transition-all ${
             milestoneStatus === 'half'
               ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-300'
-              : milestoneStatus !== 'none'
-              ? 'bg-amber-50 border-amber-300'
               : 'bg-gray-50 border-gray-200'
           }`}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-medium text-gray-600">Half Day</span>
-              {milestoneStatus !== 'none' ? (
+              {milestoneStatus === 'half' ? (
                 <CheckCircle className="w-3 h-3 text-amber-500" />
               ) : (
                 <AlertCircle className="w-3 h-3 text-gray-300" />
@@ -208,13 +206,11 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
           <div className={`p-2 rounded-lg border transition-all ${
             milestoneStatus === 'three-quarter'
               ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-300'
-              : milestoneStatus === 'full' || milestoneStatus === 'extra'
-              ? 'bg-blue-50 border-blue-300'
               : 'bg-gray-50 border-gray-200'
           }`}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-medium text-gray-600">Good Day</span>
-              {milestoneStatus === 'three-quarter' || milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
+              {milestoneStatus === 'three-quarter' ? (
                 <CheckCircle className="w-3 h-3 text-blue-500" />
               ) : (
                 <Target className="w-3 h-3 text-gray-300" />
@@ -228,13 +224,11 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
           <div className={`p-2 rounded-lg border transition-all ${
             milestoneStatus === 'full'
               ? 'bg-green-50 border-green-300 ring-2 ring-green-300'
-              : milestoneStatus === 'extra'
-              ? 'bg-green-50 border-green-300'
               : 'bg-gray-50 border-gray-200'
           }`}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-medium text-gray-600">Full Day</span>
-              {milestoneStatus === 'full' || milestoneStatus === 'extra' ? (
+              {milestoneStatus === 'full' ? (
                 <Award className="w-3 h-3 text-green-500" />
               ) : (
                 <Flag className="w-3 h-3 text-gray-300" />
