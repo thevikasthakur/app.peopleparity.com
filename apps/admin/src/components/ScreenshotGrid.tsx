@@ -402,9 +402,6 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
           // The hourKey represents a time in the developer's timezone
           // We need to convert "YYYY-MM-DD HH:00 in developer's TZ" to admin's TZ
 
-          // Create a formatter to parse the date in developer's timezone
-          const dateTimeStr = hourKey.replace('T', ' ') + ':00'; // "2025-09-26 20:00:00"
-
           // Create a Date object that we'll manipulate
           // First, interpret the string as if it were in UTC
           const [datePart, timePart] = hourKey.split('T');
@@ -422,9 +419,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
           });
 
           // Calculate offset: the hourKey time should match in developer's TZ
-          const [devDate, devTime] = devTimeStr.split(', ');
-          const [devMonth, devDay, devYear] = devDate.split('/');
-          const [devHour, devMinute] = devTime.split(':');
+          const [, devTime] = devTimeStr.split(', ');
+          const [devHour] = devTime.split(':');
 
           const targetHour = parseInt(hour.split(':')[0]);
           const actualDevHour = parseInt(devHour);
