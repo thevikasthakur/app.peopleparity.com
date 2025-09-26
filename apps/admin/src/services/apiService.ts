@@ -63,10 +63,6 @@ export const apiService = {
     return response.data;
   },
 
-  async getScreenshotDetails(screenshotId: string) {
-    const response = await api.get(`/api/admin/screenshots/${screenshotId}`);
-    return response.data;
-  },
 
   // Activity data
   async getActivityPeriods(params?: {
@@ -80,12 +76,7 @@ export const apiService = {
   },
 
   // User sessions
-  async getUserSessions(params?: {
-    userId?: string;
-    date?: string;
-    startDate?: string;
-    endDate?: string;
-  }) {
+  async getUserSessions() {
     // For now, return empty array since we need to check the actual sessions endpoint
     // The API might use a different endpoint or the sessions might be included in dashboard stats
     try {

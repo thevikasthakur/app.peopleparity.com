@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Clock, TrendingUp, Award, Zap, Coffee, Target, Flag, CheckCircle, AlertCircle, Calendar, Trophy } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Clock, TrendingUp, Award, Zap, Target, Flag, CheckCircle, AlertCircle, Calendar, Trophy } from 'lucide-react';
 import { apiService } from '../services/apiService';
 
 interface HustleData {

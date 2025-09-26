@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { TodaysHustle } from '../components/TodaysHustle';
@@ -55,7 +55,7 @@ export function Dashboard() {
   });
 
   // Fetch screenshots for the user/team and date
-  const { data: screenshots, isLoading: isLoadingScreenshots, refetch: refetchScreenshots } = useQuery({
+  const { data: screenshots, isLoading: isLoadingScreenshots } = useQuery({
     queryKey: ['screenshots', effectiveUserId, selectedDate.toISOString(), refreshKey],
     queryFn: () => apiService.getScreenshots({
       userId: effectiveUserId || undefined,
@@ -66,10 +66,7 @@ export function Dashboard() {
   // Fetch sessions for the user and date
   const { data: sessions } = useQuery({
     queryKey: ['sessions', effectiveUserId, selectedDate.toISOString()],
-    queryFn: () => apiService.getUserSessions({
-      userId: effectiveUserId || undefined,
-      date: selectedDate.toISOString().split('T')[0],
-    }),
+    queryFn: () => apiService.getUserSessions(),
   });
 
   // Check if selected date is today

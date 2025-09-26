@@ -1,5 +1,4 @@
-import React from 'react';
-import { Users, User, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 interface TeamMember {
   id: string;
@@ -22,8 +21,6 @@ export function TeamMemberSelector({
   onSelectUser,
   isLoading
 }: TeamMemberSelectorProps) {
-  const selectedMember = teamMembers.find(m => m.id === selectedUserId);
-
   return (
     <div className="relative">
       <select

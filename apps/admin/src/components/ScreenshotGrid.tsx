@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Monitor, Activity, User, X, ChevronLeft, ChevronRight, Calendar, Check, Loader, Keyboard, MousePointer, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Monitor, X, ChevronLeft, ChevronRight, Calendar, Check, Loader, Keyboard, MousePointer, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { apiService } from '../services/apiService';
 
 interface ActivityPeriod {
@@ -85,7 +85,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
-export function ScreenshotGrid({ screenshots, isLoading, onRefresh }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, isLoading }: ScreenshotGridProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -105,9 +105,6 @@ export function ScreenshotGrid({ screenshots, isLoading, onRefresh }: Screenshot
     return screenshot.thumbnailUrl || screenshot.url || '';
   };
 
-  const getFullUrl = (screenshot: Screenshot) => {
-    return screenshot.fullUrl || screenshot.url || screenshot.thumbnailUrl || '';
-  };
 
   const getActivityName = (screenshot: Screenshot) => {
     return screenshot.activityName || screenshot.notes || screenshot.task || '';

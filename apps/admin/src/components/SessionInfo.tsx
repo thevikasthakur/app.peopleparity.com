@@ -1,4 +1,3 @@
-import React from 'react';
 import { Clock, Play, Square, User } from 'lucide-react';
 
 interface Session {
