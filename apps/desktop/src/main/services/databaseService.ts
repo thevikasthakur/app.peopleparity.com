@@ -184,6 +184,21 @@ export class DatabaseService {
     return this.localDb.getSession(sessionId);
   }
 
+  getLatestScreenshotForSession(sessionId: string) {
+    try {
+      const stmt = this.localDb.db.prepare(`
+        SELECT * FROM screenshots
+        WHERE sessionId = ?
+        ORDER BY capturedAt DESC
+        LIMIT 1
+      `);
+      return stmt.get(sessionId);
+    } catch (error) {
+      console.error('Error getting latest screenshot for session:', error);
+      return null;
+    }
+  }
+
   // Activity period management
   async createActivityPeriod(data: any) {
     const periodData = {

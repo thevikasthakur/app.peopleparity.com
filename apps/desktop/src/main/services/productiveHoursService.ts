@@ -25,9 +25,29 @@ export class ProductiveHoursService {
 
   private loadHolidayConfig() {
     try {
-      const configPath = path.join(__dirname, '../../config/holidays.json');
-      const configData = fs.readFileSync(configPath, 'utf-8');
-      this.holidayConfig = JSON.parse(configData);
+      // Try multiple paths for development and production
+      const possiblePaths = [
+        path.join(__dirname, '../../config/holidays.json'),
+        path.join(__dirname, '../../../src/config/holidays.json'),
+        path.join(__dirname, '../../src/config/holidays.json'),
+        path.join(process.cwd(), 'src/config/holidays.json'),
+      ];
+
+      let configData: string | null = null;
+      for (const configPath of possiblePaths) {
+        if (fs.existsSync(configPath)) {
+          configData = fs.readFileSync(configPath, 'utf-8');
+          console.log(`✅ Loaded holiday config from: ${configPath}`);
+          break;
+        }
+      }
+
+      if (configData) {
+        this.holidayConfig = JSON.parse(configData);
+      } else {
+        console.warn('⚠️ Holiday config file not found in any expected location');
+        this.holidayConfig = {};
+      }
     } catch (error) {
       console.error('Failed to load holiday config:', error);
       this.holidayConfig = {};

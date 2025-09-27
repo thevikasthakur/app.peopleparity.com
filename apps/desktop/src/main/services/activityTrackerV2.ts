@@ -888,41 +888,34 @@ export class ActivityTrackerV2 extends EventEmitter {
   }
   
   /**
-   * Handle UTC date change - perform session rollover
+   * Handle UTC date change - stop session at midnight
    */
   private async handleDateChange() {
     if (!this.isTracking || !this.currentSessionId) return;
-    
+
     const newDate = this.getUTCDateString(new Date());
-    
+
     // Check if date actually changed
     if (this.sessionStartDate === newDate) {
       return; // No date change
     }
-    
+
     console.log(`\n🌐 UTC Date changed from ${this.sessionStartDate} to ${newDate}`);
-    console.log('📅 Performing session rollover...');
-    
-    // Store current session details
-    const currentMode = this.currentMode;
-    const currentProjectId = this.currentProjectId;
-    const currentTask = this.currentTask;
-    
+    console.log('📅 Auto-stopping session at midnight...');
+
     // Save any pending period data
     await this.savePeriodData();
-    
-    // Stop current session (this will end it at the previous day)
+
+    // Stop current session
     await this.stopSession();
-    
-    // Start new session with the same task/project for the new day
-    console.log('🔄 Starting new session for the new UTC date...');
-    await this.startSession(currentMode, currentProjectId, currentTask);
-    
-    console.log(`✅ Session rollover complete. New session started for ${newDate}`);
-    this.emit('session:rollover', {
+
+    console.log(`✅ Session stopped at UTC midnight.`);
+
+    // Emit event to notify UI
+    this.emit('session:midnight-stop', {
       previousDate: this.sessionStartDate,
       newDate: newDate,
-      sessionId: this.currentSessionId
+      message: 'Arre yaar! It\'s a new date already! Your tracker session has ended automatically. Get some rest and start fresh with a new session.'
     });
   }
 

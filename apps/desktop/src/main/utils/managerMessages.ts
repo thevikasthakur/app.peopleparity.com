@@ -33,22 +33,35 @@ function getFestivalToday(month: number, day: number): string | null {
 }
 
 function getFestivalInWeek(month: number, day: number, year?: number): { name: string; isWeekend: boolean } | null {
-  // Check if there's a festival within the next 7 days
+  // Check if there's a festival in the CURRENT WEEK (Mon-Sun)
   const currentYear = year || new Date().getFullYear();
   const currentDate = new Date(currentYear, month - 1, day); // JavaScript months are 0-indexed
-  
-  for (let i = 0; i < 7; i++) {
-    const checkDate = new Date(currentDate);
-    checkDate.setDate(checkDate.getDate() + i);
+
+  // Calculate the start (Monday) and end (Sunday) of the current week
+  const dayOfWeek = currentDate.getDay();
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
+
+  const weekStart = new Date(currentDate);
+  weekStart.setDate(currentDate.getDate() - daysToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6); // Saturday (end of week)
+  weekEnd.setHours(23, 59, 59, 999);
+
+  // Check each day in the current week for a festival
+  for (let i = 0; i <= 6; i++) {
+    const checkDate = new Date(weekStart);
+    checkDate.setDate(weekStart.getDate() + i);
     const checkMonth = checkDate.getMonth() + 1;
     const checkDay = checkDate.getDate();
     const dateStr = `${checkMonth.toString().padStart(2, '0')}-${checkDay.toString().padStart(2, '0')}`;
-    
+
     const festival = festivals.find(f => f.date === dateStr);
     if (festival) {
       // Check if this festival falls on a weekend (0 = Sunday, 6 = Saturday)
-      const dayOfWeek = checkDate.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const festivalDayOfWeek = checkDate.getDay();
+      const isWeekend = festivalDayOfWeek === 0 || festivalDayOfWeek === 6;
       return { name: festival.name, isWeekend };
     }
   }
@@ -106,48 +119,48 @@ export function getManagerMessage(context: MessageContext): string {
   if (festivalInWeek && !festivalToday && !festivalOnWeekend) {
     const festivalMessages: Record<string, string[]> = {
       'Diwali': [
-        `Diwali coming this week! Your gift depends on this week's performance! 10.5h/day`,
+        `It's Diwali week! Your gift depends on this week's performance! 10.5h/day`,
         `Diwali week! Complete your 10.5h/day properly, festival shopping can wait!`,
         `Diwali preparations? First prepare your timesheet - need 45+ hours this week!`,
         `Festival of lights approaching! Light up your productivity first! 10.5h/day`,
         `Diwali week means EXTRA dedication! Show me 10.5+ hours daily!`
       ],
       'Holi': [
-        `Holi week hai! Complete your hours before playing with colors!`,
-        `Festival coming! But first make your timesheet colorful with GREEN hours!`,
-        `Holi week! But productivity should not take holiday!`,
+        `It's Holi Week! Complete your 10.5 hours per day before playing with colors!`,
+        `It's Holi Week!! But first make your timesheet colorful with GREEN hours! 10.5h/day`,
+        `Holi week! But productivity should not take holiday! 10.5h/day`,
         `Pre-Holi targets: 45 hours minimum! Then enjoy the colors!`,
         `Colors can wait, work cannot! Complete daily 10.5 hours first!`
       ],
       'Independence Day': [
-        `Independence Day week! Show patriotism through productivity! 10.5h/day.`,
+        `Independence week! Show patriotism through productivity! 10.5h/day.`,
         `Tricolor week! Your timesheet should also have three colors: GREEN, GREEN, GREEN!`,
-        `National holiday coming, but work targets remain same! 45 hours`,
-        `Freedom fighters worked hard for nation, you work hard for organization!`,
+        `National holiday week, but work targets remain same! 45 hours`,
+        `Freedom fighters worked hard for nation, you work hard for organization! 10.5h/day`,
         `Pre-holiday week means 10.5h/day! Compensate for upcoming holiday!`
       ],
       'Republic Day': [
-        `Republic Day approaching! Republic needs responsible employees!`,
+        `Republic Week! India needs responsible people! Do 10.5h/day`,
         `26 January week! Complete your constitutional duty of 45 hours!`,
         `Parade practice? First practice completing 10.5 hours daily!`,
         `National holiday week = Extra working hours before holiday! 10.5h/day`
       ],
       'Christmas': [
-        `Christmas week! Santa checking your timesheet, not just behavior!`,
-        `Jingle bells coming! But first let keyboard bells ring for 10.5 hours!`,
-        `Christmas gifts depends on this week's performance!`,
-        `Pre-Christmas deadline! Complete all hours before holiday!`
+        `Christmas week! Santa checking your timesheet, not just behavior! 10.5h/day`,
+        `Holiday Week! But first let keyboard bells ring for 10.5 hours!`,
+        `Christmas gifts depends on this week's performance! 10.5h/day`,
+        `Pre-Christmas deadline! Complete all hours before holiday! 10.5h/day`
       ],
       'Gandhi Jayanti': [
-        `Gandhi Jayanti week! Follow Bapu's principle: 'Work is Worship'!`,
+        `Gandhi Jayanti week! Follow Bapu's principle: 'Work is Worship'! 10.5h/day`,
         `Non-violence week! But be violent with your keyboard - 10.5 hours daily!`,
-        `Bapu's birthday coming! Honor him with honest 45 hours work!`
+        `Bapu's birthday coming! Honor him with honest 10.5h hours per daywork! `
       ],
       'default': [
         `${festivalInWeek} coming this week! Complete hours before celebration!`,
         `Festival week means extra dedication! Minimum 10.5 hours daily!`,
         `${festivalInWeek} approaching! Your bonus depends on this week's timesheet!`,
-        `Pre-festival targets must be met! Show me 45+ hours!`
+        `Pre-festival targets must be met! Show me 10.5 hours daily!`
       ]
     };
     const messages = festivalMessages[festivalInWeek] || festivalMessages['default'];

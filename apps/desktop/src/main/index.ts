@@ -848,15 +848,63 @@ app.whenReady().then(async () => {
     const activeSession = databaseService.getActiveSession();
     if (activeSession) {
       console.log(`📄 Found existing active session: ${activeSession.id}`);
-      activityTracker.restoreSession(
-        activeSession.id,
-        activeSession.mode,
-        activeSession.projectId || undefined
-      );
-      // Start screenshot service for the restored session
-      screenshotService.enableAutoSessionCreation();
-      screenshotService.start();
-      console.log('✅ Session restored and screenshot service started');
+
+      // Validate if session should be restored
+      const latestScreenshot = databaseService.getLatestScreenshotForSession(activeSession.id);
+      const now = new Date();
+      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+      let shouldRestore = true;
+      let reason = '';
+
+      if (latestScreenshot) {
+        const screenshotTime = new Date(latestScreenshot.capturedAt);
+        const screenshotDateUTC = new Date(Date.UTC(
+          screenshotTime.getUTCFullYear(),
+          screenshotTime.getUTCMonth(),
+          screenshotTime.getUTCDate()
+        ));
+        const hoursSinceLastScreenshot = (now.getTime() - screenshotTime.getTime()) / (1000 * 60 * 60);
+
+        // Check if last screenshot was more than 1 hour ago
+        if (hoursSinceLastScreenshot > 1) {
+          shouldRestore = false;
+          reason = `Last screenshot was ${hoursSinceLastScreenshot.toFixed(1)} hours ago (more than 1 hour)`;
+        }
+
+        // Check if last screenshot was on a different UTC date
+        if (screenshotDateUTC.getTime() !== todayUTC.getTime()) {
+          shouldRestore = false;
+          reason = `Last screenshot was on a different date: ${screenshotDateUTC.toISOString().split('T')[0]} (today: ${todayUTC.toISOString().split('T')[0]})`;
+        }
+      } else {
+        shouldRestore = false;
+        reason = 'No screenshots found for this session';
+      }
+
+      if (shouldRestore) {
+        activityTracker.restoreSession(
+          activeSession.id,
+          activeSession.mode,
+          activeSession.projectId || undefined
+        );
+        screenshotService.enableAutoSessionCreation();
+        screenshotService.start();
+        console.log('✅ Session restored and screenshot service started');
+      } else {
+        console.log(`⚠️ Session not restored: ${reason}`);
+        console.log('🔄 Ending stale session...');
+        await databaseService.endSession(activeSession.id);
+        console.log('✅ Stale session ended. User will need to start a new session.');
+
+        // Show notification to user
+        const notification = new Notification({
+          title: 'Previous Session Ended',
+          body: 'Your previous session was inactive for too long or from a different day. Please start a new tracking session.',
+          urgency: 'normal'
+        });
+        notification.show();
+      }
     } else {
       console.log('ℹ️ No active session found - screenshot service NOT started');
     }
@@ -875,6 +923,42 @@ app.whenReady().then(async () => {
     // Notify renderer that session has stopped
     if (mainWindow) {
       mainWindow.webContents.send('session-update', { isActive: false });
+    }
+  });
+
+  // Listen for midnight auto-stop events
+  activityTracker.on('session:midnight-stop', (data: { previousDate: string; newDate: string; message: string }) => {
+    console.log('🌙 Session auto-stopped at UTC midnight');
+
+    // Show notification to user
+    const notification = new Notification({
+      title: 'Session Stopped - It\'s a New Date!',
+      body: data.message,
+      urgency: 'critical'
+    });
+    notification.show();
+
+    // Show dialog as well for more visibility
+    const { dialog } = require('electron');
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Session Stopped - It\'s a New Date!',
+      message: data.message,
+      buttons: ['Got it!'],
+      defaultId: 0,
+      noLink: true
+    });
+
+    // Stop screenshot service
+    screenshotService.stop();
+
+    // Update tray menu
+    updateTrayMenu();
+
+    // Notify renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('session-update', { isActive: false });
+      mainWindow.webContents.send('midnight-stop', data);
     }
 
     // Schedule recurring reminder notifications using Fibonacci sequence (10 x [1,1,2,3,5,8...])
