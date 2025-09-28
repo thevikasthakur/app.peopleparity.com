@@ -1,5 +1,35 @@
 import { DatabaseService } from './databaseService';
 import { EventEmitter } from 'events';
+interface ActivityMetrics {
+    keyHits: number;
+    productiveKeyHits: number;
+    navigationKeyHits: number;
+    uniqueKeys: Set<number>;
+    productiveUniqueKeys: Set<number>;
+    mouseClicks: number;
+    rightClicks: number;
+    mouseScrolls: number;
+    mouseDistance: number;
+    lastMousePosition: {
+        x: number;
+        y: number;
+    } | null;
+}
+interface MemoryActivityPeriod {
+    id: string;
+    sessionId: string;
+    userId: string;
+    periodStart: Date;
+    periodEnd: Date;
+    mode: 'client_hours' | 'command_hours';
+    activityScore: number;
+    isValid: boolean;
+    classification?: string;
+    metrics: ActivityMetrics;
+    vsCodeData?: any;
+    commandHourData?: any;
+    clientHourData?: any;
+}
 export declare class ActivityTracker extends EventEmitter {
     private db;
     private isTracking;
@@ -15,6 +45,11 @@ export declare class ActivityTracker extends EventEmitter {
     private lastActivityTime;
     private activeSeconds;
     private activeTimeInterval;
+    private memoryActivityPeriods;
+    private memoryScreenshots;
+    private windowCompletionTimer;
+    private currentWindowEnd;
+    private savedWindows;
     private keyTimestamps;
     private clickTimestamps;
     private lastKeyCode;
@@ -34,6 +69,20 @@ export declare class ActivityTracker extends EventEmitter {
     private startPeriodTimer;
     private startIdleDetection;
     private savePeriodData;
+    storeScreenshotInMemory(screenshotData: {
+        id: string;
+        userId: string;
+        sessionId: string;
+        localPath: string;
+        thumbnailPath?: string;
+        capturedAt: Date;
+        mode: 'client_hours' | 'command_hours';
+        notes?: string;
+    }): void;
+    private scheduleWindowCompletion;
+    private saveCompletedWindow;
+    saveMemoryPeriodsToDatabase(screenshotId: string, screenshotTime: Date): Promise<string[]>;
+    getMemoryActivityPeriods(windowStart: Date, windowEnd: Date): MemoryActivityPeriod[];
     private calculateActivityScore;
     private determineValidity;
     private classifyActivity;
@@ -63,4 +112,5 @@ export declare class ActivityTracker extends EventEmitter {
     hasActiveSession(): boolean;
     private resetMetrics;
 }
+export {};
 //# sourceMappingURL=activityTracker.d.ts.map

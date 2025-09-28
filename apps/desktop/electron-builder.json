@@ -44,8 +44,8 @@
     "node_modules/screenshot-desktop/**/*",
     "**/*.node"
   ],
-  "npmRebuild": true,
-  "buildDependenciesFromSource": true,
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
   "mac": {
     "category": "public.app-category.productivity",
     "icon": "build/icon.icns",

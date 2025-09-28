@@ -11,6 +11,23 @@ import { PermissionsService } from './services/permissionsService';
 import { calculateScreenshotScore, calculateTop80Average } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
 
+// CRITICAL: Prevent multiple instances - must be first!
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit immediately
+  app.quit();
+  process.exit(0);
+}
+
+// Set app icon for Windows
+if (process.platform === 'win32') {
+  const iconPath = path.join(__dirname, '../../build/icon.ico');
+  if (fs.existsSync(iconPath)) {
+    app.setAppUserModelId('com.peopleparity.timetracker');
+  }
+}
+
 // CRITICAL FIX for Electron 28+ Retina display bug
 // There's a known issue where Electron doesn't properly detect Retina displays
 if (process.platform === 'darwin') {
@@ -74,6 +91,15 @@ if (app.isPackaged) {
   console.log('\n=== New app session started ===');
   console.log('Log file:', logFile);
 }
+
+// Handle second instance - focus existing window
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    mainWindow.show();
+  }
+});
 
 const store = new Store();
 let mainWindow: BrowserWindow | null = null;

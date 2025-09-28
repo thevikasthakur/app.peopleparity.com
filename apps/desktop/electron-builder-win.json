@@ -2,6 +2,7 @@
   "appId": "com.peopleparity.timetracker",
   "productName": "People Parity",
   "copyright": "Copyright © 2025 People Parity",
+  "electronVersion": "28.2.0",
   "directories": {
     "output": "dist-installer"
   },
@@ -14,6 +15,7 @@
     "node_modules/**/*"
   ],
   "win": {
+    "icon": "build/icon.ico",
     "target": [
       {
         "target": "nsis",
@@ -28,6 +30,9 @@
     "deleteAppDataOnUninstall": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "People Parity"
+    "shortcutName": "People Parity",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerHeaderIcon": "build/icon.ico"
   }
 }

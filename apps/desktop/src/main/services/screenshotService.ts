@@ -1,3 +1,4 @@
+// @ts-ignore
 import screenshot from 'screenshot-desktop';
 import sharp from 'sharp';
 import path from 'path';

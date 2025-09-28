@@ -10,17 +10,35 @@ const electron_1 = require("electron");
 const crypto_1 = __importDefault(require("crypto"));
 const axios_1 = __importDefault(require("axios"));
 const electron_store_1 = __importDefault(require("electron-store"));
+const activityScoreCalculator_1 = require("../utils/activityScoreCalculator");
 class DatabaseService {
     constructor() {
         this.activityTracker = null; // Will be set by index.ts
         this.api = null;
+        this.currentActivity = 'Working'; // Store current activity
         this.localDb = new localDatabase_1.LocalDatabase();
         this.store = new electron_store_1.default();
         this.initializeApiClient();
+        // Initialize current activity from the most recent note if available
+        try {
+            const user = this.localDb.getCurrentUser();
+            if (user) {
+                const recentNotes = this.localDb.getRecentNotes(user.id, 1);
+                if (recentNotes && recentNotes.length > 0) {
+                    this.currentActivity = recentNotes[0];
+                    console.log(`DatabaseService: Initialized current activity to: "${this.currentActivity}"`);
+                }
+            }
+        }
+        catch (error) {
+            console.log('DatabaseService: Could not initialize current activity from recent notes');
+        }
     }
     initializeApiClient() {
-        const token = this.store.get('auth.token');
-        const baseUrl = process.env.API_URL || 'http://localhost:3001';
+        const token = this.store.get('authToken'); // Changed from 'auth.token' to 'authToken'
+        // Force IPv4 by using 127.0.0.1 instead of localhost
+        const envUrl = process.env.API_URL || 'http://localhost:3001';
+        const baseUrl = envUrl.replace('localhost', '127.0.0.1');
         const apiUrl = `${baseUrl}/api`;
         if (token) {
             this.api = axios_1.default.create({
@@ -28,7 +46,10 @@ class DatabaseService {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                // Force IPv4
+                httpAgent: new (require('http').Agent)({ family: 4 }),
+                httpsAgent: new (require('https').Agent)({ family: 4 })
             });
             // Add response interceptor to handle auth errors
             this.api.interceptors.response.use(response => response, error => {
@@ -38,6 +59,10 @@ class DatabaseService {
                 }
                 return Promise.reject(error);
             });
+            console.log('API client initialized successfully');
+        }
+        else {
+            console.log('No auth token found, API client not initialized');
         }
     }
     static getInstance() {
@@ -57,7 +82,22 @@ class DatabaseService {
         return this.localDb.getCurrentUser();
     }
     getCurrentUserId() {
-        const user = this.localDb.getCurrentUser();
+        let user = this.localDb.getCurrentUser();
+        // If no user exists and we're in development mode, create a default user
+        if (!user && process.env.NODE_ENV === 'development') {
+            console.log('No user found, creating default development user');
+            const defaultUser = {
+                id: 'b09149e6-6ba6-498d-ae3b-f35a1e11f7f5', // Use the user ID we found in screenshots
+                email: 'dev@example.com',
+                name: 'Developer',
+                organizationId: 'dev-org',
+                organizationName: 'Development',
+                role: 'developer',
+                lastSync: Date.now()
+            };
+            this.setCurrentUser(defaultUser);
+            user = defaultUser;
+        }
         if (!user) {
             throw new Error('No user logged in');
         }
@@ -78,7 +118,7 @@ class DatabaseService {
     }
     // Session management
     async createSession(data) {
-        const session = this.localDb.createSession({
+        const session = await this.localDb.createSession({
             userId: this.getCurrentUserId(),
             mode: data.mode,
             projectId: data.projectId,
@@ -108,17 +148,29 @@ class DatabaseService {
             return null;
         }
     }
+    getSession(sessionId) {
+        return this.localDb.getSession(sessionId);
+    }
+    getLatestScreenshotForSession(sessionId) {
+        return this.localDb.getLatestScreenshotForSession(sessionId);
+    }
     // Activity period management
     async createActivityPeriod(data) {
-        const period = this.localDb.createActivityPeriod({
-            ...data,
-            userId: this.getCurrentUserId()
-        });
-        return {
-            id: period.id,
-            ...data,
-            createdAt: new Date(period.createdAt)
+        const periodData = {
+            id: data.id, // Pass through the ID if provided
+            sessionId: data.sessionId,
+            userId: data.userId || this.getCurrentUserId(),
+            screenshotId: data.screenshotId || null, // Include screenshotId
+            periodStart: data.startTime || data.periodStart,
+            periodEnd: data.endTime || data.periodEnd,
+            mode: data.mode,
+            activityScore: data.activityScore || 0,
+            isValid: data.isValid !== undefined ? data.isValid : true,
+            classification: data.classification,
+            metricsBreakdown: data.metricsBreakdown // Include detailed metrics
         };
+        const period = this.localDb.createActivityPeriod(periodData);
+        return period;
     }
     async saveCommandHourActivity(periodId, data) {
         this.localDb.saveCommandHourActivity(periodId, data);
@@ -152,7 +204,7 @@ class DatabaseService {
                 sessionId: session.id,
                 userId: this.getCurrentUserId(),
                 periodStart: new Date(),
-                periodEnd: new Date(Date.now() + 10 * 60 * 1000), // 10 minute periods
+                periodEnd: new Date(Date.now() + 60 * 1000), // 1 minute periods
                 mode: session.mode,
                 activityScore: 0,
                 isValid: true
@@ -183,46 +235,88 @@ class DatabaseService {
             sessionId: session.id
         };
     }
+    async getAggregatedActivityScore(periodCount = 10) {
+        const session = this.localDb.getActiveSession(this.getCurrentUserId());
+        if (!session) {
+            return 0;
+        }
+        // Get the last N activity periods for this session
+        const recentPeriods = this.localDb.getRecentActivityPeriods(session.id, periodCount);
+        if (!recentPeriods || recentPeriods.length === 0) {
+            return 0;
+        }
+        // Calculate the average activity score across all periods
+        const totalScore = recentPeriods.reduce((sum, period) => sum + (period.activityScore || 0), 0);
+        const averageScore = Math.round(totalScore / recentPeriods.length);
+        console.log(`Aggregated ${recentPeriods.length} periods: scores=[${recentPeriods.map(p => p.activityScore).join(', ')}], average=${averageScore}`);
+        return averageScore;
+    }
+    async getRecentActivityPeriods(periodCount = 10) {
+        const session = this.localDb.getActiveSession(this.getCurrentUserId());
+        if (!session) {
+            return [];
+        }
+        return this.localDb.getRecentActivityPeriods(session.id, periodCount);
+    }
+    async getActivityPeriodsForTimeRange(sessionId, windowStart, windowEnd) {
+        return this.localDb.getActivityPeriodsForTimeRange(sessionId, windowStart, windowEnd);
+    }
     // Screenshot management
     async saveScreenshot(data) {
-        const session = this.localDb.getActiveSession(this.getCurrentUserId());
-        if (!session)
-            return;
-        this.localDb.saveScreenshot({
+        let session = this.localDb.getActiveSession(this.getCurrentUserId());
+        let sessionId = data.sessionId || session?.id;
+        // If no session exists, create an idle session
+        if (!sessionId) {
+            const idleSessionData = {
+                mode: 'command_hours',
+                projectId: undefined,
+                task: 'Idle - No active tracking',
+                startTime: new Date()
+            };
+            const newSession = await this.createSession(idleSessionData);
+            sessionId = newSession.id;
+            console.log(`Created idle session ${sessionId} for screenshot storage`);
+            // Restore the idle session in activity tracker so activity periods are created
+            if (this.activityTracker) {
+                this.activityTracker.restoreSession(sessionId, 'command_hours', undefined);
+                console.log(`Restored idle session ${sessionId} in activity tracker`);
+            }
+        }
+        const mode = session?.mode || 'command_hours';
+        // Use provided notes, or fall back to session task
+        const notes = data.notes || session?.task || 'Idle';
+        return this.localDb.saveScreenshot({
+            id: data.id, // Pass through the ID if provided
             userId: this.getCurrentUserId(),
-            activityPeriodId: data.activityPeriodId,
+            sessionId: sessionId, // We know sessionId is defined at this point
             localPath: data.localPath,
             thumbnailPath: data.thumbnailPath,
             capturedAt: data.capturedAt,
-            mode: session.mode
+            mode: mode,
+            task: notes // Use the determined notes value
         });
     }
-    async getScreenshot(id) {
-        // This would need to be implemented in LocalDatabase
-        return null;
-    }
-    // Dashboard data - fetch from cloud API first, fallback to local
+    // Dashboard data - ALWAYS use local for current session (source of truth)
     async getDashboardData() {
         const userId = this.getCurrentUserId();
-        // Try to fetch from cloud API first
+        // ALWAYS get the current session from local database (it's the source of truth)
+        const localSession = this.localDb.getActiveSession(userId);
+        console.log('Local active session:', localSession ? `${localSession.id} (isActive: ${localSession.isActive})` : 'none');
+        // Try to fetch stats from cloud API
         if (this.api) {
             try {
-                console.log('Fetching dashboard data from cloud...');
-                const [sessionsRes, statsRes] = await Promise.all([
-                    this.api.get('/sessions/active'),
-                    this.api.get('/dashboard/stats')
-                ]);
-                const cloudSession = sessionsRes.data;
+                console.log('Fetching dashboard stats from cloud...');
+                const statsRes = await this.api.get('/dashboard/stats');
                 const cloudStats = statsRes.data;
-                // Transform cloud data to match our format
+                // Return local session with cloud stats
                 return {
-                    currentSession: cloudSession ? {
-                        id: cloudSession.id,
-                        startTime: new Date(cloudSession.startTime),
-                        activity: cloudSession.task || 'Working...',
-                        mode: cloudSession.mode === 'client_hours' ? 'client' : 'command',
-                        projectName: cloudSession.project?.name,
-                        isActive: cloudSession.isActive
+                    currentSession: localSession ? {
+                        id: localSession.id,
+                        startTime: localSession.startTime,
+                        activity: localSession.task || 'Working...',
+                        mode: localSession.mode === 'client_hours' ? 'client' : 'command',
+                        projectName: localSession.projectName,
+                        isActive: localSession.isActive
                     } : null,
                     todayStats: {
                         clientHours: cloudStats.today.clientHours || 0,
@@ -243,11 +337,11 @@ class DatabaseService {
                 };
             }
             catch (error) {
-                console.log('Failed to fetch from cloud, using local data:', error);
+                console.log('Failed to fetch stats from cloud, using local data:', error);
             }
         }
-        // Fallback to local database
-        console.log('Using local database for dashboard data');
+        // Fallback to local database for stats
+        console.log('Using local database for stats');
         const session = this.localDb.getActiveSession(userId);
         const todayStats = this.localDb.getTodayStats(userId);
         const weekStats = this.localDb.getWeekStats(userId);
@@ -259,7 +353,7 @@ class DatabaseService {
                 activity: session.task || 'Working...',
                 mode: session.mode === 'client_hours' ? 'client' : 'command',
                 projectName: projects.find(p => p.id === session.projectId)?.name,
-                isActive: true
+                isActive: Boolean(session.isActive)
             } : null,
             todayStats: {
                 clientHours: todayStats.clientHours,
@@ -286,70 +380,164 @@ class DatabaseService {
     getWeekStats(userId) {
         return this.localDb.getWeekStats(userId);
     }
-    async getTodayScreenshots() {
-        // Always try to fetch from cloud API first (primary source)
+    getDateStats(userId, date) {
+        return this.localDb.getDateStats(userId, date);
+    }
+    getWeekStatsForDate(userId, date) {
+        return this.localDb.getWeekStatsForDate(userId, date);
+    }
+    async getScreenshotsByDate(date) {
+        console.log('\n=== getScreenshotsByDate called ===', date);
+        // Try to get current user ID, but handle case where no user is logged in
+        let userId;
         try {
-            const apiScreenshots = await this.fetchScreenshotsFromAPI();
-            if (apiScreenshots && apiScreenshots.length > 0) {
-                console.log('Using screenshots from cloud database');
-                return apiScreenshots;
-            }
+            userId = this.getCurrentUserId();
         }
         catch (error) {
-            console.log('Failed to fetch from cloud, falling back to local cache:', error);
+            console.log('No user logged in, returning empty screenshots array');
+            return [];
         }
+        const screenshots = this.localDb.getScreenshotsByDate(userId, date);
+        console.log('Raw screenshots from DB for date:', date.toDateString(), screenshots.length);
+        try {
+            const mappedScreenshots = screenshots.map(s => {
+                try {
+                    // Never use file:// protocol - use S3 URLs or empty string
+                    let thumbnailUrl = '';
+                    let fullUrl = '';
+                    if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
+                        thumbnailUrl = s.thumbnailUrl;
+                    }
+                    else if (s.url && s.url.startsWith('http')) {
+                        thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
+                    }
+                    if (s.url && s.url.startsWith('http')) {
+                        fullUrl = s.url;
+                    }
+                    // Get activity score from related periods
+                    let activityScore = s.activityScore || 0;
+                    // Get related period IDs from the already loaded data
+                    let activityPeriodIds = [];
+                    if (s.relatedPeriods && Array.isArray(s.relatedPeriods)) {
+                        activityPeriodIds = s.relatedPeriods.map((p) => p.id);
+                    }
+                    // Get sync status if available
+                    const syncStatus = s.syncStatus || null;
+                    const result = {
+                        id: s.id,
+                        thumbnailUrl: thumbnailUrl || '', // Empty string if no valid URL
+                        fullUrl: fullUrl || '', // Empty string if no valid URL
+                        timestamp: new Date(s.capturedAt),
+                        notes: s.notes || '',
+                        mode: s.mode === 'client_hours' ? 'client' : 'command',
+                        activityScore: activityScore,
+                        activityPeriodIds: activityPeriodIds,
+                        syncStatus: syncStatus
+                    };
+                    return result;
+                }
+                catch (mapError) {
+                    console.error('Error mapping screenshot:', s.id, mapError);
+                    throw mapError;
+                }
+            });
+            console.log(`Successfully mapped ${mappedScreenshots.length} screenshots for date ${date.toDateString()}`);
+            return mappedScreenshots;
+        }
+        catch (error) {
+            console.error('Error in screenshot mapping:', error);
+            throw error;
+        }
+    }
+    async getTodayScreenshots() {
+        console.log('\n=== getTodayScreenshots called ===');
+        // Skip API for now to debug the local database issue
+        // // Always try to fetch from cloud API first (primary source)
+        // try {
+        //   const apiScreenshots = await this.fetchScreenshotsFromAPI();
+        //   if (apiScreenshots && apiScreenshots.length > 0) {
+        //     console.log('Using screenshots from cloud database');
+        //     return apiScreenshots;
+        //   }
+        // } catch (error) {
+        //   console.log('Failed to fetch from cloud, falling back to local cache:', error);
+        // }
         // Fallback to local database only if API fails (offline mode)
         console.log('Using local database as fallback');
-        const screenshots = this.localDb.getTodayScreenshots(this.getCurrentUserId());
+        // Try to get current user ID, but handle case where no user is logged in
+        let userId;
+        try {
+            userId = this.getCurrentUserId();
+        }
+        catch (error) {
+            console.log('No user logged in, returning empty screenshots array');
+            return [];
+        }
+        const screenshots = this.localDb.getTodayScreenshots(userId);
         console.log('Raw screenshots from DB:', screenshots.map(s => ({
             id: s.id,
-            s3Url: s.s3Url,
+            url: s.url,
             thumbnailUrl: s.thumbnailUrl,
             thumbnailPath: s.thumbnailPath,
-            localPath: s.localPath
+            localPath: s.localPath,
+            activityScore: s.activityScore,
+            relatedPeriods: s.relatedPeriods?.length || 0
         })));
-        return screenshots.map(s => {
-            // Never use file:// protocol - use S3 URLs or empty string
-            let thumbnailUrl = '';
-            let fullUrl = '';
-            if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
-                thumbnailUrl = s.thumbnailUrl;
-            }
-            else if (s.s3Url && s.s3Url.startsWith('http')) {
-                thumbnailUrl = s.s3Url.replace('_full.jpg', '_thumb.jpg');
-            }
-            if (s.s3Url && s.s3Url.startsWith('http')) {
-                fullUrl = s.s3Url;
-            }
-            // If we still don't have valid URLs, don't include file:// paths
-            if (!thumbnailUrl && s.thumbnailPath) {
-                console.log('Warning: Screenshot', s.id, 'has no S3 URL, only local path:', s.thumbnailPath);
-            }
-            // Get real activity score from the activity period
-            let activityScore = 0;
-            if (s.activityPeriodId) {
-                const period = this.localDb.getActivityPeriod(s.activityPeriodId);
-                if (period) {
-                    activityScore = period.activityScore || 0;
-                    console.log(`Screenshot ${s.id} has activity score: ${activityScore} from period ${s.activityPeriodId}`);
+        try {
+            const mappedScreenshots = screenshots.map(s => {
+                try {
+                    // Never use file:// protocol - use S3 URLs or empty string
+                    let thumbnailUrl = '';
+                    let fullUrl = '';
+                    if (s.thumbnailUrl && s.thumbnailUrl.startsWith('http')) {
+                        thumbnailUrl = s.thumbnailUrl;
+                    }
+                    else if (s.url && s.url.startsWith('http')) {
+                        thumbnailUrl = s.url.replace('_full.jpg', '_thumb.jpg');
+                    }
+                    if (s.url && s.url.startsWith('http')) {
+                        fullUrl = s.url;
+                    }
+                    // If we still don't have valid URLs, don't include file:// paths
+                    if (!thumbnailUrl && s.thumbnailPath) {
+                        console.log('Warning: Screenshot', s.id, 'has no URL, only local path:', s.thumbnailPath);
+                    }
+                    // Get activity score from related periods (calculated in getTodayScreenshots)
+                    let activityScore = s.activityScore || 0;
+                    // Get related period IDs from the already loaded data
+                    let activityPeriodIds = [];
+                    if (s.relatedPeriods && Array.isArray(s.relatedPeriods)) {
+                        activityPeriodIds = s.relatedPeriods.map((p) => p.id);
+                    }
+                    // Get sync status if available
+                    const syncStatus = s.syncStatus || null;
+                    console.log(`Screenshot ${s.id} has activity score: ${activityScore}`);
+                    const result = {
+                        id: s.id,
+                        thumbnailUrl: thumbnailUrl || '', // Empty string if no valid URL
+                        fullUrl: fullUrl || '', // Empty string if no valid URL
+                        timestamp: new Date(s.capturedAt),
+                        notes: s.notes || '',
+                        mode: s.mode === 'client_hours' ? 'client' : 'command',
+                        activityScore: activityScore, // Calculated from related periods
+                        activityPeriodIds: activityPeriodIds, // Array of period IDs from related periods
+                        syncStatus: syncStatus // Add sync status information
+                    };
+                    console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
+                    return result;
                 }
-                else {
-                    console.log(`Warning: Activity period ${s.activityPeriodId} not found for screenshot ${s.id}`);
+                catch (mapError) {
+                    console.error('Error mapping screenshot:', s.id, mapError);
+                    throw mapError;
                 }
-            }
-            const result = {
-                id: s.id,
-                thumbnailUrl: thumbnailUrl || '', // Empty string if no valid URL
-                fullUrl: fullUrl || '', // Empty string if no valid URL
-                timestamp: new Date(s.capturedAt),
-                notes: s.notes || '',
-                mode: s.mode === 'client_hours' ? 'client' : 'command',
-                activityScore: activityScore, // Real activity score from activity period
-                activityPeriodId: s.activityPeriodId
-            };
-            console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
-            return result;
-        });
+            });
+            console.log(`Successfully mapped ${mappedScreenshots.length} screenshots`);
+            return mappedScreenshots;
+        }
+        catch (error) {
+            console.error('Error in screenshot mapping:', error);
+            throw error;
+        }
     }
     async fetchScreenshotsFromAPI() {
         if (!this.api) {
@@ -369,14 +557,15 @@ class DatabaseService {
                     startDate: todayStart.toISOString(),
                     endDate: todayEnd.toISOString(),
                     includeActivityPeriod: true
-                }
+                },
+                timeout: 5000 // 5 second timeout
             });
             console.log(`API returned ${response.data.length} screenshots`);
             // Transform API response to match our format
             return response.data.map((s) => ({
                 id: s.id,
-                thumbnailUrl: s.thumbnailUrl || s.s3Url?.replace('_full.jpg', '_thumb.jpg') || '',
-                fullUrl: s.s3Url || '',
+                thumbnailUrl: s.thumbnailUrl || s.url?.replace('_full.jpg', '_thumb.jpg') || '',
+                fullUrl: s.url || '',
                 timestamp: new Date(s.capturedAt),
                 notes: s.notes || '',
                 mode: s.mode === 'client_hours' ? 'client' : 'command',
@@ -391,37 +580,56 @@ class DatabaseService {
         }
     }
     async updateScreenshotNotes(ids, notes) {
-        // This would need to be implemented in LocalDatabase
-        console.log('Updating screenshot notes:', ids, notes);
+        return this.localDb.updateScreenshotNotes(ids, notes);
     }
-    updateScreenshotUrls(screenshotId, s3Url, thumbnailUrl) {
-        this.localDb.updateScreenshotUrls(screenshotId, s3Url, thumbnailUrl);
+    updateScreenshotUrls(screenshotId, url, thumbnailUrl) {
+        this.localDb.updateScreenshotUrls(screenshotId, url, thumbnailUrl);
     }
     async transferScreenshotMode(ids, mode) {
         // This would need to be implemented in LocalDatabase
         console.log('Transferring screenshots to mode:', ids, mode);
     }
     async deleteScreenshots(ids) {
-        // This would need to be implemented in LocalDatabase
-        console.log('Deleting screenshots:', ids);
+        console.log('DatabaseService: Deleting screenshots:', ids);
+        return this.localDb.deleteScreenshots(ids);
     }
     async getActivityPeriodDetails(periodId) {
-        // This would need to be implemented in LocalDatabase
+        const period = this.localDb.getActivityPeriodWithMetrics(periodId);
+        if (!period) {
+            return null;
+        }
         return {
-            id: periodId,
-            activities: [
-                { type: 'keypress', count: 523 },
-                { type: 'mouseclick', count: 89 },
-                { type: 'scroll', count: 34 }
-            ]
+            id: period.id,
+            periodStart: new Date(period.periodStart),
+            periodEnd: new Date(period.periodEnd),
+            activityScore: period.activityScore,
+            metricsBreakdown: period.metricsBreakdown,
+            classification: period.classification
         };
     }
-    // Notes management
-    async getRecentNotes() {
-        return this.localDb.getRecentNotes(this.getCurrentUserId(), 10);
+    async getActivityPeriodsWithMetrics(periodIds) {
+        const periods = this.localDb.getActivityPeriodsWithMetrics(periodIds);
+        return periods.map(period => ({
+            id: period.id,
+            periodStart: new Date(period.periodStart),
+            periodEnd: new Date(period.periodEnd),
+            activityScore: period.activityScore,
+            metricsBreakdown: period.metricsBreakdown,
+            classification: period.classification
+        }));
     }
     async saveNote(noteText) {
-        this.localDb.saveRecentNote(this.getCurrentUserId(), noteText);
+        console.log(`DatabaseService: saveNote called with: "${noteText}"`);
+        const userId = this.getCurrentUserId();
+        console.log(`DatabaseService: Current user ID: ${userId}`);
+        // Store the current activity for screenshot service to use
+        this.currentActivity = noteText;
+        console.log(`DatabaseService: Updated current activity to: "${noteText}"`);
+        this.localDb.saveRecentNote(userId, noteText);
+        console.log(`DatabaseService: saveNote completed`);
+    }
+    getCurrentActivityNote() {
+        return this.currentActivity;
     }
     // Leaderboard
     async getLeaderboard() {
@@ -457,6 +665,24 @@ class DatabaseService {
     }
     incrementSyncAttempts(queueId) {
         this.localDb.incrementSyncAttempts(queueId);
+    }
+    getFailedSyncItems() {
+        return this.localDb.getFailedSyncItems();
+    }
+    getSyncQueueItem(entityId, entityType) {
+        return this.localDb.getSyncQueueItem(entityId, entityType);
+    }
+    resetSyncAttempts(queueId) {
+        this.localDb.resetSyncAttempts(queueId);
+    }
+    removeSyncQueueItem(queueId) {
+        this.localDb.removeSyncQueueItem(queueId);
+    }
+    getActivityPeriodsForScreenshot(screenshotId) {
+        return this.localDb.getActivityPeriodsForScreenshot(screenshotId);
+    }
+    getScreenshot(screenshotId) {
+        return this.localDb.getScreenshot(screenshotId);
     }
     // Export and maintenance
     async exportUserData() {
@@ -510,6 +736,9 @@ class DatabaseService {
     clearSyncQueue() {
         return this.localDb.clearSyncQueue();
     }
+    clearSyncQueueForSession(sessionId) {
+        return this.localDb.clearSyncQueueForSession(sessionId);
+    }
     clearSessionsAndRelatedData() {
         return this.localDb.clearSessionsAndRelatedData();
     }
@@ -521,6 +750,299 @@ class DatabaseService {
     }
     setActivityTracker(tracker) {
         this.activityTracker = tracker;
+    }
+    getValidActivityPeriodsForSession(sessionId) {
+        return this.localDb.getValidActivityPeriodsForSession(sessionId);
+    }
+    getSessionsForDate(date) {
+        const userId = this.getCurrentUserId();
+        if (!userId)
+            return [];
+        // Use UTC for consistent day boundaries
+        const startOfDay = new Date(date);
+        startOfDay.setUTCHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        // Get all sessions for the specified date
+        const sessions = this.localDb.db.prepare(`
+      SELECT 
+        s.id,
+        s.startTime,
+        s.endTime,
+        s.mode,
+        s.isActive,
+        s.task,
+        s.projectId
+      FROM sessions s
+      WHERE s.userId = ?
+        AND s.startTime >= ?
+        AND s.startTime < ?
+      ORDER BY s.startTime DESC
+    `).all(userId, startOfDay.getTime(), endOfDay.getTime());
+        // Process sessions to calculate metrics for each
+        return sessions.map((session) => {
+            const startTime = new Date(session.startTime);
+            const endTime = session.endTime ? new Date(session.endTime) : new Date();
+            const elapsedMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+            // Get screenshots for this session
+            const screenshots = this.localDb.db.prepare(`
+        SELECT id
+        FROM screenshots
+        WHERE sessionId = ?
+        ORDER BY capturedAt
+      `).all(session.id);
+            // Calculate activity score using the same method as productive-hours
+            const allScores = [];
+            let validScreenshots = 0;
+            for (const screenshot of screenshots) {
+                // Get all activity periods for this screenshot
+                const activityPeriods = this.localDb.db.prepare(`
+          SELECT activityScore
+          FROM activity_periods
+          WHERE screenshotId = ?
+          ORDER BY activityScore DESC
+        `).all(screenshot.id);
+                const scores = activityPeriods.map((p) => p.activityScore);
+                if (scores.length > 0) {
+                    // Calculate weighted average using the same function as productive hours
+                    const weightedScore = (0, activityScoreCalculator_1.calculateScreenshotScore)(scores);
+                    const uiScore = weightedScore / 10; // Convert to UI scale
+                    // Count valid screenshots (activity score >= 2.5 on UI scale)
+                    if (weightedScore >= 25) {
+                        validScreenshots++;
+                    }
+                    if (uiScore > 0) {
+                        allScores.push(uiScore);
+                    }
+                }
+            }
+            // Calculate tracked minutes using same validation as productive hours
+            // Apply the same rules as getDateStats for consistency
+            const validatedScreenshots = this.validateScreenshotsForSession(screenshots.map((s) => s.id), session.id);
+            const trackedMinutes = Math.min(validatedScreenshots * 10, elapsedMinutes); // Cap at elapsed time
+            // Log for debugging
+            console.log(`[Session ${session.id}] Screenshots: ${screenshots.length}, Validated: ${validatedScreenshots}, Tracked minutes: ${trackedMinutes}`);
+            // Calculate top 80% average activity score, same as productive hours
+            const averageActivityScore = allScores.length > 0
+                ? Math.round((0, activityScoreCalculator_1.calculateTop80Average)(allScores, `Session-${session.id}`) * 10) / 10 // Round to 1 decimal
+                : 0;
+            return {
+                id: session.id,
+                startTime: startTime.toISOString(),
+                endTime: session.endTime ? endTime.toISOString() : null,
+                mode: session.mode,
+                isActive: !!session.isActive,
+                task: session.task,
+                projectId: session.projectId,
+                elapsedMinutes,
+                trackedMinutes: Math.min(trackedMinutes, elapsedMinutes), // Never more than elapsed
+                averageActivityScore, // Already rounded to 1 decimal
+                screenshotCount: screenshots.length
+            };
+        });
+    }
+    getTodaySessions() {
+        const today = new Date();
+        return this.getSessionsForDate(today);
+    }
+    updateSessionNote(sessionId, note) {
+        // Update the task field since sessions table doesn't have currentNote
+        const stmt = this.localDb.db.prepare(`
+      UPDATE sessions
+      SET task = ?
+      WHERE id = ?
+    `);
+        const result = stmt.run(note, sessionId);
+        if (result.changes === 0) {
+            throw new Error('Session not found or update failed');
+        }
+        console.log(`✅ Updated note for session ${sessionId}`);
+        return true;
+    }
+    getRecentNotes() {
+        try {
+            // First, let's debug what's actually in the sessions table
+            const debugSessions = this.localDb.db.prepare(`
+        SELECT id, task, startTime, endTime, isActive
+        FROM sessions
+        WHERE task IS NOT NULL
+        ORDER BY startTime DESC
+        LIMIT 10
+      `).all();
+            console.log('📝 Debug - Recent sessions in DB:');
+            debugSessions.forEach((s, i) => {
+                console.log(`  ${i + 1}. Task: "${s.task}", Active: ${s.isActive}, Time: ${new Date(s.startTime).toLocaleString()}`);
+            });
+            // Check if activity_periods table has currentNote column
+            try {
+                const debugActivityPeriods = this.localDb.db.prepare(`
+          SELECT currentNote, startTime
+          FROM activity_periods
+          WHERE currentNote IS NOT NULL AND currentNote != ''
+          ORDER BY startTime DESC
+          LIMIT 10
+        `).all();
+                console.log('📝 Debug - Recent activity periods:');
+                debugActivityPeriods.forEach((a, i) => {
+                    console.log(`  ${i + 1}. Note: "${a.currentNote}", Time: ${new Date(a.startTime).toLocaleString()}`);
+                });
+            }
+            catch (e) {
+                console.log('📝 Note: activity_periods table does not have currentNote column');
+            }
+            // Get unique activities from sessions only (sessions doesn't have currentNote column)
+            const recentActivities = this.localDb.db.prepare(`
+        SELECT task as note, MAX(startTime) as last_used
+        FROM sessions
+        WHERE task IS NOT NULL
+          AND task != ''
+          AND task != 'null'
+          AND task != 'undefined'
+          AND LENGTH(TRIM(task)) > 0
+        GROUP BY task
+        ORDER BY last_used DESC
+        LIMIT 20
+      `).all();
+            console.log(`📝 Raw query found ${recentActivities.length} unique activities`);
+            // Extract just the note values
+            const activities = recentActivities
+                .map((r) => r.note)
+                .filter((note) => {
+                // More robust filtering
+                return note && typeof note === 'string' && note.trim().length > 0;
+            })
+                .map((note) => note.trim()); // Trim whitespace
+            console.log(`📝 Activities for tray menu (${activities.length} total):`, activities.slice(0, 10));
+            // Only add defaults if we have no activities at all
+            if (activities.length === 0) {
+                console.log('📝 No activities found, returning defaults');
+                return [
+                    'Development',
+                    'Code Review',
+                    'Testing',
+                    'Documentation',
+                    'Meeting'
+                ];
+            }
+            return activities;
+        }
+        catch (error) {
+            console.error('❌ Error getting recent notes:', error);
+            // Return defaults on error
+            return [
+                'Development',
+                'Code Review',
+                'Testing',
+                'Documentation',
+                'Meeting'
+            ];
+        }
+    }
+    getLastSession() {
+        try {
+            // Get the most recent session (active or completed)
+            const session = this.localDb.db.prepare(`
+        SELECT * FROM sessions
+        ORDER BY startTime DESC
+        LIMIT 1
+      `).get();
+            return session;
+        }
+        catch (error) {
+            console.error('Error getting last session:', error);
+            return null;
+        }
+    }
+    /**
+     * Validate screenshots for a session using the same rules as productive hours calculation
+     * This ensures consistency between session tracked time and daily productive hours
+     */
+    validateScreenshotsForSession(screenshotIds, sessionId) {
+        if (screenshotIds.length === 0)
+            return 0;
+        const { calculateScreenshotScore, calculateTop80Average } = require('../utils/activityScoreCalculator');
+        // Get all screenshots with their activity periods
+        const screenshotScores = [];
+        for (const screenshotId of screenshotIds) {
+            // Get screenshot details
+            const screenshot = this.localDb.db.prepare(`
+        SELECT id, capturedAt FROM screenshots WHERE id = ?
+      `).get(screenshotId);
+            if (!screenshot)
+                continue;
+            // Get activity periods for this screenshot
+            const periods = this.localDb.db.prepare(`
+        SELECT activityScore FROM activity_periods WHERE screenshotId = ?
+        ORDER BY activityScore DESC
+      `).all(screenshotId);
+            if (periods.length === 0)
+                continue;
+            const scores = periods.map((p) => p.activityScore);
+            const weightedScore = calculateScreenshotScore(scores);
+            screenshotScores.push({
+                screenshotId,
+                capturedAt: screenshot.capturedAt,
+                weightedScore
+            });
+        }
+        // Sort by capture time for neighbor checking
+        screenshotScores.sort((a, b) => a.capturedAt - b.capturedAt);
+        // Apply validation rules
+        let validCount = 0;
+        for (let i = 0; i < screenshotScores.length; i++) {
+            const current = screenshotScores[i];
+            const prev = i > 0 ? screenshotScores[i - 1] : null;
+            const next = i < screenshotScores.length - 1 ? screenshotScores[i + 1] : null;
+            let isValid = false;
+            // Rule 1: Valid if score >= 4.0 (40 on DB scale)
+            if (current.weightedScore >= 40) {
+                isValid = true;
+            }
+            // Rule 2 & 3: Critical (2.5-4.0) has two possible validation paths
+            else if (current.weightedScore >= 25 && current.weightedScore < 40) {
+                // Check Rule 2: if previous or next screenshot has score >= 4.0
+                if ((prev && prev.weightedScore >= 40) || (next && next.weightedScore >= 40)) {
+                    isValid = true;
+                }
+                // Check Rule 3: hourly average condition
+                else {
+                    // Get the hour of this screenshot
+                    const screenshotTime = new Date(current.capturedAt);
+                    const hourStart = new Date(screenshotTime);
+                    hourStart.setMinutes(0, 0, 0);
+                    const hourEnd = new Date(hourStart);
+                    hourEnd.setHours(hourEnd.getHours() + 1);
+                    // Find all screenshots in this hour within the same session
+                    const hourScreenshots = screenshotScores.filter(s => {
+                        return s.capturedAt >= hourStart.getTime() && s.capturedAt < hourEnd.getTime();
+                    });
+                    // Check if hour has 6+ screenshots
+                    if (hourScreenshots.length >= 6) {
+                        // Collect all activity period scores for the hour
+                        const hourPeriodScores = [];
+                        for (const hs of hourScreenshots) {
+                            const periods = this.localDb.db.prepare(`
+                SELECT activityScore FROM activity_periods WHERE screenshotId = ?
+              `).all(hs.screenshotId);
+                            hourPeriodScores.push(...periods.map((p) => p.activityScore));
+                        }
+                        // Calculate top 80% average
+                        if (hourPeriodScores.length > 0) {
+                            const avgScore = calculateTop80Average(hourPeriodScores, `Session-${sessionId}-Hour`);
+                            // Check if average >= 4.0 (40 on DB scale)
+                            if (avgScore >= 40) {
+                                isValid = true;
+                            }
+                        }
+                    }
+                }
+            }
+            // Rule 4: Inactive (< 2.5) is never valid
+            if (isValid) {
+                validCount++;
+            }
+        }
+        return validCount;
     }
 }
 exports.DatabaseService = DatabaseService;

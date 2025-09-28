@@ -9,6 +9,7 @@ const path_1 = __importDefault(require("path"));
 exports.default = (0, vite_1.defineConfig)({
     plugins: [(0, plugin_react_1.default)()],
     root: path_1.default.join(__dirname, 'src/renderer'),
+    base: './', // Relative paths for Electron
     build: {
         outDir: path_1.default.join(__dirname, 'dist/renderer'),
         emptyOutDir: true,

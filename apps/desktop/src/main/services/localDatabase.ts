@@ -261,10 +261,20 @@ export class LocalDatabase {
   
   getSession(sessionId: string): Session | null {
     const stmt = this.db.prepare(`
-      SELECT * FROM sessions 
+      SELECT * FROM sessions
       WHERE id = ?
     `);
     return stmt.get(sessionId) as Session | null;
+  }
+
+  getLatestScreenshotForSession(sessionId: string): Screenshot | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM screenshots
+      WHERE sessionId = ?
+      ORDER BY capturedAt DESC
+      LIMIT 1
+    `);
+    return stmt.get(sessionId) as Screenshot | null;
   }
   
   // Activity period operations

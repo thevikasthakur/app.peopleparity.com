@@ -15,8 +15,13 @@ class ScreenshotService {
         this.db = db;
         this.isCapturing = false;
         this.captureTimers = new Map();
+        this.activityTracker = null;
+        this.autoSessionCreationEnabled = true; // Flag to control auto session creation
         this.screenshotDir = path_1.default.join(electron_1.app.getPath('userData'), 'screenshots');
         this.ensureScreenshotDir();
+    }
+    setActivityTracker(tracker) {
+        this.activityTracker = tracker;
     }
     async start() {
         if (this.isCapturing) {
@@ -36,6 +41,20 @@ class ScreenshotService {
         this.isCapturing = false;
         this.captureTimers.forEach(timer => clearTimeout(timer));
         this.captureTimers.clear();
+    }
+    /**
+     * Disable auto session creation (used after concurrent session detection)
+     */
+    disableAutoSessionCreation() {
+        console.log('🔒 Auto session creation disabled');
+        this.autoSessionCreationEnabled = false;
+    }
+    /**
+     * Enable auto session creation
+     */
+    enableAutoSessionCreation() {
+        console.log('🔓 Auto session creation enabled');
+        this.autoSessionCreationEnabled = true;
     }
     async ensureScreenshotDir() {
         try {
@@ -88,14 +107,18 @@ class ScreenshotService {
             console.log('No active session, skipping screenshot');
             return;
         }
-        // Get the real-time activity score
-        const realtimeScore = currentActivity.activityScore || 0;
-        console.log(`Real-time activity score: ${realtimeScore}`);
-        // Always take screenshots when there's an active session
-        // This allows users to see their actual activity levels, even if 0%
+        // Get the full session data
+        const session = await this.db.getActiveSession();
+        const currentUser = this.db.getCurrentUser();
+        if (!currentUser) {
+            console.error('No current user found');
+            return;
+        }
+        // Store the capture timestamp
+        const captureTimestamp = new Date();
         try {
             const img = await (0, screenshot_desktop_1.default)();
-            const filename = `${Date.now()}_${crypto_1.default.randomBytes(4).toString('hex')}.jpg`;
+            const filename = `${captureTimestamp.getTime()}_${crypto_1.default.randomBytes(4).toString('hex')}.jpg`;
             const localPath = path_1.default.join(this.screenshotDir, filename);
             await (0, sharp_1.default)(img)
                 .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
@@ -107,19 +130,27 @@ class ScreenshotService {
                 .resize(320, 180, { fit: 'cover' })
                 .jpeg({ quality: 70 })
                 .toFile(thumbnailPath);
-            // Save screenshot with the activity score metadata
+            // Store screenshot in memory instead of saving to database immediately
+            const screenshotId = crypto_1.default.randomUUID();
             const screenshotData = {
-                activityPeriodId: currentActivity.periodId,
+                id: screenshotId,
+                userId: currentUser.id,
+                sessionId: currentActivity.sessionId,
                 localPath,
                 thumbnailPath,
-                capturedAt: new Date(),
-                activityScore: realtimeScore // Include the real-time activity score
+                capturedAt: captureTimestamp,
+                mode: session?.mode || 'command_hours',
+                notes: session?.task || undefined
             };
-            await this.db.saveScreenshot(screenshotData);
-            // Also update the activity period with the current score if needed
-            // This ensures the period has the latest activity data
-            console.log(`Screenshot saved with activity score: ${realtimeScore}%`);
-            console.log(`Screenshot captured: ${filename}`);
+            // Store in memory via activity tracker
+            if (this.activityTracker) {
+                this.activityTracker.storeScreenshotInMemory(screenshotData);
+                console.log(`Screenshot ${screenshotId} stored in memory, will be saved when window completes`);
+            }
+            else {
+                console.warn('ActivityTracker not set, cannot store screenshot in memory');
+            }
+            console.log(`Screenshot captured at ${captureTimestamp.toISOString()}: ${filename}`);
         }
         catch (error) {
             console.error('Failed to capture screenshot:', error);

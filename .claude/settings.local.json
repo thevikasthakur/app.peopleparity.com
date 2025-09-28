@@ -51,7 +51,12 @@
       "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR DEFAULT ''UTC'';\")",
       "Bash(echo $STAGE)",
       "Bash(echo $SCREENSHOTS_BUCKET)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(move buildpeople-parity-logo.png appsdesktopbuildpeople-parity-logo.png)",
+      "Bash(move buildicon.ico appsdesktopbuildicon.ico)",
+      "Bash(xargs rm:*)",
+      "Bash(npx:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []
