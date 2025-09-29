@@ -496,7 +496,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           <p>Daily Target: {markers.dailyTarget}h</p>
           {markers.hasHoliday ? (
             <p className="text-amber-600 font-medium">
-              🎉 Short week ({markers.dailyTarget}h/day)
+              🎉 Short Work Week - Higher Daily Target
             </p>
           ) : (
             <p className="text-gray-600">Regular week ({markers.dailyTarget}h/day)</p>

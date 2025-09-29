@@ -1885,7 +1885,7 @@ function setupIpcHandlers() {
       dailyData = await productiveHoursService.getDailyHoursForWeek(currentUser.id, selectedDate);
     }
     
-    const markers = productiveHoursService.getWeeklyMarkers();
+    const markers = productiveHoursService.getWeeklyMarkers(selectedDate);
     
     // Only calculate average activity score locally if not provided by cloud
     if (averageActivityScore === undefined) {

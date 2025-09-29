@@ -210,25 +210,24 @@ export class ProductiveHoursService {
   }
 
   /**
-   * Check if current week has holidays
+   * Check if specific week has holidays
    */
-  private hasHolidayInCurrentWeek(): { hasHoliday: boolean; holidayCount: number } {
-    const now = new Date();
-    const year = now.getFullYear().toString();
-    
+  private hasHolidayInWeek(date: Date = new Date()): { hasHoliday: boolean; holidayCount: number } {
+    const year = date.getFullYear().toString();
+
     if (!this.holidayConfig[year]) {
       return { hasHoliday: false, holidayCount: 0 };
     }
 
     const holidays = this.holidayConfig[year].finalHolidayList || [];
-    
+
     // Get start of the week (Monday)
-    const weekStart = new Date(now);
-    const dayOfWeek = now.getDay();
+    const weekStart = new Date(date);
+    const dayOfWeek = date.getDay();
     const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
-    weekStart.setDate(now.getDate() - daysToMonday);
+    weekStart.setDate(date.getDate() - daysToMonday);
     weekStart.setHours(0, 0, 0, 0);
-    
+
     // Get end of the week (Saturday)
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
@@ -251,13 +250,20 @@ export class ProductiveHoursService {
   }
 
   /**
+   * Check if current week has holidays
+   */
+  private hasHolidayInCurrentWeek(): { hasHoliday: boolean; holidayCount: number } {
+    return this.hasHolidayInWeek(new Date());
+  }
+
+  /**
    * Get weekly markers and attendance calculation
    */
-  getWeeklyMarkers() {
-    const { hasHoliday, holidayCount } = this.hasHolidayInCurrentWeek();
+  getWeeklyMarkers(date: Date = new Date()) {
+    const { hasHoliday, holidayCount } = this.hasHolidayInWeek(date);
     const workingDays = 5 - holidayCount; // 5 weekdays minus holidays
     const dailyTarget = hasHoliday ? 10.5 : 9;
-    
+
     return {
       dailyTarget,
       maxScale: 45,

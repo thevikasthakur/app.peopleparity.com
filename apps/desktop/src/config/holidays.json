@@ -1,4 +1,64 @@
 {
+  "2025": {
+    "fixedHolidays": [
+      {
+        "date": "2025-01-26",
+        "name": "Republic Day",
+        "type": "national"
+      },
+      {
+        "date": "2025-03-14",
+        "name": "Holi",
+        "type": "festival"
+      },
+      {
+        "date": "2025-03-31",
+        "name": "Eid-ul-Fitr",
+        "type": "festival"
+      },
+      {
+        "date": "2025-08-09",
+        "name": "Raksha Bandhan",
+        "type": "festival"
+      },
+      {
+        "date": "2025-08-15",
+        "name": "Independence Day",
+        "type": "national"
+      },
+      {
+        "date": "2025-10-02",
+        "name": "Gandhi Jayanti",
+        "type": "national"
+      },
+      {
+        "date": "2025-10-20",
+        "name": "Diwali (Lakshmi Puja)",
+        "type": "festival"
+      },
+      {
+        "date": "2025-10-21",
+        "name": "Diwali (Govardhan Puja)",
+        "type": "festival"
+      },
+      {
+        "date": "2025-12-25",
+        "name": "Christmas",
+        "type": "festival"
+      }
+    ],
+    "finalHolidayList": [
+      "2025-01-26",
+      "2025-03-14",
+      "2025-03-31",
+      "2025-08-09",
+      "2025-08-15",
+      "2025-10-02",
+      "2025-10-20",
+      "2025-10-21",
+      "2025-12-25"
+    ]
+  },
   "2026": {
     "fixedHolidays": [
       {
