@@ -56,7 +56,8 @@
       "Bash(move buildicon.ico appsdesktopbuildicon.ico)",
       "Bash(xargs rm:*)",
       "Bash(npx:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(xcopy:*)"
     ],
     "deny": [],
     "ask": []

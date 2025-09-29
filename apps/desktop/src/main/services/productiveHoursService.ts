@@ -55,21 +55,21 @@ export class ProductiveHoursService {
   }
 
   /**
-   * Check if a given date has a holiday
+   * Check if a given date's week has a holiday (simple boolean check)
    */
-  private hasHolidayInWeek(date: Date): boolean {
+  private hasHolidayInWeekSimple(date: Date): boolean {
     const year = date.getFullYear().toString();
     if (!this.holidayConfig[year]) return false;
 
     const holidays = this.holidayConfig[year].finalHolidayList || [];
-    
+
     // Get start and end of the week (Monday as first day)
     const weekStart = new Date(date);
     const dayOfWeek = date.getDay();
     const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
     weekStart.setDate(date.getDate() - daysToMonday);
     weekStart.setHours(0, 0, 0, 0);
-    
+
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6); // Saturday
     weekEnd.setHours(23, 59, 59, 999);
@@ -252,8 +252,8 @@ export class ProductiveHoursService {
   /**
    * Check if current week has holidays
    */
-  private hasHolidayInCurrentWeek(): { hasHoliday: boolean; holidayCount: number } {
-    return this.hasHolidayInWeek(new Date());
+  private hasHolidayInCurrentWeek(): boolean {
+    return this.hasHolidayInWeekSimple(new Date());
   }
 
   /**
