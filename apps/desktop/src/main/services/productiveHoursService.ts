@@ -27,10 +27,12 @@ export class ProductiveHoursService {
     try {
       // Try multiple paths for development and production
       const possiblePaths = [
+        path.join(__dirname, '../config/holidays.json'), // Compiled dist path
         path.join(__dirname, '../../config/holidays.json'),
         path.join(__dirname, '../../../src/config/holidays.json'),
         path.join(__dirname, '../../src/config/holidays.json'),
         path.join(process.cwd(), 'src/config/holidays.json'),
+        path.join(process.cwd(), 'apps/desktop/src/config/holidays.json'),
       ];
 
       let configData: string | null = null;
@@ -44,8 +46,10 @@ export class ProductiveHoursService {
 
       if (configData) {
         this.holidayConfig = JSON.parse(configData);
+        console.log(`📅 Holiday config loaded for years: ${Object.keys(this.holidayConfig).join(', ')}`);
       } else {
         console.warn('⚠️ Holiday config file not found in any expected location');
+        console.log('Tried paths:', possiblePaths);
         this.holidayConfig = {};
       }
     } catch (error) {
@@ -263,6 +267,13 @@ export class ProductiveHoursService {
     const { hasHoliday, holidayCount } = this.hasHolidayInWeek(date);
     const workingDays = 5 - holidayCount; // 5 weekdays minus holidays
     const dailyTarget = hasHoliday ? 10.5 : 9;
+
+    console.log(`📊 Weekly Markers for week of ${date.toDateString()}:`, {
+      hasHoliday,
+      holidayCount,
+      workingDays,
+      dailyTarget
+    });
 
     return {
       dailyTarget,
