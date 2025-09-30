@@ -1,8 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Inject } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Between } from "typeorm";
 import { Screenshot } from "../../entities/screenshot.entity";
 import { ActivityPeriod } from "../../entities/activity-period.entity";
+import { HolidayService } from "./holiday.service";
 
 @Injectable()
 export class ProductiveHoursService {
@@ -10,7 +11,9 @@ export class ProductiveHoursService {
     @InjectRepository(Screenshot)
     private screenshotRepository: Repository<Screenshot>,
     @InjectRepository(ActivityPeriod)
-    private activityPeriodRepository: Repository<ActivityPeriod>
+    private activityPeriodRepository: Repository<ActivityPeriod>,
+    @Inject(HolidayService)
+    private holidayService: HolidayService
   ) {}
 
   async getDailyProductiveHours(userId: string, date: Date) {
@@ -257,6 +260,11 @@ export class ProductiveHoursService {
       // Calculate activity level label
       const activityLevel = this.getActivityLevel(averageActivityScore);
 
+      // Get holiday-aware markers and messages
+      const markers = this.holidayService.getScaleMarkers(date);
+      const message = this.holidayService.getManagerMessage(productiveHours, date);
+      const attendance = this.holidayService.getAttendanceStatus(productiveHours, date);
+
       return {
         productiveHours: Math.round(productiveHours * 100) / 100,
         averageActivityScore: Math.round(averageActivityScore * 10) / 10,
@@ -264,6 +272,9 @@ export class ProductiveHoursService {
         totalScreenshots: screenshots.length,
         validScreenshots: Math.floor(validMinutes / 10),
         date: date.toISOString().split("T")[0],
+        markers,
+        message,
+        attendance,
       };
     } catch (error) {
       console.error("❌ Error in getDailyProductiveHours:", error);
@@ -380,6 +391,11 @@ export class ProductiveHoursService {
       // Calculate activity level label
       const activityLevel = this.getActivityLevel(averageActivityScore);
 
+      // Get holiday-aware markers for the week
+      const markers = this.holidayService.getScaleMarkers(date);
+      const message = this.holidayService.getManagerMessage(totalHours, date);
+      const attendance = this.holidayService.getAttendanceStatus(totalHours, date);
+
       return {
         productiveHours: Math.round(totalHours * 100) / 100,
         averageActivityScore: Math.round(averageActivityScore * 10) / 10,
@@ -387,6 +403,9 @@ export class ProductiveHoursService {
         dailyData,
         weekStart: startOfWeek.toISOString().split("T")[0],
         weekEnd: endOfWeek.toISOString().split("T")[0],
+        markers,
+        message,
+        attendance,
       };
     } catch (error) {
       console.error("❌ Error in getWeeklyProductiveHours:", error);

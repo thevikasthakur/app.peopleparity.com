@@ -131,38 +131,9 @@ export const apiService = {
       }
       const response = await api.get('/api/analytics/productive-hours/daily', { params: queryParams });
 
-      // The response already has productiveHours and averageActivityScore
+      // The backend now returns all data including holiday-aware markers
       if (response.data) {
-        const productiveHours = response.data.productiveHours || 0;
-        const averageActivityScore = response.data.averageActivityScore || 0;
-
-        return {
-          productiveHours: productiveHours,
-          averageActivityScore: averageActivityScore,
-          markers: {
-            halfAttendance: 4.5,
-            threeQuarterAttendance: 6.75,
-            fullAttendance: 9,
-            maxScale: 12,
-            isHolidayWeek: false
-          },
-          message: productiveHours >= 9 ? "Excellent work! Full attendance achieved!" :
-                   productiveHours >= 6.75 ? "Great progress! Keep it up!" :
-                   productiveHours >= 4.5 ? "Good start! Push for more!" :
-                   "Let's get started and build momentum!",
-          attendance: {
-            earned: productiveHours >= 9 ? 100 :
-                    productiveHours >= 6.75 ? 75 :
-                    productiveHours >= 4.5 ? 50 : 0,
-            status: productiveHours >= 9 ? "Full Attendance" :
-                    productiveHours >= 6.75 ? "Good Day" :
-                    productiveHours >= 4.5 ? "Half Day" : "No Attendance",
-            color: productiveHours >= 9 ? "#10b981" :
-                   productiveHours >= 6.75 ? "#3b82f6" :
-                   productiveHours >= 4.5 ? "#f59e0b" : "#ef4444",
-            isWeekend: new Date().getDay() === 0 || new Date().getDay() === 6
-          }
-        };
+        return response.data; // Backend now provides all necessary fields
       }
 
       // Return default data if no response
