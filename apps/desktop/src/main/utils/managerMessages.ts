@@ -10,59 +10,39 @@ interface MessageContext {
   currentSessionMinutes: number;
   targetDailyHours: number;
   targetWeeklyHours: number;
+  festivalsInWeek?: { name: string; date: string; isWeekend: boolean }[]; // Actual festivals from config
 }
 
+// Legacy hardcoded festivals - should be replaced by actual holiday config
+// These are kept only as a fallback when festivalsInWeek is not provided
 interface Festival {
   date: string; // MM-DD format
   name: string;
 }
 
-const festivals: Festival[] = [
-  { date: '01-26', name: 'Republic Day' },
-  { date: '03-08', name: 'Holi' },
-  { date: '08-15', name: 'Independence Day' },
-  { date: '10-02', name: 'Gandhi Jayanti' },
-  { date: '10-24', name: 'Diwali' },
-  { date: '12-25', name: 'Christmas' }
-];
+const festivals: Festival[] = [];
 
-function getFestivalToday(month: number, day: number): string | null {
-  const dateStr = `${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-  const festival = festivals.find(f => f.date === dateStr);
-  return festival?.name || null;
+function getFestivalToday(month: number, day: number, festivalsInWeek?: { name: string; date: string; isWeekend: boolean }[]): string | null {
+  // Use actual festival data if provided
+  if (festivalsInWeek && festivalsInWeek.length > 0) {
+    const todayStr = `${new Date().getFullYear()}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    const festivalToday = festivalsInWeek.find(f => f.date === todayStr);
+    return festivalToday?.name || null;
+  }
+  return null;
 }
 
-function getFestivalInWeek(month: number, day: number, year?: number): { name: string; isWeekend: boolean } | null {
-  // Check if there's a festival in the CURRENT WEEK (Mon-Sun)
-  const currentYear = year || new Date().getFullYear();
-  const currentDate = new Date(currentYear, month - 1, day); // JavaScript months are 0-indexed
-
-  // Calculate the start (Monday) and end (Sunday) of the current week
-  const dayOfWeek = currentDate.getDay();
-  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // If Sunday (0), go back 6 days to Monday
-
-  const weekStart = new Date(currentDate);
-  weekStart.setDate(currentDate.getDate() - daysToMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6); // Saturday (end of week)
-  weekEnd.setHours(23, 59, 59, 999);
-
-  // Check each day in the current week for a festival
-  for (let i = 0; i <= 6; i++) {
-    const checkDate = new Date(weekStart);
-    checkDate.setDate(weekStart.getDate() + i);
-    const checkMonth = checkDate.getMonth() + 1;
-    const checkDay = checkDate.getDate();
-    const dateStr = `${checkMonth.toString().padStart(2, '0')}-${checkDay.toString().padStart(2, '0')}`;
-
-    const festival = festivals.find(f => f.date === dateStr);
-    if (festival) {
-      // Check if this festival falls on a weekend (0 = Sunday, 6 = Saturday)
-      const festivalDayOfWeek = checkDate.getDay();
-      const isWeekend = festivalDayOfWeek === 0 || festivalDayOfWeek === 6;
-      return { name: festival.name, isWeekend };
+function getFestivalInWeek(festivalsInWeek?: { name: string; date: string; isWeekend: boolean }[]): { name: string; isWeekend: boolean } | null {
+  // Use actual festival data from config if provided
+  if (festivalsInWeek && festivalsInWeek.length > 0) {
+    // Find first festival that's not on weekend
+    const weekdayFestival = festivalsInWeek.find(f => !f.isWeekend);
+    if (weekdayFestival) {
+      return { name: weekdayFestival.name, isWeekend: false };
+    }
+    // If all festivals are on weekend, return first one
+    if (festivalsInWeek.length > 0) {
+      return { name: festivalsInWeek[0].name, isWeekend: true };
     }
   }
   return null;
@@ -84,14 +64,26 @@ export function getManagerMessage(context: MessageContext): string {
     isHolidayWeek,
     currentSessionMinutes,
     targetDailyHours = 8,
-    targetWeeklyHours = 40
+    targetWeeklyHours = 40,
+    festivalsInWeek
   } = context;
 
   // Check for festival in the coming week (not on the day itself as it's a holiday)
-  const festivalInfo = getFestivalInWeek(month, dayOfMonth);
+  const festivalInfo = getFestivalInWeek(festivalsInWeek);
   const festivalInWeek = festivalInfo?.name || null;
   const festivalOnWeekend = festivalInfo?.isWeekend || false;
-  const festivalToday = getFestivalToday(month, dayOfMonth);
+  const festivalToday = getFestivalToday(month, dayOfMonth, festivalsInWeek);
+
+  console.log('📅 Manager Message Context:', {
+    festivalsInWeek,
+    festivalInWeek,
+    festivalOnWeekend,
+    festivalToday,
+    isHolidayWeek,
+    dayOfWeek,
+    month,
+    dayOfMonth
+  });
   const isFriday = dayOfWeek === 5;
   const isMonday = dayOfWeek === 1;
   const isSalaryDay = dayOfMonth === 5;
@@ -408,7 +400,7 @@ export function getManagerMessage(context: MessageContext): string {
 }
 
 export function getWeeklyMarathonMessage(context: MessageContext): string {
-  const { trackedHoursWeek, targetWeeklyHours = 40, dayOfWeek } = context;
+  const { trackedHoursWeek, targetWeeklyHours = 40, dayOfWeek, festivalsInWeek } = context;
   const remainingHours = Math.max(0, targetWeeklyHours - trackedHoursWeek);
   const weeklyProgress = (trackedHoursWeek / targetWeeklyHours) * 100;
   // Calculate days remaining in work week (Mon-Fri)

@@ -70,7 +70,8 @@ interface ScreenshotGridProps {
 }
 
 function percentageToTenScale(percentage: number): number {
-  return Math.round(percentage) / 10;
+  // Convert from 0-100 scale to 0-10 scale with one decimal place
+  return Math.round(percentage / 10 * 10) / 10;
 }
 
 function getTimezoneAbbr(date: Date, timezone: string): string {
@@ -803,7 +804,34 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                         <label className="text-xs text-gray-500 uppercase tracking-wider">Overall Score</label>
                         <div className="flex items-center gap-3 mt-1">
                           {(() => {
-                            const scoreOutOf10 = percentageToTenScale(selectedScreenshot.activityScore || 0);
+                            // Calculate the correct average of activity scores
+                            // Matching the exact implementation from the API/desktop app
+                            let calculatedScore = selectedScreenshot.activityScore || 0;
+
+                            if (activityPeriods && activityPeriods.length > 0) {
+                              const allScores = activityPeriods.map(p => p.activityScore || 0);
+                              const sortedScores = allScores.sort((a, b) => b - a);
+
+                              let scoresToAverage: number[];
+
+                              if (allScores.length > 8) {
+                                // More than 8 periods: Take best 8 scores only
+                                scoresToAverage = sortedScores.slice(0, 8);
+                              } else if (allScores.length > 4) {
+                                // 5-8 periods: Discard worst 1 score
+                                scoresToAverage = sortedScores.slice(0, -1);
+                              } else {
+                                // 4 or fewer periods: Simple average of all scores
+                                scoresToAverage = sortedScores;
+                              }
+
+                              // Calculate average of selected scores
+                              if (scoresToAverage.length > 0) {
+                                calculatedScore = scoresToAverage.reduce((acc, score) => acc + score, 0) / scoresToAverage.length;
+                              }
+                            }
+
+                            const scoreOutOf10 = percentageToTenScale(calculatedScore);
                             const level = getActivityLevel(scoreOutOf10);
                             return (
                               <>
@@ -812,7 +840,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                     <div
                                       className="h-full rounded-full"
                                       style={{
-                                        width: `${(selectedScreenshot.activityScore || 0)}%`,
+                                        width: `${calculatedScore}%`,
                                         backgroundColor: level.color
                                       }}
                                     />

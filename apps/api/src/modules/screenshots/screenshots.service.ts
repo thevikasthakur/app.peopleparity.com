@@ -213,10 +213,8 @@ export class ScreenshotsService {
     // Map to include device info and calculate average activity score
     return screenshots.map((screenshot) => {
       const activityPeriods = screenshot.activityPeriods || [];
-      const validPeriods = activityPeriods.filter(p => p.isValid);
-      const activityScore = validPeriods.length > 0
-        ? validPeriods.reduce((sum, p) => sum + p.activityScore, 0) / validPeriods.length
-        : 0;
+      // Use the proper weighted average calculation
+      const activityScore = this.calculateScreenshotScore(activityPeriods);
 
       return {
         ...screenshot,
@@ -306,5 +304,48 @@ export class ScreenshotsService {
   async deleteActivityPeriods(screenshotId: string): Promise<void> {
     // Delete all activity periods associated with this screenshot
     await this.activityPeriodsRepository.delete({ screenshotId });
+  }
+
+  /**
+   * Calculate weighted average activity score for a screenshot
+   * Uses the same logic as the frontend and productive-hours service:
+   * - More than 8 periods: Take best 8 scores only
+   * - 5-8 periods: Discard worst 1 score
+   * - 4 or fewer periods: Simple average
+   */
+  private calculateScreenshotScore(activityPeriods: any[]): number {
+    if (!activityPeriods || activityPeriods.length === 0) {
+      return 0;
+    }
+
+    // Extract all scores (not filtering by isValid - we want all activity scores)
+    const scores = activityPeriods
+      .map(period => period.activityScore || 0)
+      .sort((a, b) => b - a); // Sort descending (highest first)
+
+    if (scores.length === 0) {
+      return 0;
+    }
+
+    let scoresToAverage: number[];
+
+    if (scores.length > 8) {
+      // More than 8 periods: Take best 8 scores only
+      scoresToAverage = scores.slice(0, 8);
+    } else if (scores.length > 4) {
+      // 5-8 periods: Discard worst 1 score
+      scoresToAverage = scores.slice(0, -1);
+    } else {
+      // 4 or fewer periods: Simple average of all
+      scoresToAverage = scores;
+    }
+
+    // Calculate average of selected scores
+    const average = scoresToAverage.reduce((sum, score) => sum + score, 0) / scoresToAverage.length;
+
+    // Log for debugging
+    console.log(`📊 Activity score calculation: ${scores.length} total periods, using ${scoresToAverage.length} scores, average: ${average.toFixed(2)}`);
+
+    return average;
   }
 }

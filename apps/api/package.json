@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "kill-ports": "lsof -ti:3001,3002 | xargs kill -9 2>/dev/null || true",
+    "predev": "npm run kill-ports",
     "dev": "AWS_PROFILE=pp-api AWS_SDK_LOAD_CONFIG=1 serverless offline --stage dev",
+    "preprodfromlocal": "npm run kill-ports",
     "prodfromlocal": "AWS_PROFILE=pp-api AWS_SDK_LOAD_CONFIG=1 serverless offline --stage prod",
     "dev:traditional": "node start-traditional.js",
     "build": "nest build",

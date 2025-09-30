@@ -89,8 +89,8 @@ export class ProductiveHoursService {
    * Get scale markers based on whether there's a holiday in the week
    */
   getScaleMarkers(date: Date = new Date()) {
-    const hasHoliday = this.hasHolidayInWeek(date);
-    
+    const hasHoliday = this.hasHolidayInWeekSimple(date);
+
     if (hasHoliday) {
       return {
         halfAttendance: 5.5,
@@ -137,6 +137,7 @@ export class ProductiveHoursService {
    */
   getHustleMessage(hours: number, markers: any, lastActivityScore: number = 5): string {
     const now = new Date();
+    const festivalsInWeek = this.getFestivalsInWeek(now);
     const context = {
       currentHour: now.getUTCHours(),
       dayOfWeek: now.getUTCDay(),
@@ -148,7 +149,8 @@ export class ProductiveHoursService {
       isHolidayWeek: markers.isHolidayWeek || false,
       currentSessionMinutes: 0, // Will be passed from session
       targetDailyHours: markers.fullAttendance || 8,
-      targetWeeklyHours: 40
+      targetWeeklyHours: 40,
+      festivalsInWeek // Pass actual festivals from config
     };
 
     return getManagerMessage(context);
@@ -551,12 +553,55 @@ export class ProductiveHoursService {
   }
 
   /**
+   * Get festivals in the current week
+   */
+  getFestivalsInWeek(date: Date = new Date()): { name: string; date: string; isWeekend: boolean }[] {
+    const year = date.getFullYear().toString();
+    const result: { name: string; date: string; isWeekend: boolean }[] = [];
+
+    if (!this.holidayConfig[year]) {
+      return result;
+    }
+
+    const holidays = this.holidayConfig[year].fixedHolidays || [];
+
+    // Get start and end of the week (Monday as first day)
+    const weekStart = new Date(date);
+    const dayOfWeek = date.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    weekStart.setDate(date.getDate() - daysToMonday);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    // Check each holiday
+    holidays.forEach(holiday => {
+      const hDate = new Date(holiday.date);
+      if (hDate >= weekStart && hDate <= weekEnd) {
+        const dayOfWeek = hDate.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        result.push({
+          name: holiday.name,
+          date: holiday.date,
+          isWeekend
+        });
+      }
+    });
+
+    console.log(`🎉 Festivals in week of ${date.toDateString()}:`, result);
+    return result;
+  }
+
+  /**
    * Get weekly marathon message
    */
   getWeeklyMessage(hours: number, attendance: any, markers: any): string {
     const now = new Date();
     const targetWeeklyHours = markers.dailyTarget * markers.workingDays;
-    
+    const festivalsInWeek = this.getFestivalsInWeek(now);
+
     const context = {
       currentHour: now.getUTCHours(),
       dayOfWeek: now.getUTCDay(),
@@ -568,7 +613,8 @@ export class ProductiveHoursService {
       isHolidayWeek: markers.hasHoliday || false,
       currentSessionMinutes: 0,
       targetDailyHours: markers.dailyTarget || 9,
-      targetWeeklyHours: targetWeeklyHours || 45
+      targetWeeklyHours: targetWeeklyHours || 45,
+      festivalsInWeek // Pass actual festivals from config
     };
 
     return getWeeklyMarathonMessage(context);
