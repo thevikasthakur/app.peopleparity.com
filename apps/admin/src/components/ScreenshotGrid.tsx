@@ -57,6 +57,15 @@ interface Screenshot {
   mode: 'client_hours' | 'command_hours' | 'client' | 'command';
   deviceInfo?: string;
   activityPeriods?: ActivityPeriod[];
+  hasBotDetection?: boolean;
+}
+
+interface DetailedScreenshot extends Screenshot {
+  botDetectionSummary?: {
+    periodsWithBotActivity: number;
+    totalPeriods: number;
+    reasons: string[];
+  };
 }
 
 interface ScreenshotGridProps {
@@ -139,7 +148,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
   const [activityPeriods, setActivityPeriods] = useState<ActivityPeriod[]>([]);
   const [loadingActivityPeriods, setLoadingActivityPeriods] = useState(false);
   const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
-  const [detailedScreenshot, setDetailedScreenshot] = useState<any>(null);
+  const [detailedScreenshot, setDetailedScreenshot] = useState<DetailedScreenshot | null>(null);
   const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
 
   const getTimestamp = (screenshot: Screenshot) => {
@@ -914,7 +923,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                           <div className="mt-2">
                             <p className="font-medium mb-1">Suspicious patterns detected:</p>
                             <ul className="list-disc list-inside space-y-0.5">
-                              {detailedScreenshot.botDetectionSummary.reasons.slice(0, 3).map((reason, idx) => (
+                              {detailedScreenshot.botDetectionSummary.reasons.slice(0, 3).map((reason: string, idx: number) => (
                                 <li key={idx} className="text-xs">{reason}</li>
                               ))}
                             </ul>
