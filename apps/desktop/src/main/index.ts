@@ -926,7 +926,7 @@ app.whenReady().then(async () => {
         // Show notification to user
         const notification = new Notification({
           title: 'Previous Session Ended',
-          body: 'Your previous session was inactive for too long or from a different day. Please start a new tracking session.',
+          body: 'Please start a new tracking session.',
           urgency: 'normal'
         });
         notification.show();

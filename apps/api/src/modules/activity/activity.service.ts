@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ActivityPeriod } from '../../entities/activity-period.entity';
 import { SessionsService } from '../sessions/sessions.service';
+import { BotDetectionService } from './bot-detection.service';
 
 @Injectable()
 export class ActivityService {
@@ -10,6 +11,7 @@ export class ActivityService {
     @InjectRepository(ActivityPeriod)
     private activityPeriodsRepository: Repository<ActivityPeriod>,
     @Inject(SessionsService) private readonly sessionsService: SessionsService,
+    private readonly botDetectionService: BotDetectionService,
   ) {}
 
   async create(createActivityDto: {
@@ -69,15 +71,30 @@ export class ActivityService {
       }
     }
     
-    // Log if metrics are present
+    // Analyze metrics for bot detection
     if (createActivityDto.metrics) {
       const metricsKeys = Object.keys(createActivityDto.metrics);
       console.log('Activity period includes detailed metrics:', metricsKeys.join(', '));
-      
-      // Log bot detection if present
-      if (createActivityDto.metrics.botDetection?.keyboardBotDetected || 
-          createActivityDto.metrics.botDetection?.mouseBotDetected) {
-        console.log('⚠️ Bot activity detected in period:', createActivityDto.id);
+
+      // Run bot detection analysis with defensive check
+      if (this.botDetectionService) {
+        try {
+          const botDetectionResult = this.botDetectionService.detectBotActivity(createActivityDto.metrics);
+
+          // Add bot detection results to metrics
+          createActivityDto.metrics.botDetection = botDetectionResult;
+
+          // Log if bot activity detected
+          if (botDetectionResult.keyboardBotDetected || botDetectionResult.mouseBotDetected) {
+            console.log('🤖 Bot activity detected in period:', createActivityDto.id);
+            console.log('   Confidence:', botDetectionResult.confidence);
+            console.log('   Reasons:', botDetectionResult.reasons);
+          }
+        } catch (error) {
+          console.error('Error during bot detection:', error);
+        }
+      } else {
+        console.warn('BotDetectionService not available - skipping bot detection analysis');
       }
     }
     

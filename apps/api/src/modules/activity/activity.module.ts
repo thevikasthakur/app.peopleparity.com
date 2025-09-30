@@ -4,14 +4,15 @@ import { ActivityService } from './activity.service';
 import { ActivityController, ActivitiesController } from './activity.controller';
 import { ActivityPeriod } from '../../entities/activity-period.entity';
 import { SessionsModule } from '../sessions/sessions.module';
+import { BotDetectionService } from './bot-detection.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ActivityPeriod]),
     SessionsModule, // Import SessionsModule to use SessionsService
   ],
-  providers: [ActivityService],
+  providers: [ActivityService, BotDetectionService],
   controllers: [ActivityController, ActivitiesController],
-  exports: [ActivityService],
+  exports: [ActivityService, BotDetectionService],
 })
 export class ActivityModule {}

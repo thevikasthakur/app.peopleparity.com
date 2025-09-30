@@ -139,6 +139,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
   const [activityPeriods, setActivityPeriods] = useState<ActivityPeriod[]>([]);
   const [loadingActivityPeriods, setLoadingActivityPeriods] = useState(false);
   const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
+  const [detailedScreenshot, setDetailedScreenshot] = useState<any>(null);
   const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
 
   const getTimestamp = (screenshot: Screenshot) => {
@@ -220,6 +221,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
       if (!selectedScreenshot) {
         setActivityPeriods([]);
         setExpandedMinutes(new Set());
+        setDetailedScreenshot(null);
         return;
       }
 
@@ -227,9 +229,11 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
       try {
         const details = await apiService.getScreenshotDetails(selectedScreenshot.id);
         setActivityPeriods(details.activityPeriods || []);
+        setDetailedScreenshot(details); // Store the full detailed screenshot with bot detection summary
       } catch (error) {
         console.error('Error fetching activity periods:', error);
         setActivityPeriods([]);
+        setDetailedScreenshot(null);
       } finally {
         setLoadingActivityPeriods(false);
       }
@@ -596,17 +600,23 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     <div className="absolute top-2 right-2">
                       <div className="text-right">
                         <div
-                          className="px-2 py-1 rounded-full text-xs font-medium backdrop-blur text-white"
+                          className="px-1 py-0 rounded-full text-[8px] font-medium backdrop-blur text-white"
                           style={{ backgroundColor: level.color + 'CC' }}
                         >
                           {scoreOutOf10.toFixed(1)}
                         </div>
                         <div
-                          className="mt-1 px-1 py-0.5 rounded text-[10px] font-medium backdrop-blur text-white"
+                          className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium backdrop-blur text-white"
                           style={{ backgroundColor: level.color + 'AA' }}
                         >
                           {level.name}
                         </div>
+                        {screenshot.hasBotDetection && (
+                          <div className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium bg-orange-500/90 text-white flex items-center gap-0.5">
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            BOT
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -888,6 +898,32 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     </div>
                   </div>
 
+                  {/* Bot Detection Summary */}
+                  {detailedScreenshot?.botDetectionSummary && (
+                    <div className="mx-4 mb-4 bg-orange-50 rounded-lg p-3 border border-orange-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-5 h-5 text-orange-500" />
+                        <span className="font-semibold text-orange-900">Bot Activity Detected</span>
+                      </div>
+                      <div className="text-sm text-orange-800">
+                        <p className="mb-1">
+                          {detailedScreenshot.botDetectionSummary.periodsWithBotActivity} of {detailedScreenshot.botDetectionSummary.totalPeriods} activity periods flagged
+                        </p>
+                        {/* Only show detailed patterns for admin users */}
+                        {(userRole === 'super_admin' || userRole === 'org_admin') && detailedScreenshot.botDetectionSummary.reasons.length > 0 && (
+                          <div className="mt-2">
+                            <p className="font-medium mb-1">Suspicious patterns detected:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {detailedScreenshot.botDetectionSummary.reasons.slice(0, 3).map((reason, idx) => (
+                                <li key={idx} className="text-xs">{reason}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Per-Minute Activity Breakdown */}
                   <div className="p-4">
                     <h3 className="text-sm font-semibold mb-3">Per-Minute Activity Breakdown</h3>
@@ -930,41 +966,55 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                   ) : (
                                     <span className="text-sm font-medium">{periodEndTime}</span>
                                   )}
-                                  <button
-                                    onClick={() => {
-                                      const newExpanded = new Set(expandedMinutes);
-                                      if (newExpanded.has(index)) {
-                                        newExpanded.delete(index);
-                                      } else {
-                                        newExpanded.add(index);
-                                      }
-                                      setExpandedMinutes(newExpanded);
-                                    }}
-                                    className="p-1 hover:bg-gray-200 rounded transition-colors"
-                                  >
-                                    {expandedMinutes.has(index) ? (
-                                      <ChevronUp className="w-4 h-4 text-gray-500" />
-                                    ) : (
-                                      <ChevronDown className="w-4 h-4 text-gray-500" />
-                                    )}
-                                  </button>
+                                  {/* Only show expand button for admin users */}
+                                  {(userRole === 'super_admin' || userRole === 'org_admin') && (
+                                    <button
+                                      onClick={() => {
+                                        const newExpanded = new Set(expandedMinutes);
+                                        if (newExpanded.has(index)) {
+                                          newExpanded.delete(index);
+                                        } else {
+                                          newExpanded.add(index);
+                                        }
+                                        setExpandedMinutes(newExpanded);
+                                      }}
+                                      className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                    >
+                                      {expandedMinutes.has(index) ? (
+                                        <ChevronUp className="w-4 h-4 text-gray-500" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="text-center">
-                                  <div
-                                    className="text-sm font-semibold px-3 py-1 rounded text-white inline-block"
-                                    style={{ backgroundColor: level.color }}
-                                  >
-                                    {scoreOutOf10.toFixed(1)}
-                                  </div>
-                                  <div className="text-[10px] font-medium mt-1" style={{ color: level.color }}>
-                                    {level.name}
+                                <div className="flex items-center gap-2">
+                                  {/* Bot Detection Indicator */}
+                                  {period.metrics?.botDetection && (period.metrics.botDetection.keyboardBotDetected || period.metrics.botDetection.mouseBotDetected) && (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-100 rounded-full">
+                                      <AlertCircle className="w-3 h-3 text-orange-600" />
+                                      <span className="text-xs font-medium text-orange-700">
+                                        Bot-like activity
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="text-center">
+                                    <div
+                                      className="text-sm font-semibold px-3 py-1 rounded text-white inline-block"
+                                      style={{ backgroundColor: level.color }}
+                                    >
+                                      {scoreOutOf10.toFixed(1)}
+                                    </div>
+                                    <div className="text-[10px] font-medium mt-1" style={{ color: level.color }}>
+                                      {level.name}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Expandable Details */}
+                              {/* Expandable Details - Only for Admin Users */}
                               <AnimatePresence>
-                                {expandedMinutes.has(index) && period.metrics && (
+                                {(userRole === 'super_admin' || userRole === 'org_admin') && expandedMinutes.has(index) && period.metrics && (
                                   <motion.div
                                     initial={{ height: 0, opacity: 0 }}
                                     animate={{ height: 'auto', opacity: 1 }}
@@ -1050,13 +1100,13 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                             <div className="flex justify-between">
                                               <span className="text-gray-600">Keyboard Bot:</span>
                                               <span className={period.metrics.botDetection.keyboardBotDetected ? 'text-red-600' : 'text-green-600'}>
-                                                {period.metrics.botDetection.keyboardBotDetected ? 'Detected' : 'Human'}
+                                                {period.metrics.botDetection.keyboardBotDetected ? 'Detected' : 'No Detected'}
                                               </span>
                                             </div>
                                             <div className="flex justify-between">
                                               <span className="text-gray-600">Mouse Bot:</span>
                                               <span className={period.metrics.botDetection.mouseBotDetected ? 'text-red-600' : 'text-green-600'}>
-                                                {period.metrics.botDetection.mouseBotDetected ? 'Detected' : 'Human'}
+                                                {period.metrics.botDetection.mouseBotDetected ? 'Detected' : 'Not Detected'}
                                               </span>
                                             </div>
                                             <div className="flex justify-between">

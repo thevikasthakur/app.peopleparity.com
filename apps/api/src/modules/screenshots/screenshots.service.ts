@@ -216,9 +216,22 @@ export class ScreenshotsService {
       // Use the proper weighted average calculation
       const activityScore = this.calculateScreenshotScore(activityPeriods);
 
+      // Check if any activity period has bot detection
+      let hasBotDetection = false;
+      for (const period of activityPeriods) {
+        if (period.metrics?.botDetection) {
+          const detection = period.metrics.botDetection;
+          if (detection.keyboardBotDetected || detection.mouseBotDetected) {
+            hasBotDetection = true;
+            break;
+          }
+        }
+      }
+
       return {
         ...screenshot,
         activityScore,
+        hasBotDetection,
         deviceInfo: includeDeviceInfo ? (screenshot.session?.deviceInfo || null) : undefined,
         activityPeriods: undefined,
       };
@@ -230,7 +243,7 @@ export class ScreenshotsService {
   }
 
   async findByIdWithDetails(id: string) {
-    return this.screenshotsRepository.findOne({
+    const screenshot = await this.screenshotsRepository.findOne({
       where: { id },
       relations: ['activityPeriods'],
       order: {
@@ -239,6 +252,37 @@ export class ScreenshotsService {
         }
       }
     });
+
+    if (!screenshot) {
+      return null;
+    }
+
+    // Calculate bot detection summary
+    const activityPeriods = screenshot.activityPeriods || [];
+    let botDetectedCount = 0;
+    const botDetectionReasons: string[] = [];
+
+    for (const period of activityPeriods) {
+      if (period.metrics?.botDetection) {
+        const detection = period.metrics.botDetection;
+        if (detection.keyboardBotDetected || detection.mouseBotDetected) {
+          botDetectedCount++;
+          if (detection.reasons) {
+            botDetectionReasons.push(...detection.reasons);
+          }
+        }
+      }
+    }
+
+    // Add bot detection summary to the screenshot
+    return {
+      ...screenshot,
+      botDetectionSummary: botDetectedCount > 0 ? {
+        periodsWithBotActivity: botDetectedCount,
+        totalPeriods: activityPeriods.length,
+        reasons: [...new Set(botDetectionReasons)] // Remove duplicates
+      } : null
+    };
   }
 
   async generateViewSignedUrl(s3Url: string): Promise<string> {

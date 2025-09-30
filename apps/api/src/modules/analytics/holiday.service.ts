@@ -1,6 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
 
 interface Holiday {
   date: string;
@@ -15,45 +13,51 @@ interface HolidayConfig {
   };
 }
 
+// Embedded holiday configuration
+const HOLIDAY_CONFIG: HolidayConfig = {
+  "2025": {
+    "fixedHolidays": [
+      { "date": "2025-01-26", "name": "Republic Day", "type": "national" },
+      { "date": "2025-03-14", "name": "Holi", "type": "festival" },
+      { "date": "2025-03-31", "name": "Eid-ul-Fitr", "type": "festival" },
+      { "date": "2025-08-09", "name": "Raksha Bandhan", "type": "festival" },
+      { "date": "2025-08-15", "name": "Independence Day", "type": "national" },
+      { "date": "2025-10-02", "name": "Gandhi Jayanti", "type": "national" },
+      { "date": "2025-10-20", "name": "Diwali (Lakshmi Puja)", "type": "festival" },
+      { "date": "2025-10-21", "name": "Diwali (Govardhan Puja)", "type": "festival" },
+      { "date": "2025-12-25", "name": "Christmas", "type": "festival" }
+    ],
+    "finalHolidayList": [
+      "2025-01-26", "2025-03-14", "2025-03-31", "2025-08-09",
+      "2025-08-15", "2025-10-02", "2025-10-20", "2025-10-21", "2025-12-25"
+    ]
+  },
+  "2026": {
+    "fixedHolidays": [
+      { "date": "2026-01-26", "name": "Republic Day", "type": "national" },
+      { "date": "2026-03-10", "name": "Holi", "type": "festival" },
+      { "date": "2026-03-31", "name": "Eid-ul-Fitr", "type": "festival" },
+      { "date": "2026-08-03", "name": "Raksha Bandhan", "type": "festival" },
+      { "date": "2026-08-15", "name": "Independence Day", "type": "national" },
+      { "date": "2026-10-02", "name": "Gandhi Jayanti", "type": "national" },
+      { "date": "2026-10-20", "name": "Diwali (Lakshmi Puja)", "type": "festival" },
+      { "date": "2026-10-21", "name": "Diwali (Govardhan Puja)", "type": "festival" },
+      { "date": "2026-12-25", "name": "Christmas", "type": "festival" }
+    ],
+    "finalHolidayList": [
+      "2026-01-26", "2026-03-10", "2026-03-31", "2026-04-13",
+      "2026-08-03", "2026-08-15", "2026-10-02", "2026-10-20",
+      "2026-10-21", "2026-11-06", "2026-12-25"
+    ]
+  }
+};
+
 @Injectable()
 export class HolidayService {
-  private holidayConfig: HolidayConfig = {};
+  private holidayConfig: HolidayConfig = HOLIDAY_CONFIG;
 
   constructor() {
-    this.loadHolidayConfig();
-  }
-
-  private loadHolidayConfig() {
-    try {
-      // Try multiple paths for development and production
-      const possiblePaths = [
-        path.join(__dirname, '../../config/holidays.json'),
-        path.join(__dirname, '../../../src/config/holidays.json'),
-        path.join(process.cwd(), 'src/config/holidays.json'),
-        path.join(process.cwd(), 'apps/api/src/config/holidays.json'),
-      ];
-
-      let configData: string | null = null;
-      for (const configPath of possiblePaths) {
-        if (fs.existsSync(configPath)) {
-          configData = fs.readFileSync(configPath, 'utf-8');
-          console.log(`✅ Loaded holiday config from: ${configPath}`);
-          break;
-        }
-      }
-
-      if (configData) {
-        this.holidayConfig = JSON.parse(configData);
-        console.log(`📅 Holiday config loaded for years: ${Object.keys(this.holidayConfig).join(', ')}`);
-      } else {
-        console.warn('⚠️ Holiday config file not found in any expected location');
-        console.log('Tried paths:', possiblePaths);
-        this.holidayConfig = {};
-      }
-    } catch (error) {
-      console.error('Failed to load holiday config:', error);
-      this.holidayConfig = {};
-    }
+    console.log(`📅 Holiday config loaded for years: ${Object.keys(this.holidayConfig).join(', ')}`);
   }
 
   /**
