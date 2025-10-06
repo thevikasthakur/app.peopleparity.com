@@ -57,7 +57,8 @@
       "Bash(xargs rm:*)",
       "Bash(npx:*)",
       "Bash(awk:*)",
-      "Bash(xcopy:*)"
+      "Bash(xcopy:*)",
+      "Bash(cp:*)"
     ],
     "deny": [],
     "ask": []
