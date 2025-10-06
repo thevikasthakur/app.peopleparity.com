@@ -116,3 +116,5 @@ site/
 test.html
 apps/desktop/dist-*
 apps/api/.serverless
+
+generate-a-new-distributable-exe-build.txt
