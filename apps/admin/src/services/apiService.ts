@@ -206,6 +206,18 @@ export const apiService = {
     const response = await api.get(`/api/screenshots/${screenshotId}/details`);
     return response.data;
   },
+
+  // Manual time entry
+  async createManualTimeEntry(data: {
+    userId: string;
+    taskName: string;
+    startTime: string;
+    endTime: string;
+    timezone: string;
+  }) {
+    const response = await api.post('/api/admin/manual-time', data);
+    return response.data;
+  },
 };
 
 export default api;

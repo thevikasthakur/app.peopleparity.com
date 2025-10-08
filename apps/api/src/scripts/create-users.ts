@@ -71,6 +71,31 @@ async function createUsers() {
         email: 'ashna@inzint.com',
         name: 'Ashna',
         password: '@shn@#2025$ec!'
+      },
+      {
+        email: 'abhay@inzint.com',
+        name: 'Abhay',
+        password: 'Abh@y#2025$ec!'
+      },
+      {
+        email: 'abhiraj@inzint.com',
+        name: 'Abhiraj',
+        password: '@bhiraJ#2025!'
+      },
+      {
+        email: 'aloksharma@inzint.com',
+        name: 'Alok Sharma',
+        password: 'Al0k$h@rm@!'
+      },
+      {
+        email: 'pratham@inzint.com',
+        name: 'Pratham',
+        password: 'Pr@th@m#2025wow!'
+      },
+      {
+        email: 'himanshu@inzint.com',
+        name: 'Himanshu',
+        password: '#!manshu2025~'
       }
     ];
 

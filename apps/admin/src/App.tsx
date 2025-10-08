@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
+import { ManualTimeEntry } from './pages/ManualTimeEntry';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -36,6 +37,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manual-time"
+              element={
+                <ProtectedRoute>
+                  <ManualTimeEntry />
                 </ProtectedRoute>
               }
             />

@@ -58,7 +58,8 @@
       "Bash(npx:*)",
       "Bash(awk:*)",
       "Bash(xcopy:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"\\d sessions\")"
     ],
     "deny": [],
     "ask": []

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Settings, ChevronDown } from 'lucide-react';
+import { LogOut, Settings, ChevronDown, Clock } from 'lucide-react';
 
 interface ProfileDropdownProps {
   user: any;
@@ -20,6 +20,11 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
   const handleSettings = () => {
     setIsOpen(false);
     navigate('/settings');
+  };
+
+  const handleManualTime = () => {
+    setIsOpen(false);
+    navigate('/manual-time');
   };
 
   return (
@@ -46,6 +51,17 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
               <p className="text-sm font-semibold text-gray-900">{user?.name || 'Admin User'}</p>
               <p className="text-xs text-gray-500 mt-1">{user?.email}</p>
             </div>
+
+            {/* Manual Time Entry - Only for admins */}
+            {(user?.role === 'super_admin' || user?.role === 'org_admin') && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                onClick={handleManualTime}
+              >
+                <Clock className="w-4 h-4" />
+                Manual Time Entry
+              </button>
+            )}
 
             <button
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"

@@ -11,6 +11,7 @@ import { ActivityModule } from './modules/activity/activity.module';
 import { ScreenshotsModule } from './modules/screenshots/screenshots.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 // Import all entities explicitly for serverless
 import { User } from './entities/user.entity';
@@ -66,6 +67,7 @@ import { Screenshot } from './entities/screenshot.entity';
     ScreenshotsModule,
     AnalyticsModule,
     DashboardModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
