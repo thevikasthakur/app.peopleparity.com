@@ -59,7 +59,12 @@
       "Bash(awk:*)",
       "Bash(xcopy:*)",
       "Bash(cp:*)",
-      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"\\d sessions\")"
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"\\d sessions\")",
+      "Read(//Users/thakur/Downloads/**)",
+      "Bash(sysctl:*)",
+      "Bash(arch -arm64 npm rebuild better-sqlite3)",
+      "Bash(arch -arm64 npx electron-rebuild -f)",
+      "Bash(arch -arm64 npx electron-rebuild -f -w better-sqlite3,uiohook-napi,sharp -a arm64)"
     ],
     "deny": [],
     "ask": []

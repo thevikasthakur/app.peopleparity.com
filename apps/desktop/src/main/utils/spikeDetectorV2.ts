@@ -23,6 +23,8 @@ export interface ActivityDataV2 {
   hasTextPatterns?: boolean;   // Indicates normal text patterns detected
   hasCodingPatterns?: boolean; // Indicates coding patterns detected
   hasReadingPattern?: boolean; // Indicates reading/scrolling pattern
+  wasIdle?: boolean;           // Was this period preceded by idle time?
+  idleDuration?: number;       // Duration of idle period before this activity (ms)
 }
 
 export interface SpikeDetectionResultV2 {
@@ -54,11 +56,15 @@ export class SpikeDetectorV2 {
   private readonly normalTypingSpeed = 300; // 5 keys per second is normal fast typing
   private readonly burstTypingSpeed = 400; // Allow bursts up to 6.6 keys per second
   private readonly sustainedHighSpeed = 500; // Sustained >8 keys per second is suspicious
-  
+
   // Mouse pattern recognition
   private readonly normalScrollSpeed = 30; // Normal scrolling up to 30 scrolls per minute
   private readonly normalMouseDistance = 50000; // Normal mouse movement up to 50k pixels per minute
   private readonly readingMouseDistance = 10000; // Minimal mouse movement during reading
+
+  // Bot reviewer pattern detection (repetitive arrow key + scroll)
+  private readonly reviewerBotScrollThreshold = 0.8; // >80% correlation between lines and scrolls
+  private readonly reviewerBotArrowKeyRatio = 0.9; // >90% navigation keys = reviewer bot
   
   /**
    * Add new activity data and check for spikes
@@ -294,8 +300,26 @@ export class SpikeDetectorV2 {
       confidence += 20;
     }
     
-    // Check 5: Reading/scrolling pattern bonus - reduce penalties
-    if (currentData.hasReadingPattern) {
+    // Check 5: Reviewer bot detection (repetitive arrow keys + periodic scrolling)
+    const reviewerBotCheck = this.detectReviewerBot(currentData, history);
+    if (reviewerBotCheck.detected) {
+      spikeScore += reviewerBotCheck.score;
+      spikeReasons.push(reviewerBotCheck.reason);
+      details.reviewerBot = true;
+      confidence += reviewerBotCheck.confidence;
+    }
+
+    // Check 6: Idle reset pattern detection
+    const idleResetCheck = this.detectIdleResetPatterns(currentData, history);
+    if (idleResetCheck.detected) {
+      spikeScore += idleResetCheck.score;
+      spikeReasons.push(idleResetCheck.reason);
+      details.idleResetBot = true;
+      confidence += idleResetCheck.confidence;
+    }
+
+    // Check 7: Reading/scrolling pattern bonus - reduce penalties (but not if reviewer bot)
+    if (currentData.hasReadingPattern && !reviewerBotCheck.detected) {
       // Reading is a valid activity, reduce any penalties
       spikeScore = Math.max(0, spikeScore - 15);
       confidence = Math.max(0, confidence - 20);
@@ -324,6 +348,153 @@ export class SpikeDetectorV2 {
     };
   }
   
+  /**
+   * Detect "Reviewer" bot pattern:
+   * - Mostly navigation keys (arrow down)
+   * - Low productive typing
+   * - Periodic scrolling with consistent patterns
+   * - Consistent timing between scrolls (every 15-25 lines)
+   */
+  private detectReviewerBot(current: ActivityDataV2, history: ActivityDataV2[]): {
+    detected: boolean;
+    score: number;
+    confidence: number;
+    reason: string;
+  } {
+    // Need enough history to detect patterns
+    if (history.length < 5) {
+      return { detected: false, score: 0, confidence: 0, reason: '' };
+    }
+
+    const totalKeys = current.keyHits;
+    if (totalKeys === 0) {
+      return { detected: false, score: 0, confidence: 0, reason: '' };
+    }
+
+    // Calculate navigation key ratio
+    const navigationRatio = current.navigationKeyHits / totalKeys;
+    const productiveRatio = current.productiveKeyHits / totalKeys;
+
+    // Reviewer bot signature:
+    // 1. Very high navigation key ratio (>85%)
+    // 2. Very low productive typing (<10%)
+    // 3. Some scrolling activity
+    // 4. Consistent pattern over time
+
+    if (navigationRatio > 0.85 && productiveRatio < 0.1 && current.mouseScrolls > 0) {
+      // Check historical consistency
+      const recentNavRatios = history.slice(-5).map(h => {
+        const total = h.keyHits;
+        return total > 0 ? h.navigationKeyHits / total : 0;
+      });
+
+      const avgNavRatio = recentNavRatios.reduce((a, b) => a + b, 0) / recentNavRatios.length;
+
+      // If consistently high navigation ratio, it's likely a reviewer bot
+      if (avgNavRatio > 0.75) {
+        return {
+          detected: true,
+          score: 40,
+          confidence: 25,
+          reason: `Reviewer bot pattern (${(navigationRatio * 100).toFixed(0)}% navigation keys, sustained pattern)`
+        };
+      }
+    }
+
+    // Alternative pattern: Repetitive down arrow with minimal diversity
+    if (totalKeys > 30 && current.uniqueKeys < 3 && navigationRatio > 0.9) {
+      return {
+        detected: true,
+        score: 45,
+        confidence: 30,
+        reason: `Repetitive navigation bot (${totalKeys} keys, only ${current.uniqueKeys} unique, ${(navigationRatio * 100).toFixed(0)}% navigation)`
+      };
+    }
+
+    return { detected: false, score: 0, confidence: 0, reason: '' };
+  }
+
+  /**
+   * Detect idle reset patterns (bot becomes active at exact 30s/60s multiples)
+   * Bots often have timers that reset at exact intervals
+   */
+  private detectIdleResetPatterns(current: ActivityDataV2, history: ActivityDataV2[]): {
+    detected: boolean;
+    score: number;
+    confidence: number;
+    reason: string;
+  } {
+    if (!current.wasIdle || history.length < 5) {
+      return { detected: false, score: 0, confidence: 0, reason: '' };
+    }
+
+    // Check if current activity followed an idle period
+    if (current.idleDuration) {
+      // Check if idle duration aligns with common bot intervals (30s, 60s, 90s, etc.)
+      const commonIntervals = [30000, 60000, 90000, 120000]; // 30s, 60s, 90s, 120s in ms
+
+      for (const interval of commonIntervals) {
+        const tolerance = 1000; // ±1 second tolerance
+        if (Math.abs(current.idleDuration - interval) < tolerance) {
+          // Check if this pattern repeats
+          const recentIdleResets = history.filter(h => h.wasIdle && h.idleDuration).length;
+
+          if (recentIdleResets >= 3) {
+            // Check if they're all at similar intervals
+            const idleDurations = history
+              .filter(h => h.wasIdle && h.idleDuration)
+              .map(h => h.idleDuration!)
+              .slice(-5);
+
+            if (idleDurations.length >= 3) {
+              const avgDuration = idleDurations.reduce((a, b) => a + b, 0) / idleDurations.length;
+              const variance = idleDurations.reduce((sum, d) => sum + Math.pow(d - avgDuration, 2), 0) / idleDurations.length;
+              const stdDev = Math.sqrt(variance);
+
+              // If idle durations are very consistent (low variance)
+              if (stdDev < 2000) { // Less than 2 seconds variation
+                return {
+                  detected: true,
+                  score: 35,
+                  confidence: 25,
+                  reason: `Idle resets at exact intervals (${(avgDuration / 1000).toFixed(0)}s ±${(stdDev / 1000).toFixed(1)}s, ${recentIdleResets} times)`
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Additional check: Activity bursts right at minute boundaries
+    const timestamp = current.timestamp.getTime();
+    const secondsIntoCurrentMinute = Math.floor((timestamp % 60000) / 1000);
+
+    // Check if activity started at the 0, 30, or 60 second mark
+    if (secondsIntoCurrentMinute < 2 || (secondsIntoCurrentMinute >= 28 && secondsIntoCurrentMinute <= 32)) {
+      // Check if this happens repeatedly
+      const boundaryStarts = history.filter(h => {
+        const histTimestamp = h.timestamp.getTime();
+        const histSeconds = Math.floor((histTimestamp % 60000) / 1000);
+        return histSeconds < 2 || (histSeconds >= 28 && histSeconds <= 32);
+      }).length;
+
+      if (boundaryStarts >= 4) {
+        const boundaryRatio = boundaryStarts / history.length;
+        if (boundaryRatio > 0.6) {
+          return {
+            detected: true,
+            score: 30,
+            confidence: 20,
+            reason: `Activity starts on exact boundaries (${boundaryStarts}/${history.length} periods at 0s/30s marks)`
+          };
+        }
+      }
+    }
+
+    return { detected: false, score: 0, confidence: 0, reason: '' };
+  }
+
   /**
    * Improved pattern anomaly detection
    */

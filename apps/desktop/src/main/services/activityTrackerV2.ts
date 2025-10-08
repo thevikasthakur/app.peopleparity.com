@@ -426,23 +426,32 @@ export class ActivityTrackerV2 extends EventEmitter {
    */
   private setupKeyboardTracking() {
     if (!uIOhook) return;
-    
+
     // Remove existing listeners
     uIOhook.removeAllListeners('keydown');
-    
+    uIOhook.removeAllListeners('keyup');
+
+    // Track key press/release for hold time detection
+    const keyDownTimes = new Map<number, number>();
+
     uIOhook.on('keydown', (e: any) => {
       if (!this.isTracking) return;
-      
+
       const keycode = e.keycode;
       const timestamp = Date.now();
       this.lastActivityTime = new Date();
-      
+
+      // Track key down time for hold duration
+      if (!keyDownTimes.has(keycode)) {
+        keyDownTimes.set(keycode, timestamp);
+      }
+
       // Track unique keys
       this.currentMetrics.uniqueKeys.add(keycode);
-      
+
       // Record in metrics collector for bot detection
       this.metricsCollector.recordKeystroke(keycode, timestamp);
-      
+
       // Classify key
       if (this.productiveKeys.has(keycode)) {
         this.currentMetrics.productiveKeyHits++;
@@ -453,6 +462,21 @@ export class ActivityTrackerV2 extends EventEmitter {
         this.currentMetrics.keyHits++;
       } else {
         this.currentMetrics.keyHits++;
+      }
+    });
+
+    uIOhook.on('keyup', (e: any) => {
+      if (!this.isTracking) return;
+
+      const keycode = e.keycode;
+      const timestamp = Date.now();
+
+      // Calculate hold duration
+      const downTime = keyDownTimes.get(keycode);
+      if (downTime) {
+        const holdDuration = timestamp - downTime;
+        this.metricsCollector.recordKeyHold(keycode, holdDuration);
+        keyDownTimes.delete(keycode);
       }
     });
   }
