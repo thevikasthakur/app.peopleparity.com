@@ -1,8 +1,10 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Request, Inject } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Request, Inject, HttpException, HttpStatus } from '@nestjs/common';
 import { ActivityService } from './activity.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { VersionCheckGuard } from '../../guards/version-check.guard';
 
 @Controller('activity-periods')
+@UseGuards(VersionCheckGuard)
 export class ActivityController {
   constructor(
     @Inject(ActivityService) private readonly activityService: ActivityService
@@ -39,24 +41,30 @@ export class ActivityController {
       
       // Handle concurrent session detection
       if (error.message?.includes('CONCURRENT_SESSION_DETECTED')) {
-        return {
-          success: false,
-          error: 'CONCURRENT_SESSION_DETECTED',
-          message: 'Another session is already active in this time window. Stopping current session.',
-          details: error.message
-        };
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.CONFLICT,
+            error: 'CONCURRENT_SESSION_DETECTED',
+            message: 'Another session is already active in this time window. Stopping current session.',
+            details: error.message
+          },
+          HttpStatus.CONFLICT
+        );
       }
-      
-      // Return a more informative error for foreign key violations
+
+      // Return a more informative error for foreign key violations (session doesn't exist)
       if (error.message?.includes('foreign key constraint')) {
-        return {
-          success: false,
-          error: 'Session does not exist',
-          message: `Session ${createActivityDto.sessionId} must be created before activity periods`,
-          sessionId: createActivityDto.sessionId
-        };
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+            error: 'INVALID_SESSION',
+            message: `Session ${createActivityDto.sessionId} does not exist. Please restart your tracking session.`,
+            sessionId: createActivityDto.sessionId
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY // 422
+        );
       }
-      
+
       throw error;
     }
   }

@@ -54,9 +54,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    console.log('🔑 Login attempt for:', email);
-    console.log('📱 Electron API available:', typeof window.electronAPI !== 'undefined');
-    console.log('🔌 Auth methods available:', window.electronAPI?.auth ? Object.keys(window.electronAPI.auth) : 'none');
     
     if (typeof window.electronAPI === 'undefined' || !window.electronAPI.auth) {
       throw new Error('Electron API not available. Please use the desktop app.');
@@ -64,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     console.log('📤 Calling IPC auth.login...');
     const result = await window.electronAPI.auth.login(email, password);
-    console.log('📥 IPC response:', result);
     
     if (result.success && result.user) {
       setUser(result.user);

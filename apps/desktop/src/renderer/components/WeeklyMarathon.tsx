@@ -193,13 +193,7 @@ export const WeeklyMarathon: React.FC<WeeklyMarathonProps> = ({ selectedDate, is
           const dayDate = dayStatus?.date ? new Date(dayStatus.date) : null;
           const isSelectedDay = dayDate && selectedDate && 
             dayDate.toDateString() === selectedDate.toDateString();
-          
-          // Debug logging
-          if (index === 0) {
-            console.log('WeeklyMarathon dayStatus:', dayStatus);
-            console.log('dayDate:', dayDate);
-            console.log('onDayClick:', onDayClick);
-          }
+        
           
           // Determine background and border colors based on status
           const getStatusClasses = () => {

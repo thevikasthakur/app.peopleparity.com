@@ -2,15 +2,18 @@ import { Module, Provider } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { LocalStrategy } from './local.strategy';
 import { MicrosoftSamlStrategy } from './saml.strategy';
 import { UsersModule } from '../users/users.module';
+import { AppVersion } from '../../entities/app-version.entity';
+import { VersionCheckGuard } from '../../guards/version-check.guard';
 
 // Only include SAML strategy if SAML_CERT is configured
-const providers: Provider[] = [AuthService, LocalStrategy, JwtStrategy];
+const providers: Provider[] = [AuthService, LocalStrategy, JwtStrategy, VersionCheckGuard];
 
 // Check if SAML is configured before adding the strategy
 if (process.env.SAML_CERT && process.env.SAML_CERT.trim() !== '') {
@@ -24,6 +27,7 @@ if (process.env.SAML_CERT && process.env.SAML_CERT.trim() !== '') {
   imports: [
     UsersModule,
     PassportModule,
+    TypeOrmModule.forFeature([AppVersion]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({

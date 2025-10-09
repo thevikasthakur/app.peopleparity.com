@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Settings, ChevronDown, Clock } from 'lucide-react';
+import { LogOut, Settings, ChevronDown, Clock, Package } from 'lucide-react';
 
 interface ProfileDropdownProps {
   user: any;
@@ -25,6 +25,11 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
   const handleManualTime = () => {
     setIsOpen(false);
     navigate('/manual-time');
+  };
+
+  const handleAppVersions = () => {
+    setIsOpen(false);
+    navigate('/app-versions');
   };
 
   return (
@@ -60,6 +65,17 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
               >
                 <Clock className="w-4 h-4" />
                 Manual Time Entry
+              </button>
+            )}
+
+            {/* App Versions - Only for admins */}
+            {(user?.role === 'super_admin' || user?.role === 'org_admin') && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                onClick={handleAppVersions}
+              >
+                <Package className="w-4 h-4" />
+                App Versions
               </button>
             )}
 

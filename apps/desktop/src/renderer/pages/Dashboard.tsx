@@ -50,6 +50,7 @@ export function Dashboard() {
   const [permissionsChecked, setPermissionsChecked] = useState(false);
   const [hasAllPermissions, setHasAllPermissions] = useState(false);
   const [randomMessage, setRandomMessage] = useState('');
+  const [versionError, setVersionError] = useState<{ title: string; message: string } | null>(null);
   const [pendingMode, setPendingMode] = useState<'client' | 'command' | null>(null);
   // Load activity and recent activities from localStorage
   const [currentActivity, setCurrentActivity] = useState(() => {
@@ -77,8 +78,22 @@ export function Dashboard() {
   const [customScreenshots, setCustomScreenshots] = useState<any[]>([]);
   const [isLoadingScreenshots, setIsLoadingScreenshots] = useState(false);
   const [isChangingDate, setIsChangingDate] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('');
   const [todaySessions, setTodaySessions] = useState<any[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Fetch app version on mount
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const version = await window.electronAPI.app.getVersion();
+        setAppVersion(version);
+      } catch (error) {
+        console.error('Failed to get app version:', error);
+      }
+    };
+    fetchVersion();
+  }, []);
 
   useEffect(() => {
     // Skip if we're in the middle of changing dates
@@ -91,7 +106,6 @@ export function Dashboard() {
   // Sync recent activities to main process on mount and when they change
   useEffect(() => {
     if (recentActivities.length > 0) {
-      console.log('📝 Syncing activities to main process:', recentActivities.slice(0, 5));
       window.electronAPI.invoke('sync-recent-activities', recentActivities).catch(err => {
         console.error('Failed to sync activities to main:', err);
       });
@@ -172,13 +186,31 @@ export function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       // Could also show a toast notification here if you have a toast library
     };
-    
+
     window.electronAPI?.on('concurrent-session-detected', handleConcurrentSession);
-    
+
     return () => {
       window.electronAPI?.off('concurrent-session-detected', handleConcurrentSession);
     };
   }, [queryClient]);
+
+  // Listen for version upgrade required
+  useEffect(() => {
+    const handleVersionUpgrade = (data: any) => {
+      console.log('Version upgrade required:', data);
+      // Show persistent notification banner
+      setVersionError({
+        title: data.title || 'Update Required',
+        message: data.message || 'Your app version is no longer supported. Please update your desktop application.'
+      });
+    };
+
+    window.electronAPI?.on('version-upgrade-required', handleVersionUpgrade);
+
+    return () => {
+      window.electronAPI?.off('version-upgrade-required', handleVersionUpgrade);
+    };
+  }, []);
 
   // Compare dates in UTC to match backend logic - memoized for performance
   const isToday = useMemo(() => {
@@ -366,8 +398,32 @@ export function Dashboard() {
         />
       )}
       
+      {/* Version Error Banner - Highest Priority */}
+      {versionError && (
+        <div className="fixed top-0 left-0 right-0 bg-red-50 border-b-2 border-red-300 px-4 py-4 z-[60] shadow-lg">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-red-600 animate-pulse" />
+              <div>
+                <p className="text-sm font-bold text-red-900">{versionError.title}</p>
+                <p className="text-sm text-red-800">{versionError.message}</p>
+                <p className="text-xs text-red-700 mt-1">Time tracking has been stopped. Sync is paused until you update.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                window.electronAPI?.system?.openExternal?.('https://peopleparity.com/download');
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors whitespace-nowrap"
+            >
+              Download Update
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Permissions Warning Banner */}
-      {permissionsChecked && !hasAllPermissions && !showPermissionsWizard && (
+      {permissionsChecked && !hasAllPermissions && !showPermissionsWizard && !versionError && (
         <div className="fixed top-0 left-0 right-0 bg-amber-50 border-b border-amber-200 px-4 py-3 z-50">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -431,7 +487,12 @@ export function Dashboard() {
             <div className="flex items-center gap-6">
               <div className="flex flex-col items-center">
                 <img src={logoImage} alt="People Parity Logo" className="w-12 h-12 object-contain" />
-                <span className="text-xs text-gray-600 mt-1">People Parity</span>
+                <div className="flex items-center gap-1 mt-1">
+                  <span className="text-xs text-gray-600">People Parity</span>
+                  {appVersion && (
+                    <span className="text-[10px] text-gray-400 font-mono">v{appVersion}</span>
+                  )}
+                </div>
               </div>
             </div>
             

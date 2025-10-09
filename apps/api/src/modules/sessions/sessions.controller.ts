@@ -1,8 +1,10 @@
 import { Controller, Post, Patch, Get, Body, Param, UseGuards, Request, Inject } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { VersionCheckGuard } from '../../guards/version-check.guard';
 
 @Controller('sessions')
+@UseGuards(VersionCheckGuard)
 export class SessionsController {
   constructor(
     @Inject(SessionsService) private readonly sessionsService: SessionsService

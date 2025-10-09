@@ -62,15 +62,6 @@ export const CurrentSessionInfo: React.FC<CurrentSessionInfoProps> = ({ currentS
       // Each 10-minute window with valid activity = 10 tracked minutes
       const trackedMinutes = sessionData.productiveMinutes;
       
-      console.log('Session Info Debug:', {
-        startTime: startTime.toLocaleTimeString(),
-        now: new Date().toLocaleTimeString(),
-        elapsedMinutes,
-        trackedMinutes,
-        validPeriods: sessionData.validPeriods,
-        sessionData
-      });
-      
       setSessionInfo({
         startTime,
         elapsedMinutes,

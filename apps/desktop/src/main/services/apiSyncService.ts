@@ -4,6 +4,7 @@ import Store from 'electron-store';
 import { app } from 'electron';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs';
 
 interface AuthResponse {
   success: boolean;
@@ -23,24 +24,31 @@ interface AuthResponse {
 export class ApiSyncService {
   private api: AxiosInstance;
   private syncInterval: NodeJS.Timeout | null = null;
+  private versionCheckInterval: NodeJS.Timeout | null = null;
   private isOnline = true;
   private concurrentSessionDetected = false;
   private concurrentSessionHandledAt = 0;
+  private versionErrorEmitted = false;
+  private appVersion: string;
 
   constructor(
     private db: DatabaseService,
     private store: Store
   ) {
+    // Read app version from package.json
+    this.appVersion = this.getAppVersion();
+    console.log('📱 App Version:', this.appVersion);
+
     // Use production API URL for packaged app, local for development
     const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
     const envUrl = process.env.API_URL || (isDev ? 'http://localhost:3001' : 'https://efr76g502g.execute-api.ap-south-1.amazonaws.com');
     // Replace localhost with 127.0.0.1 to ensure IPv4 in development
     const baseUrl = envUrl.replace('localhost', '127.0.0.1');
     const apiUrl = `${baseUrl}/api`;
-    
+
     console.log('🔗 API Service initialized with URL:', apiUrl);
     console.log('📦 App packaged:', app.isPackaged, 'Dev mode:', isDev);
-    
+
     this.api = axios.create({
       baseURL: apiUrl,
       timeout: 10000
@@ -49,28 +57,73 @@ export class ApiSyncService {
     this.setupInterceptors();
   }
 
+  private getAppVersion(): string {
+    try {
+      const packageJsonPath = path.join(__dirname, '../../../package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      return packageJson.appVersion || packageJson.version || 'unknown';
+    } catch (error) {
+      console.error('Failed to read app version:', error);
+      return 'unknown';
+    }
+  }
+
   private setupInterceptors() {
-    // Add auth token to requests
+    // Add auth token and app version to requests
     this.api.interceptors.request.use((config) => {
       const token = this.store.get('authToken');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      // Add app version header
+      config.headers['x-app-version'] = this.appVersion;
       return config;
     });
 
-    // Handle auth errors
+    // Handle auth and version errors
     this.api.interceptors.response.use(
       (response) => response,
       async (error) => {
+        // Handle version errors (426 Upgrade Required)
+        if (error.response?.status === 426) {
+          const errorData = error.response?.data;
+          console.error('❌ App version not supported (426):', errorData);
+
+          // Store version error to show in UI
+          const versionError = {
+            message: errorData.message || 'Your app version is not supported. Please update.',
+            error: errorData.error,
+            timestamp: Date.now()
+          };
+          this.store.set('versionError', versionError);
+
+          // Emit event to notify main process (trigger UI notification and logout)
+          // Only emit once to avoid multiple dialogs
+          if (!this.versionErrorEmitted) {
+            this.versionErrorEmitted = true;
+            const { app } = require('electron');
+            app.emit('version-upgrade-required', {
+              message: versionError.message,
+              timestamp: new Date()
+            });
+          }
+
+          // Create a more user-friendly error with the version message
+          const userError = new Error(versionError.message);
+          (userError as any).isVersionError = true;
+          (userError as any).statusCode = 426;
+
+          return Promise.reject(userError);
+        }
+
         if (error.response?.status === 401) {
           // Don't delete token for certain endpoints that might fail with 401 for other reasons
           const url = error.config?.url || '';
-          const shouldClearAuth = !url.includes('/auth/verify') && 
+          const shouldClearAuth = !url.includes('/auth/verify') &&
                                  !url.includes('/auth/login') &&
                                  !url.includes('/sessions') &&
                                  !url.includes('/activity-periods');
-          
+
           if (shouldClearAuth) {
             console.log('401 error on endpoint:', url, '- clearing auth token');
             this.store.delete('authToken');
@@ -83,6 +136,41 @@ export class ApiSyncService {
         return Promise.reject(error);
       }
     );
+  }
+
+  async checkVersion(): Promise<{ isSupported: boolean; message?: string }> {
+    try {
+      const version = this.appVersion;
+      const response = await this.api.get(`/app-versions/check/${version}`);
+
+      if (response.data.isSupported) {
+        console.log('✅ App version is supported:', version);
+        this.store.delete('versionError'); // Clear any previous errors
+        return { isSupported: true };
+      } else {
+        const message = `Version ${version} is not supported. Please update your app.`;
+        console.error('❌ App version not supported:', version);
+        this.store.set('versionError', {
+          message,
+          error: 'UNSUPPORTED_VERSION',
+          timestamp: Date.now()
+        });
+        return { isSupported: false, message };
+      }
+    } catch (error: any) {
+      console.error('Error checking app version:', error.message);
+
+      // If it's a version error (426), don't allow the app to continue
+      if ((error as any).isVersionError || (error as any).statusCode === 426 || error.response?.status === 426) {
+        return {
+          isSupported: false,
+          message: error.message || 'Your app version is not supported. Please update.'
+        };
+      }
+
+      // If we can't check version (network error, etc), allow the app to continue
+      return { isSupported: true };
+    }
   }
 
   async login(email: string, password: string): Promise<AuthResponse> {
@@ -143,7 +231,15 @@ export class ApiSyncService {
           method: error.config?.method
         }
       });
-      
+
+      // Check for version errors first
+      if ((error as any).isVersionError || (error as any).statusCode === 426) {
+        return {
+          success: false,
+          message: error.message || 'Your app version is not supported. Please update your desktop application.'
+        };
+      }
+
       // Check if we have cached credentials for offline mode
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
         const cachedUser = this.db.getCurrentUser();
@@ -485,11 +581,102 @@ export class ApiSyncService {
     }
   }
 
+  async checkAppVersion() {
+    try {
+      console.log('🔍 Checking app version:', this.appVersion);
+      const response = await this.api.get(`/app-versions/check/${this.appVersion}`);
+
+      if (response.data && !response.data.isSupported) {
+        console.error('🚫 APP VERSION NO LONGER SUPPORTED!');
+
+        // Store version error
+        this.store.set('versionError', {
+          message: `Version ${this.appVersion} is no longer supported. Please update your desktop application.`,
+          error: 'UNSUPPORTED_VERSION',
+          timestamp: Date.now()
+        });
+
+        // Emit event to stop tracking and logout
+        const { app } = require('electron');
+        app.emit('version-upgrade-required', {
+          message: `Version ${this.appVersion} is no longer supported. Please update your desktop application.`,
+          timestamp: new Date()
+        });
+      } else {
+        console.log('✅ App version is supported');
+
+        // Clear any stale version errors when version is confirmed supported
+        const existingError = this.store.get('versionError') as any;
+        if (existingError) {
+          console.log('🧹 Clearing stale version error from store');
+          this.store.delete('versionError');
+          // Reset the flag so future version errors will trigger notifications
+          this.versionErrorEmitted = false;
+        }
+      }
+    } catch (error: any) {
+      // If we get 426 status, the version is definitely not supported
+      if (error.response?.status === 426) {
+        console.error('🚫 APP VERSION NO LONGER SUPPORTED (426)!');
+
+        // Store version error
+        this.store.set('versionError', {
+          message: error.response?.data?.message || `Version ${this.appVersion} is no longer supported. Please update your desktop application.`,
+          error: 'UNSUPPORTED_VERSION',
+          timestamp: Date.now()
+        });
+
+        const { app } = require('electron');
+        app.emit('version-upgrade-required', {
+          message: error.response?.data?.message || `Version ${this.appVersion} is no longer supported. Please update your desktop application.`,
+          timestamp: new Date()
+        });
+      } else {
+        // For other errors (network, etc), check if there's a stale version error
+        const existingError = this.store.get('versionError') as any;
+        if (existingError) {
+          const errorAge = Date.now() - existingError.timestamp;
+          const ONE_HOUR = 60 * 60 * 1000;
+
+          // If version error is older than 1 hour, clear it (might be stale)
+          if (errorAge > ONE_HOUR) {
+            console.log('🧹 Clearing stale version error (older than 1 hour)');
+            this.store.delete('versionError');
+            // Reset the flag so future version errors will trigger notifications
+            this.versionErrorEmitted = false;
+          }
+        }
+
+        console.error('Failed to check app version:', error.message);
+      }
+    }
+  }
+
+  startVersionCheck() {
+    // Check version immediately on start
+    this.checkAppVersion();
+
+    // Then check every 10 minutes
+    this.versionCheckInterval = setInterval(() => {
+      this.checkAppVersion();
+    }, 10 * 60 * 1000); // 10 minutes
+
+    console.log('📱 Version check started - checking every 10 minutes');
+  }
+
+  stopVersionCheck() {
+    if (this.versionCheckInterval) {
+      clearInterval(this.versionCheckInterval);
+      this.versionCheckInterval = null;
+      console.log('📱 Version check stopped');
+    }
+  }
+
   start() {
     // Reset concurrent session flag when starting
     this.concurrentSessionDetected = false;
     this.concurrentSessionHandledAt = 0;
-    
+
     // Start periodic sync - sync more frequently for real-time updates
     this.syncInterval = setInterval(() => {
       this.syncData();
@@ -499,7 +686,10 @@ export class ApiSyncService {
     setTimeout(() => {
       this.syncData();
     }, 5000);
-    
+
+    // Start version checking
+    this.startVersionCheck();
+
     console.log('API sync service started - syncing every 30 seconds');
   }
 
@@ -513,6 +703,7 @@ export class ApiSyncService {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+    this.stopVersionCheck();
   }
 
   /**
@@ -640,6 +831,31 @@ export class ApiSyncService {
 
     const token = this.store.get('authToken');
     if (!token || token === 'offline-token') return;
+
+    // Check for stale version errors before syncing
+    const versionError = this.store.get('versionError') as any;
+    if (versionError) {
+      const errorAge = Date.now() - versionError.timestamp;
+      const FIVE_MINUTES = 5 * 60 * 1000;
+
+      // If version error is older than 5 minutes, try to recheck version
+      if (errorAge > FIVE_MINUTES) {
+        console.log('⚠️ Stale version error detected (>5 minutes old), rechecking version...');
+        await this.checkAppVersion();
+
+        // If error is still there after recheck, don't sync
+        if (this.store.get('versionError')) {
+          console.log('Version is still not supported, skipping sync');
+          return;
+        } else {
+          console.log('✅ Version error cleared, resuming sync');
+        }
+      } else {
+        // Fresh version error, don't sync
+        console.log('⚠️ Version error present (age: ' + Math.round(errorAge / 1000) + 's), skipping sync');
+        return;
+      }
+    }
 
     // Clean up failed screenshots with 0.0 score before syncing
     await this.cleanupFailedScreenshots();
@@ -1008,7 +1224,53 @@ export class ApiSyncService {
       console.log(`Successfully synced ${item.entityType}:${item.entityId}`);
     } catch (error: any) {
       console.error(`Failed to sync ${item.entityType}:${item.entityId}:`, error.message);
-      
+
+      // Check for version upgrade required (426 Upgrade Required)
+      if (error.response?.status === 426) {
+        const message = error.response?.data?.message || 'Your app version is no longer supported. Please update your desktop application.';
+
+        console.error('🚫 VERSION UPGRADE REQUIRED:', message);
+
+        // Emit event to stop tracking and logout
+        const { app } = require('electron');
+        app.emit('version-upgrade-required', {
+          message: message,
+          timestamp: new Date()
+        });
+
+        // Don't retry this sync
+        return;
+      }
+
+      // Check for invalid operation (e.g., session not found)
+      if (error.response?.status === 400 && error.response?.data?.error === 'INVALID_OPERATION') {
+        const details = error.response?.data?.details || {};
+        const message = error.response?.data?.message || 'Invalid operation';
+
+        console.error('🚫 INVALID OPERATION:', message);
+        console.error('Details:', details);
+
+        // If this was a screenshot upload that failed due to missing session
+        if (item.entityType === 'screenshot') {
+          console.log('Screenshot sync failed - session does not exist:', item.entityId);
+
+          // Delete the local screenshot since it can't be synced
+          this.db.deleteScreenshots([item.entityId]);
+
+          // Emit event to stop tracking and show error
+          const { app } = require('electron');
+          app.emit('invalid-operation-detected', {
+            message: message,
+            details: details,
+            sessionId: details.sessionId,
+            timestamp: new Date()
+          });
+        }
+
+        // Don't retry this sync
+        return;
+      }
+
       // Check for concurrent session detection
       if (error.response?.status === 409 || error.response?.data?.error === 'CONCURRENT_SESSION_DETECTED') {
         const details = error.response?.data?.details || {};
@@ -1050,11 +1312,11 @@ export class ApiSyncService {
           console.log('⚠️ Concurrent session detected during sync but from SAME device - ignoring');
           // Don't delete screenshots or stop tracking if it's the same device
         }
-        
+
         // Don't retry this sync
         return;
       }
-      
+
       throw error;
     }
   }

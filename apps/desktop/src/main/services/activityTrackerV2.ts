@@ -289,7 +289,6 @@ export class ActivityTrackerV2 extends EventEmitter {
     // Start tracking
     this.startTracking();
     
-    console.log(`✅ Session started: ${session.id} (UTC date: ${this.sessionStartDate})`);
     this.emit('session:started', session);
     
     return session;

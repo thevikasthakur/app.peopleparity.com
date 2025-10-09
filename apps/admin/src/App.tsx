@@ -5,6 +5,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { ManualTimeEntry } from './pages/ManualTimeEntry';
+import AppVersions from './pages/AppVersions';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -45,6 +46,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ManualTimeEntry />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/app-versions"
+              element={
+                <ProtectedRoute>
+                  <AppVersions />
                 </ProtectedRoute>
               }
             />

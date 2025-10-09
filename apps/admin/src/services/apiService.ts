@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -59,7 +59,7 @@ export const apiService = {
       if (params?.endDate) queryParams.endDate = params.endDate;
     }
 
-    const response = await api.get('/api/screenshots', { params: queryParams });
+    const response = await api.get('/screenshots', { params: queryParams });
     return response.data;
   },
 
@@ -71,7 +71,7 @@ export const apiService = {
     startDate?: string;
     endDate?: string;
   }) {
-    const response = await api.get('/api/admin/activity-periods', { params });
+    const response = await api.get('/admin/activity-periods', { params });
     return response.data;
   },
 
@@ -80,7 +80,7 @@ export const apiService = {
     // For now, return empty array since we need to check the actual sessions endpoint
     // The API might use a different endpoint or the sessions might be included in dashboard stats
     try {
-      const response = await api.get('/api/sessions/active');
+      const response = await api.get('/sessions/active');
       return response.data ? [response.data] : [];
     } catch {
       return [];
@@ -89,12 +89,12 @@ export const apiService = {
 
   // Team members
   async getTeamMembers() {
-    const response = await api.get('/api/users/team-members');
+    const response = await api.get('/users/team-members');
     return response.data;
   },
 
   async getTeamMemberDetails(userId: string) {
-    const response = await api.get(`/api/admin/team-members/${userId}`);
+    const response = await api.get(`/admin/team-members/${userId}`);
     return response.data;
   },
 
@@ -103,7 +103,7 @@ export const apiService = {
     startDate?: string;
     endDate?: string;
   }) {
-    const response = await api.get('/api/admin/analytics', { params });
+    const response = await api.get('/admin/analytics', { params });
     return response.data;
   },
 
@@ -111,7 +111,7 @@ export const apiService = {
     startDate?: string;
     endDate?: string;
   }) {
-    const response = await api.get(`/api/admin/analytics/user/${userId}`, { params });
+    const response = await api.get(`/admin/analytics/user/${userId}`, { params });
     return response.data;
   },
 
@@ -129,7 +129,7 @@ export const apiService = {
       if (params?.userId) {
         queryParams.userId = params.userId;
       }
-      const response = await api.get('/api/analytics/productive-hours/daily', { params: queryParams });
+      const response = await api.get('/analytics/productive-hours/daily', { params: queryParams });
 
       // The backend now returns all data including holiday-aware markers
       if (response.data) {
@@ -188,22 +188,22 @@ export const apiService = {
   },
 
   async getUserSettings() {
-    const response = await api.get('/api/users/settings');
+    const response = await api.get('/users/settings');
     return response.data;
   },
 
   async updateUserSettings(settings: { timezone: string }) {
-    const response = await api.patch('/api/users/settings', settings);
+    const response = await api.patch('/users/settings', settings);
     return response.data;
   },
 
   async getSignedUrl(screenshotId: string) {
-    const response = await api.get(`/api/screenshots/${screenshotId}/signed-url`);
+    const response = await api.get(`/screenshots/${screenshotId}/signed-url`);
     return response.data;
   },
 
   async getScreenshotDetails(screenshotId: string) {
-    const response = await api.get(`/api/screenshots/${screenshotId}/details`);
+    const response = await api.get(`/screenshots/${screenshotId}/details`);
     return response.data;
   },
 
@@ -215,7 +215,7 @@ export const apiService = {
     endTime: string;
     timezone: string;
   }) {
-    const response = await api.post('/api/admin/manual-time', data);
+    const response = await api.post('/admin/manual-time', data);
     return response.data;
   },
 };

@@ -2,6 +2,7 @@ import { Controller, Post, Body, Get, UseGuards, Request, Res, Redirect, Inject 
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthGuard } from '@nestjs/passport';
+import { VersionCheckGuard } from '../../guards/version-check.guard';
 import { Response } from 'express';
 
 @Controller('auth')
@@ -11,6 +12,7 @@ export class AuthController {
   ) {}
 
   @Post('login')
+  @UseGuards(VersionCheckGuard)
   async login(@Body() loginDto: { email: string; password: string }) {
     const user = await this.authService.validateUser(loginDto.email, loginDto.password);
     if (!user) {

@@ -1,11 +1,11 @@
-import { 
-  Controller, 
+import {
+  Controller,
   Post,
   Get,
   Delete,
   Query,
   Param,
-  UseGuards, 
+  UseGuards,
   UseInterceptors,
   UploadedFile,
   Request,
@@ -19,11 +19,13 @@ import { ScreenshotsService } from './screenshots.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { VersionCheckGuard } from '../../guards/version-check.guard';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Screenshot } from '../../entities/screenshot.entity';
 
 @Controller('screenshots')
+@UseGuards(VersionCheckGuard)
 export class ScreenshotsController {
   constructor(
     @Inject(ScreenshotsService) private screenshotsService: ScreenshotsService,
@@ -191,7 +193,13 @@ export class ScreenshotsController {
     // Get current session details to check device info
     const currentSession = await this.sessionsService.findById(body.sessionId);
     if (!currentSession) {
-      throw new HttpException(`Session ${body.sessionId} not found`, HttpStatus.NOT_FOUND);
+      throw new HttpException({
+        error: 'INVALID_OPERATION',
+        message: `Session ${body.sessionId} not found. Please ensure the session is synced before uploading screenshots.`,
+        details: {
+          sessionId: body.sessionId
+        }
+      }, HttpStatus.BAD_REQUEST);
     }
     
     const currentDevice = currentSession.deviceInfo || 'unknown';
@@ -260,12 +268,18 @@ export class ScreenshotsController {
       return { success: true, screenshot };
     } catch (error) {
       console.error(`Failed to create screenshot in database:`, error);
-      
+
       // If it's a foreign key constraint error, return a specific message
       if (error.message?.includes('foreign key') || error.message?.includes('violates')) {
-        throw new Error(`Session ${body.sessionId} does not exist. Please sync sessions first.`);
+        throw new HttpException({
+          error: 'INVALID_OPERATION',
+          message: `Session ${body.sessionId} does not exist. Please sync sessions first.`,
+          details: {
+            sessionId: body.sessionId
+          }
+        }, HttpStatus.BAD_REQUEST);
       }
-      
+
       throw error;
     }
   }
@@ -337,7 +351,13 @@ export class ScreenshotsController {
     // Get current session details to check device info
     const currentSession = await this.sessionsService.findById(body.sessionId);
     if (!currentSession) {
-      throw new HttpException(`Session ${body.sessionId} not found`, HttpStatus.NOT_FOUND);
+      throw new HttpException({
+        error: 'INVALID_OPERATION',
+        message: `Session ${body.sessionId} not found. Please ensure the session is synced before uploading screenshots.`,
+        details: {
+          sessionId: body.sessionId
+        }
+      }, HttpStatus.BAD_REQUEST);
     }
     
     const currentDevice = currentSession.deviceInfo || 'unknown';
@@ -418,12 +438,18 @@ export class ScreenshotsController {
       return { success: true, url: fullUrl, thumbnailUrl, screenshot };
     } catch (error) {
       console.error(`Failed to create screenshot in database:`, error);
-      
+
       // If it's a foreign key constraint error, return a specific message
       if (error.message?.includes('foreign key') || error.message?.includes('violates')) {
-        throw new Error(`Session ${body.sessionId} does not exist. Please sync sessions first.`);
+        throw new HttpException({
+          error: 'INVALID_OPERATION',
+          message: `Session ${body.sessionId} does not exist. Please sync sessions first.`,
+          details: {
+            sessionId: body.sessionId
+          }
+        }, HttpStatus.BAD_REQUEST);
       }
-      
+
       throw error;
     }
   }

@@ -287,6 +287,8 @@ const createWindow = () => {
     // Force back to our fixed zoom level
     mainWindow!.webContents.setZoomLevel(-2.0);
   });
+
+  /*
   
   // Handle proper DPI rendering
   mainWindow.webContents.on('did-finish-load', () => {
@@ -350,6 +352,7 @@ const createWindow = () => {
       console.error('Failed to execute DPI script:', err.message);
     });
   });
+  */
   
   // Don't interfere with zoom at all - let Electron handle it naturally
 
@@ -856,6 +859,12 @@ app.whenReady().then(async () => {
   productiveHoursService = new ProductiveHoursService(databaseService);
   permissionsService = new PermissionsService();
   console.log('✅ API sync, browser bridge, productive hours, and permissions service initialized');
+
+  // Check app version on startup
+  const versionCheck = await apiSyncService.checkVersion();
+  if (!versionCheck.isSupported) {
+    console.error('⚠️ App version not supported:', versionCheck.message);
+  }
   
   // Setup ALL IPC handlers now that services are ready
   setupIpcHandlers();
@@ -1062,8 +1071,6 @@ app.whenReady().then(async () => {
   // Listen for session start events to start screenshot service
   console.log('🎯 Setting up session:started event listener on activityTracker');
   const sessionStartedListener = async (session: any) => {
-    console.log('📷 Session started event received, starting screenshot service for new session:', session.id);
-    console.log('📷 Screenshot service instance exists:', !!screenshotService);
 
     // Update tray menu
     updateTrayMenu();
@@ -1090,24 +1097,106 @@ app.whenReady().then(async () => {
   
   activityTracker.on('session:started', sessionStartedListener);
   console.log('✅ session:started listener attached, total listeners:', activityTracker.listenerCount('session:started'));
-  
-  // Listen for concurrent session detection
-  app.on('concurrent-session-detected' as any, async (event: any) => {
-    console.error('🚫 CONCURRENT SESSION DETECTED!', event);
-    
+
+  // Listen for version upgrade required (426 status)
+  app.on('version-upgrade-required' as any, async (event: any) => {
+    console.error('🚫 VERSION UPGRADE REQUIRED!', event);
+
     // Disable screenshot service to prevent auto-restart
     screenshotService.disableAutoSessionCreation();
-    
+
     // Stop the current session
     if (activityTracker) {
       await activityTracker.stopSession();
     }
-    
+
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('version-upgrade-required', {
+        title: 'Update Required',
+        message: event.message || 'Your app version is no longer supported. Please update your desktop application.',
+      });
+    }
+
+    // Use electron dialog to show alert
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Update Required',
+      event.message || 'Your app version is no longer supported. Please update your desktop application to continue tracking time.'
+    );
+
+    // Logout the user
+    if (apiSyncService) {
+      await apiSyncService.logout();
+    }
+
+    // Navigate to login page
+    if (mainWindow) {
+      mainWindow.webContents.send('navigate-to-login');
+    }
+  });
+
+  // Listen for invalid operation detection (e.g., session not found)
+  app.on('invalid-operation-detected' as any, async (event: any) => {
+    console.error('🚫 INVALID OPERATION DETECTED!', event);
+
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+
+    // Stop the current session
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+
+    // Clear sync queue for this session to prevent more errors
+    if (event.details?.sessionId) {
+      databaseService.clearSyncQueueForSession(event.details.sessionId);
+    }
+
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('invalid-operation-detected', {
+        title: 'Sync Error - Session Not Found',
+        message: event.message || 'Failed to sync screenshot because the session does not exist on the server.',
+        details: event.details
+      });
+    }
+
+    // Use electron dialog to show alert
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Sync Error',
+      event.message || 'Failed to sync data. The session was not found on the server. You will be logged out.'
+    );
+
+    // Logout the user
+    if (apiSyncService) {
+      await apiSyncService.logout();
+    }
+
+    // Navigate to login page
+    if (mainWindow) {
+      mainWindow.webContents.send('navigate-to-login');
+    }
+  });
+
+  // Listen for concurrent session detection
+  app.on('concurrent-session-detected' as any, async (event: any) => {
+    console.error('🚫 CONCURRENT SESSION DETECTED!', event);
+
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+
+    // Stop the current session
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+
     // Clear sync queue for this session to prevent more alerts
     if (event.sessionId) {
       databaseService.clearSyncQueueForSession(event.sessionId);
     }
-    
+
     // Show notification to user
     if (mainWindow) {
       mainWindow.webContents.send('concurrent-session-detected', {
@@ -1116,7 +1205,7 @@ app.whenReady().then(async () => {
         details: event.details
       });
     }
-    
+
     // Use electron dialog to show alert (only once)
     const { dialog } = require('electron');
     const otherDevice = event.otherDevice || 'another device';
@@ -1124,7 +1213,7 @@ app.whenReady().then(async () => {
       'Concurrent Session Detected',
       `Time tracking is already active on ${otherDevice}. This session has been stopped to prevent duplicate time tracking.`
     );
-    
+
     // Re-enable auto session creation after 30 seconds
     setTimeout(() => {
       screenshotService.enableAutoSessionCreation();
@@ -1274,9 +1363,7 @@ function setupIpcHandlers() {
       }
       
       // Now start the session with permissions granted
-      console.log('🚀 Starting session via activityTracker.startSession with mode:', mode, 'task:', task, 'projectId:', projectId);
       const sessionResult = await activityTracker.startSession(mode, projectId, task);
-      console.log('📊 Session started, result:', sessionResult?.id);
       
       // Also manually start screenshot service just in case the event doesn't fire
       console.log('📸 Manually starting screenshot service after session start');
@@ -2113,7 +2200,25 @@ function setupIpcHandlers() {
   ipcMain.handle('system:open-preferences', async (_, pane: string) => {
     return permissionsService.openSystemPreferences(pane);
   });
-  
+
+  ipcMain.handle('system:open-external', async (_, url: string) => {
+    const { shell } = require('electron');
+    await shell.openExternal(url);
+  });
+
+  // App info handlers
+  ipcMain.handle('app:get-version', async () => {
+    // Read version from package.json
+    const packageJsonPath = path.join(__dirname, '../../package.json');
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      return packageJson.appVersion || packageJson.version || 'Unknown';
+    } catch (error) {
+      console.error('Failed to read app version:', error);
+      return app.getVersion(); // Fallback to electron version
+    }
+  });
+
   // Debug/admin handlers
   ipcMain.handle('debug:clear-sync-queue', async () => {
     return databaseService.clearSyncQueue();

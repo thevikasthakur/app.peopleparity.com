@@ -1111,10 +1111,8 @@ export class ActivityTracker extends EventEmitter {
       }
       windowEnd.setSeconds(0);
       windowEnd.setMilliseconds(0);
-      console.log(`Session started at ${now.toISOString()}, scheduling window completion for ${windowEnd.toISOString()}`);
       this.scheduleWindowCompletion(windowEnd);
       
-      console.log('Session started:', session.id);
       this.emit('session:started', session);
       return session;
     } catch (error) {

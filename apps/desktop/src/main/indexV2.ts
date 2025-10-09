@@ -118,24 +118,106 @@ app.whenReady().then(async () => {
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
   console.log('✅ API sync and browser bridge initialized');
-  
-  // Listen for concurrent session detection
-  app.on('concurrent-session-detected' as any, async (event: any) => {
-    console.error('🚫 CONCURRENT SESSION DETECTED!', event);
-    
+
+  // Listen for version upgrade required (426 status)
+  app.on('version-upgrade-required' as any, async (event: any) => {
+    console.error('🚫 VERSION UPGRADE REQUIRED!', event);
+
     // Disable screenshot service to prevent auto-restart
     screenshotService.disableAutoSessionCreation();
-    
+
     // Stop the current session
     if (activityTracker) {
       await activityTracker.stopSession();
     }
-    
+
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('version-upgrade-required', {
+        title: 'Update Required',
+        message: event.message || 'Your app version is no longer supported. Please update your desktop application.',
+      });
+    }
+
+    // Use electron dialog to show alert
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Update Required',
+      event.message || 'Your app version is no longer supported. Please update your desktop application to continue tracking time.'
+    );
+
+    // Logout the user
+    if (apiSyncService) {
+      await apiSyncService.logout();
+    }
+
+    // Navigate to login page
+    if (mainWindow) {
+      mainWindow.webContents.send('navigate-to-login');
+    }
+  });
+
+  // Listen for invalid operation detection (e.g., session not found)
+  app.on('invalid-operation-detected' as any, async (event: any) => {
+    console.error('🚫 INVALID OPERATION DETECTED!', event);
+
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+
+    // Stop the current session
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+
+    // Clear sync queue for this session to prevent more errors
+    if (event.details?.sessionId) {
+      databaseService.clearSyncQueueForSession(event.details.sessionId);
+    }
+
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('invalid-operation-detected', {
+        title: 'Sync Error - Session Not Found',
+        message: event.message || 'Failed to sync screenshot because the session does not exist on the server.',
+        details: event.details
+      });
+    }
+
+    // Use electron dialog to show alert
+    const { dialog } = require('electron');
+    dialog.showErrorBox(
+      'Sync Error',
+      event.message || 'Failed to sync data. The session was not found on the server. You will be logged out.'
+    );
+
+    // Logout the user
+    if (apiSyncService) {
+      await apiSyncService.logout();
+    }
+
+    // Navigate to login page
+    if (mainWindow) {
+      mainWindow.webContents.send('navigate-to-login');
+    }
+  });
+
+  // Listen for concurrent session detection
+  app.on('concurrent-session-detected' as any, async (event: any) => {
+    console.error('🚫 CONCURRENT SESSION DETECTED!', event);
+
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+
+    // Stop the current session
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+
     // Clear sync queue for this session to prevent more alerts
     if (event.sessionId) {
       databaseService.clearSyncQueueForSession(event.sessionId);
     }
-    
+
     // Show notification to user
     if (mainWindow) {
       mainWindow.webContents.send('concurrent-session-detected', {
@@ -144,14 +226,14 @@ app.whenReady().then(async () => {
         details: event.details
       });
     }
-    
+
     // Use electron dialog to show alert (only once)
     const { dialog } = require('electron');
     dialog.showErrorBox(
       'Concurrent Session Detected',
       'Another device is already tracking time for your account. This session has been stopped to prevent duplicate time tracking.'
     );
-    
+
     // Re-enable auto session creation after 30 seconds
     setTimeout(() => {
       screenshotService.enableAutoSessionCreation();

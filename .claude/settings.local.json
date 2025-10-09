@@ -64,7 +64,11 @@
       "Bash(sysctl:*)",
       "Bash(arch -arm64 npm rebuild better-sqlite3)",
       "Bash(arch -arm64 npx electron-rebuild -f)",
-      "Bash(arch -arm64 npx electron-rebuild -f -w better-sqlite3,uiohook-napi,sharp -a arm64)"
+      "Bash(arch -arm64 npx electron-rebuild -f -w better-sqlite3,uiohook-napi,sharp -a arm64)",
+      "Read(//dev/**)",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"\\d app_versions\")",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT version, \"\"isSupported\"\", \"\"deprecationDate\"\" FROM app_versions ORDER BY \"\"releaseDate\"\" DESC;\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZThjMWFiYS0wZWQ4LTRkOGEtYTkzNy03MTlmN2UwMjU1NDMiLCJlbWFpbCI6InZpa2FzQGluemludC5jb20iLCJyb2xlIjoiZGV2ZWxvcGVyIiwib3JnYW5pemF0aW9uSWQiOm51bGwsImlhdCI6MTc2MDAyNTA4OSwiZXhwIjoxNzYwNjI5ODg5fQ.e8zhVWGXGjUcBz868HqBc5WhS7xBU48Lh_ocl86zP0Y\")"
     ],
     "deny": [],
     "ask": []

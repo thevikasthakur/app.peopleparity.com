@@ -92,4 +92,4 @@ npm run lint
 
 ## 📄 License
 
-Proprietary - People Parity Inc.
+Proprietary - Vikas Thakur

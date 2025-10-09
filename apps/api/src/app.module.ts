@@ -12,6 +12,7 @@ import { ScreenshotsModule } from './modules/screenshots/screenshots.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AppVersionModule } from './modules/app-version/app-version.module';
 
 // Import all entities explicitly for serverless
 import { User } from './entities/user.entity';
@@ -20,6 +21,7 @@ import { Project } from './entities/project.entity';
 import { Session } from './entities/session.entity';
 import { ActivityPeriod } from './entities/activity-period.entity';
 import { Screenshot } from './entities/screenshot.entity';
+import { AppVersion } from './entities/app-version.entity';
 
 @Module({
   imports: [
@@ -41,7 +43,8 @@ import { Screenshot } from './entities/screenshot.entity';
           Project,
           Session,
           ActivityPeriod,
-          Screenshot
+          Screenshot,
+          AppVersion
         ],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         synchronize: false, // Use migrations for schema management
@@ -68,6 +71,7 @@ import { Screenshot } from './entities/screenshot.entity';
     AnalyticsModule,
     DashboardModule,
     AdminModule,
+    AppVersionModule,
   ],
 })
 export class AppModule {}

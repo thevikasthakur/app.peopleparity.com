@@ -35,7 +35,7 @@ win:
     - target: nsis
       arch:
         - x64
-  publisherName: People Parity Inc.
+  publisherName: Vikas Thakur
 
 nsis:
   oneClick: false

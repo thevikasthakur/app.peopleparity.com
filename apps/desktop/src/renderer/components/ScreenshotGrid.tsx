@@ -653,7 +653,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
           });
         }
         
-        console.log(`Hour ${hour} activity groups:`, activityGroups);
 
         // Check if we need a date separator
         const firstValidScreenshot = validScreenshots[0];
