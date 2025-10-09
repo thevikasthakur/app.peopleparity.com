@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 
 interface AppVersion {
   id: string;
@@ -12,7 +11,6 @@ interface AppVersion {
 }
 
 export default function AppVersions() {
-  const { user } = useAuth();
   const [versions, setVersions] = useState<AppVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
