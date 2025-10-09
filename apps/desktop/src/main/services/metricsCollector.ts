@@ -638,7 +638,7 @@ export class MetricsCollector {
     if (perfectAngleRatio > 0.6) {
       return {
         detected: true,
-        confidence: 0.35,
+        confidence: 0.75, // Increased from 0.35 - perfect angles are strong bot indicator
         reason: `Unnatural 45°/90° angle dominance (${(perfectAngleRatio * 100).toFixed(0)}% perfect angles)`
       };
     }

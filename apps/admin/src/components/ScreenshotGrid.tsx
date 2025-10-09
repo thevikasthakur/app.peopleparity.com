@@ -1109,7 +1109,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                             <div className="flex justify-between">
                                               <span className="text-gray-600">Keyboard Bot:</span>
                                               <span className={period.metrics.botDetection.keyboardBotDetected ? 'text-red-600' : 'text-green-600'}>
-                                                {period.metrics.botDetection.keyboardBotDetected ? 'Detected' : 'No Detected'}
+                                                {period.metrics.botDetection.keyboardBotDetected ? 'Detected' : 'Not Detected'}
                                               </span>
                                             </div>
                                             <div className="flex justify-between">
@@ -1122,6 +1122,17 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                               <span className="text-gray-600">Confidence:</span>
                                               <span className="font-medium">{(period.metrics.botDetection.confidence * 100).toFixed(0)}%</span>
                                             </div>
+                                            {/* Show detection reasons for admins */}
+                                            {(userRole === 'super_admin' || userRole === 'org_admin') && period.metrics.botDetection.details && period.metrics.botDetection.details.length > 0 && (
+                                              <div className="mt-2 pt-2 border-t border-orange-200">
+                                                <p className="font-medium text-orange-700 mb-1">Suspicious Patterns:</p>
+                                                <ul className="list-disc list-inside space-y-0.5 text-xs text-gray-700">
+                                                  {period.metrics.botDetection.details.map((reason: string, idx: number) => (
+                                                    <li key={idx}>{reason}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                       )}

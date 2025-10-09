@@ -1,6 +1,6 @@
 {
   "/Users/thakur/Workspace/ppv1/time-tracker/apps/api/serverless.yml": {
-    "versionFramework": "4.20.2",
+    "versionFramework": "4.21.0",
     "servicePath": "/Users/thakur/Workspace/ppv1/time-tracker/apps/api/serverless.yml",
     "serviceConfigFileName": "serverless.yml",
     "service": {
@@ -187,7 +187,7 @@
               "Properties": {
                 "Code": {
                   "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
-                  "S3Key": "serverless/ppv1/prod/1759731189833-2025-10-06T06:13:09.833Z/ppv1.zip"
+                  "S3Key": "serverless/ppv1/prod/1760044760838-2025-10-09T21:19:20.838Z/ppv1.zip"
                 },
                 "Handler": "src/lambda.handler",
                 "Runtime": "nodejs22.x",
@@ -232,14 +232,14 @@
                 "ApiLogGroup"
               ]
             },
-            "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ": {
+            "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE": {
               "Type": "AWS::Lambda::Version",
               "DeletionPolicy": "Retain",
               "Properties": {
                 "FunctionName": {
                   "Ref": "ApiLambdaFunction"
                 },
-                "CodeSha256": "mZOJkPtpICFfvbQ1aDAdRG+oDgLBbIoU8+damFoBAvQ="
+                "CodeSha256": "zOnGyeGheQyIYmF7NhfybvrYNK5Ir8eYqbO0U2yRGe8="
               }
             },
             "HttpApi": {
@@ -438,7 +438,7 @@
             "ApiLambdaFunctionQualifiedArn": {
               "Description": "Current Lambda function version",
               "Value": {
-                "Ref": "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ"
+                "Ref": "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE"
               },
               "Export": {
                 "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
@@ -518,7 +518,7 @@
           "timeout": 31,
           "runtime": "nodejs22.x",
           "vpc": {},
-          "versionLogicalId": "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ"
+          "versionLogicalId": "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE"
         }
       },
       "plugins": [
@@ -787,7 +787,7 @@
             "Properties": {
               "Code": {
                 "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
-                "S3Key": "serverless/ppv1/prod/1759731189833-2025-10-06T06:13:09.833Z/ppv1.zip"
+                "S3Key": "serverless/ppv1/prod/1760044760838-2025-10-09T21:19:20.838Z/ppv1.zip"
               },
               "Handler": "src/lambda.handler",
               "Runtime": "nodejs22.x",
@@ -832,14 +832,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ": {
+          "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "mZOJkPtpICFfvbQ1aDAdRG+oDgLBbIoU8+damFoBAvQ="
+              "CodeSha256": "zOnGyeGheQyIYmF7NhfybvrYNK5Ir8eYqbO0U2yRGe8="
             }
           },
           "HttpApi": {
@@ -1038,7 +1038,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ"
+              "Ref": "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE"
             },
             "Export": {
               "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
@@ -1113,12 +1113,12 @@
     "serviceProviderAwsCfStackName": "ppv1-prod",
     "serviceProviderAwsCfStackId": "arn:aws:cloudformation:ap-south-1:957634529359:stack/ppv1-prod/06d94a30-8dc6-11f0-88ce-06a8c9feeb47",
     "serviceProviderAwsCfStackCreated": "2025-09-09T21:43:30.701Z",
-    "serviceProviderAwsCfStackUpdated": "2025-09-30T20:05:47.456Z",
+    "serviceProviderAwsCfStackUpdated": "2025-10-06T06:13:33.795Z",
     "serviceProviderAwsCfStackStatus": "UPDATE_COMPLETE",
     "serviceProviderAwsCfStackOutputs": [
       {
         "OutputKey": "ApiLambdaFunctionQualifiedArn",
-        "OutputValue": "arn:aws:lambda:ap-south-1:957634529359:function:ppv1-prod-api:24",
+        "OutputValue": "arn:aws:lambda:ap-south-1:957634529359:function:ppv1-prod-api:25",
         "Description": "Current Lambda function version",
         "ExportName": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
       },
@@ -1265,7 +1265,7 @@
           "Properties": {
             "Code": {
               "S3Bucket": "serverless-framework-deployments-ap-south-1-c597c975-9d49",
-              "S3Key": "serverless/ppv1/prod/1759731189833-2025-10-06T06:13:09.833Z/ppv1.zip"
+              "S3Key": "serverless/ppv1/prod/1760044760838-2025-10-09T21:19:20.838Z/ppv1.zip"
             },
             "Handler": "src/lambda.handler",
             "Runtime": "nodejs22.x",
@@ -1310,14 +1310,14 @@
             "ApiLogGroup"
           ]
         },
-        "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ": {
+        "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE": {
           "Type": "AWS::Lambda::Version",
           "DeletionPolicy": "Retain",
           "Properties": {
             "FunctionName": {
               "Ref": "ApiLambdaFunction"
             },
-            "CodeSha256": "mZOJkPtpICFfvbQ1aDAdRG+oDgLBbIoU8+damFoBAvQ="
+            "CodeSha256": "zOnGyeGheQyIYmF7NhfybvrYNK5Ir8eYqbO0U2yRGe8="
           }
         },
         "HttpApi": {
@@ -1515,7 +1515,7 @@
         "ApiLambdaFunctionQualifiedArn": {
           "Description": "Current Lambda function version",
           "Value": {
-            "Ref": "ApiLambdaVersionoisrLVWFIzg5SQjkdnE11E8AxtgXnnAy9K5jaBBPojQ"
+            "Ref": "ApiLambdaVersionzS2F3WtmyRPntZGq2odOU8f2WrNfhbbChy1efsGSFE"
           },
           "Export": {
             "Name": "sls-ppv1-prod-ApiLambdaFunctionQualifiedArn"
