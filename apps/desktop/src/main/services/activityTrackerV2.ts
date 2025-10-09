@@ -195,6 +195,10 @@ export class ActivityTrackerV2 extends EventEmitter {
           }
         }
         
+        // Check if ALL periods in this window have bot activity detected
+        const totalPeriods = windowData.activityPeriods.length;
+        let botDetectedPeriods = 0;
+
         // Save activity periods with screenshot reference
         for (const period of windowData.activityPeriods) {
           const dbPeriod = await this.db.createActivityPeriod({
@@ -210,7 +214,7 @@ export class ActivityTrackerV2 extends EventEmitter {
             classification: period.classification,
             metricsBreakdown: period.metricsBreakdown // Include detailed metrics
           });
-          
+
           if (dbPeriod) {
             // Save activity metrics
             if (period.commandHourData) {
@@ -218,18 +222,37 @@ export class ActivityTrackerV2 extends EventEmitter {
             } else if (period.clientHourData) {
               await this.db.saveClientHourActivity(dbPeriod.id, period.clientHourData);
             }
-            
-            // Log if bot activity was detected
-            if (period.metricsBreakdown?.botDetection?.keyboardBotDetected || 
+
+            // Count bot activity
+            if (period.metricsBreakdown?.botDetection?.keyboardBotDetected ||
                 period.metricsBreakdown?.botDetection?.mouseBotDetected) {
+              botDetectedPeriods++;
               console.log(`⚠️ Bot activity detected in period ${dbPeriod.id}`);
             }
-            
+
             console.log(`✅ Saved activity period ${dbPeriod.id} with metrics`);
           }
         }
-        
-        console.log(`✅ Window data saved: ${windowData.activityPeriods.length} periods, ${savedScreenshotId ? '1 screenshot' : 'no screenshot'}`);
+
+        // Check if entire window (all periods) had bot activity
+        if (totalPeriods > 0 && botDetectedPeriods === totalPeriods) {
+          console.error(`🚨 FULL WINDOW BOT ACTIVITY DETECTED! All ${totalPeriods} periods flagged as bot activity.`);
+
+          // Emit event to stop tracking and show message to user
+          const { app } = require('electron');
+          app.emit('bot-activity-full-window', {
+            periodsCount: totalPeriods,
+            timestamp: new Date()
+          });
+
+          // Stop the session after a small delay
+          setTimeout(() => {
+            console.log('🛑 Stopping session due to persistent bot activity detection');
+            this.stopSession();
+          }, 100);
+        }
+
+        console.log(`✅ Window data saved: ${windowData.activityPeriods.length} periods (${botDetectedPeriods} with bot activity), ${savedScreenshotId ? '1 screenshot' : 'no screenshot'}`);
       } catch (error) {
         console.error('❌ Error saving window data:', error);
       }

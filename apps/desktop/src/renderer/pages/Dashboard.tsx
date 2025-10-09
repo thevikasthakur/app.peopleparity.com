@@ -212,6 +212,36 @@ export function Dashboard() {
     };
   }, []);
 
+  // Listen for bot activity detected
+  useEffect(() => {
+    const handleBotActivity = (data: any) => {
+      console.log('Bot activity detected:', data);
+      // The native dialog will already show, but we could also show a banner here if needed
+      // Refresh dashboard to show stopped session
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    };
+
+    window.electronAPI?.on('bot-activity-detected', handleBotActivity);
+
+    return () => {
+      window.electronAPI?.off('bot-activity-detected', handleBotActivity);
+    };
+  }, [queryClient]);
+
+  // Listen for hourly activity update prompt to show start tracking modal
+  useEffect(() => {
+    const handleShowStartTrackingModal = () => {
+      console.log('📋 Received request to show start tracking modal');
+      setShowActivityModal(true);
+    };
+
+    window.electronAPI?.on('show-start-tracking-modal', handleShowStartTrackingModal);
+
+    return () => {
+      window.electronAPI?.off('show-start-tracking-modal', handleShowStartTrackingModal);
+    };
+  }, []);
+
   // Compare dates in UTC to match backend logic - memoized for performance
   const isToday = useMemo(() => {
     const now = new Date();

@@ -829,7 +829,7 @@ app.whenReady().then(async () => {
   // Listen for inactivity detection
   activityTracker.on('inactivity:detected', (message: { title: string; message: string }) => {
     console.log('🚨 Inactivity detected, showing alert:', message.title);
-    
+
     // Show dialog to user
     const { dialog } = require('electron');
     dialog.showMessageBox(mainWindow!, {
@@ -847,7 +847,42 @@ app.whenReady().then(async () => {
       });
     });
   });
-  
+
+  // Listen for hourly activity update prompts
+  activityTracker.on('hourly:prompt', (promptMessage: string) => {
+    console.log('⏰ Hourly prompt triggered:', promptMessage);
+
+    // Show dialog to user with Continue and Change options
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Activity Update Time! 📋',
+      message: promptMessage,
+      detail: '\nWould you like to continue with the current activity or change it?',
+      buttons: ['Continue', 'Change Activity'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }).then((response) => {
+      if (response.response === 1) {
+        // User chose "Change Activity"
+        console.log('User chose to change activity, stopping current session');
+
+        // Stop the current session
+        const currentSessionId = activityTracker.getCurrentSessionId();
+        if (currentSessionId) {
+          activityTracker.stopSession().then(() => {
+            // Send event to renderer to show the "Start Tracking" modal
+            mainWindow?.webContents.send('show-start-tracking-modal');
+          });
+        }
+      } else {
+        // User chose "Continue"
+        console.log('User chose to continue current activity');
+        // No action needed, tracking continues
+      }
+    });
+  });
+
   // Initialize screenshot service V2 (BEFORE restoring session)
   screenshotService = new ScreenshotServiceV2(databaseService);
   screenshotService.setActivityTracker(activityTracker);
@@ -1178,6 +1213,99 @@ app.whenReady().then(async () => {
     if (mainWindow) {
       mainWindow.webContents.send('navigate-to-login');
     }
+  });
+
+  // Listen for bot activity detected in full window
+  app.on('bot-activity-full-window' as any, async (event: any) => {
+    console.error('🚨 BOT ACTIVITY DETECTED IN FULL WINDOW!', event);
+
+    // Disable screenshot service to prevent auto-restart
+    screenshotService.disableAutoSessionCreation();
+
+    // Stop the current session (already stopped by tracker, but ensure it's done)
+    if (activityTracker) {
+      await activityTracker.stopSession();
+    }
+
+    // Multiple playful, sarcastic messages - pick one randomly
+    const messages = [
+      `🤖 Well, well, well...
+
+Someone's been using a bot! Our system caught you red-handed with those perfectly timed clicks and robotic typing patterns.
+
+Come on, you're better than this! 😏
+
+We've stopped your tracking session. When you're ready to do some actual work (with your actual fingers), feel free to start again.
+
+P.S. - Our bot detector is smarter than your bot. Just saying! 🎯`,
+
+      `🕵️ Detective Mode: ACTIVATED
+
+Interesting... 10 minutes of suspiciously perfect activity. Either you're a robot, or you're using one. We're betting on option 2.
+
+Look, we get it. Automation is cool. But not here, buddy! 🙅
+
+Your session's been stopped. Take a break, close that PyAutoGUI script, and come back when you're ready to work for real.
+
+Pro tip: Robots don't get paid. Humans do. 💰`,
+
+      `⚠️ Houston, we have a problem!
+
+Your last 10 minutes looked like a programming loop - same patterns, same timing, zero human touch.
+
+Nice try though! Our AI is watching, and it's not impressed. 🤨
+
+We've paused your tracking. When you're done experimenting with automation, start a fresh session.
+
+Remember: We track work, not scripts. Let's keep it real! ✌️`,
+
+      `🎭 Plot Twist!
+
+You thought you could trick the system? Our bot detector just called your bluff!
+
+Those clockwork movements and laser-precise timings gave you away. Very Matrix-like, but also very obviously automated. 😅
+
+Your session has been stopped. No hard feelings! Just... you know... use your actual hands next time?
+
+Life's too short for fake productivity. Let's do this for real! 💪`,
+
+      `🚨 Alert: Automation Detected!
+
+Okay, so here's the thing... we noticed your activity was a bit too "perfect" for the last 10 minutes. Humans don't type like metronomes, you know?
+
+Your tracking's been stopped. No drama, no escalation - just fix it and move on.
+
+Ready to track some genuine work? We're ready when you are! Just leave the bots out of it. 🤝
+
+P.S. - If this was actually you, please see a doctor. That's not normal. 😄`
+    ];
+
+    // Pick a random message
+    const message = messages[Math.floor(Math.random() * messages.length)];
+
+    // Show notification to user
+    if (mainWindow) {
+      mainWindow.webContents.send('bot-activity-detected', {
+        title: 'Oops! Bot Activity Detected 🤖',
+        message: message,
+        periodsCount: event.periodsCount
+      });
+    }
+
+    // Use electron dialog to show alert
+    const { dialog } = require('electron');
+    dialog.showMessageBox({
+      type: 'warning',
+      title: 'Bot Activity Detected 🤖',
+      message: 'Automation Alert!',
+      detail: message,
+      buttons: ['Got It!', 'My Bad...']
+    });
+
+    // Re-enable tracking after user acknowledges (but don't auto-start)
+    setTimeout(() => {
+      screenshotService.enableAutoSessionCreation();
+    }, 5000);
   });
 
   // Listen for concurrent session detection

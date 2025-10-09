@@ -79,7 +79,11 @@ export class ActivityTracker extends EventEmitter {
   private lastActivityTime: Date = new Date();
   private activeSeconds: number = 0;
   private activeTimeInterval: NodeJS.Timeout | null = null;
-  
+
+  // Hourly activity update prompt
+  private hourlyPromptTimer: NodeJS.Timeout | null = null;
+  private lastHourlyPromptTime: Date | null = null;
+
   // Memory storage for activity periods and screenshots
   private memoryActivityPeriods: Map<string, MemoryActivityPeriod> = new Map();
   private memoryScreenshots: Map<string, MemoryScreenshot> = new Map();
@@ -165,8 +169,6 @@ export class ActivityTracker extends EventEmitter {
     this.productiveKeys.add(UiohookKey.LeftBracket);
     this.productiveKeys.add(UiohookKey.RightBracket);
     
-    console.log(`Total productive keys: ${this.productiveKeys.size}`);
-    console.log(`Total navigation keys: ${this.navigationKeys.size}`);
   }
   
   // Method to restore an existing session (e.g., after app restart)
@@ -228,7 +230,8 @@ export class ActivityTracker extends EventEmitter {
     this.startPeriodTimer();
     this.startIdleDetection();
     this.startActiveTimeTracking();
-    
+    this.startHourlyPromptTimer();
+
     console.log('✅ Activity tracker started successfully');
   }
   
@@ -263,18 +266,24 @@ export class ActivityTracker extends EventEmitter {
       clearInterval(this.activeTimeInterval);
       this.activeTimeInterval = null;
     }
-    
+
+    // Clear hourly prompt timer
+    if (this.hourlyPromptTimer) {
+      clearInterval(this.hourlyPromptTimer);
+      this.hourlyPromptTimer = null;
+    }
+
     // Clear window completion timer
     if (this.windowCompletionTimer) {
       clearTimeout(this.windowCompletionTimer);
       this.windowCompletionTimer = null;
     }
-    
+
     this.currentWindowEnd = null;
-    
+
     // Clear saved windows set when session ends
     this.savedWindows.clear();
-    
+
     console.log('Activity tracker stopped');
   }
   
@@ -555,13 +564,64 @@ export class ActivityTracker extends EventEmitter {
   private startIdleDetection() {
     this.idleTimer = setInterval(() => {
       const idleTime = Date.now() - this.lastActivityTime.getTime();
-      
+
       if (idleTime > 60000) {
         this.emit('idle:detected');
       }
     }, 30000);
   }
-  
+
+  private startHourlyPromptTimer() {
+    // Clear any existing timer
+    if (this.hourlyPromptTimer) {
+      clearInterval(this.hourlyPromptTimer);
+    }
+
+    // Set the last prompt time to now (session start)
+    this.lastHourlyPromptTime = new Date();
+
+    console.log('⏰ Starting hourly activity update prompt timer');
+
+    // Check every minute if an hour has passed
+    this.hourlyPromptTimer = setInterval(() => {
+      if (!this.sessionStartTime || !this.currentSessionId) {
+        return;
+      }
+
+      const now = new Date();
+      const sessionDurationMs = now.getTime() - this.sessionStartTime.getTime();
+      const hoursSinceStart = Math.floor(sessionDurationMs / (60 * 60 * 1000));
+
+      // Check if we've completed at least one hour and haven't prompted in the last hour
+      if (hoursSinceStart >= 1 && this.lastHourlyPromptTime) {
+        const timeSinceLastPrompt = now.getTime() - this.lastHourlyPromptTime.getTime();
+        const hoursSinceLastPrompt = timeSinceLastPrompt / (60 * 60 * 1000);
+
+        if (hoursSinceLastPrompt >= 1) {
+          console.log(`📢 Hourly activity update prompt triggered (${hoursSinceStart} hours since start)`);
+          this.lastHourlyPromptTime = now;
+          this.emit('hourly:prompt', this.getRandomPromptMessage());
+        }
+      }
+    }, 60 * 1000); // Check every minute
+  }
+
+  private getRandomPromptMessage(): string {
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      const messagesPath = path.join(__dirname, '../data/hourlyPromptMessages.json');
+      const messages = JSON.parse(fs.readFileSync(messagesPath, 'utf-8'));
+      const randomIndex = Math.floor(Math.random() * messages.length);
+      return messages[randomIndex];
+    } catch (error) {
+      console.error('Failed to load hourly prompt messages:', error);
+      // Fallback message
+      return "One hour complete! Still working on the same task or time for an update? 😊";
+    }
+  }
+
   private async savePeriodData() {
     if (!this.currentSessionId) return;
     

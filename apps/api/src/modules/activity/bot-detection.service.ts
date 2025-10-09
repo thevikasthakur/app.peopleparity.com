@@ -142,32 +142,71 @@ export class BotDetectionService {
 
     // Check 1: Unnatural movement patterns
     if (mouse.movementPattern) {
-      // Perfect straight lines or geometric patterns
+      // Check for extremely slow, smooth movement (PyAutoGUI signature)
+      // Human movement typically has avgSpeed > 5px/s when moving
+      // Bot movement tends to be very slow and perfectly smooth (1-3 px/s)
+      if (mouse.movementPattern.smooth &&
+          mouse.movementPattern.avgSpeed > 0 &&
+          mouse.movementPattern.avgSpeed <= 3) {
+        suspicionScores.push(0.95);
+        reasons.push(`Unnaturally slow smooth movement: ${mouse.movementPattern.avgSpeed}px/s (bot-like)`);
+      }
+
+      // Check for moderately slow smooth movement (still suspicious)
+      if (mouse.movementPattern.smooth &&
+          mouse.movementPattern.avgSpeed > 3 &&
+          mouse.movementPattern.avgSpeed <= 10) {
+        suspicionScores.push(0.75);
+        reasons.push(`Very slow smooth movement: ${mouse.movementPattern.avgSpeed}px/s (potentially automated)`);
+      }
+
+      // Perfect straight lines or geometric patterns with high speed
       if (!mouse.movementPattern.smooth && mouse.movementPattern.avgSpeed > 10000) {
         suspicionScores.push(0.8);
         reasons.push(`Unnatural mouse movement: ${mouse.movementPattern.avgSpeed}px/s`);
       }
 
-      // Too consistent speed (bot-like)
+      // Too consistent speed (bot-like) - no movement at all
       if (mouse.movementPattern.smooth && mouse.movementPattern.avgSpeed === 0) {
         suspicionScores.push(0.7);
         reasons.push('No mouse movement despite clicks');
       }
     }
 
-    // Check 2: Click patterns
+    // Check 2: Large distance with low average speed suggests automated movement
+    if (mouse.distancePixels > 500 && mouse.movementPattern &&
+        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 5) {
+      suspicionScores.push(0.9);
+      reasons.push(`Large distance (${mouse.distancePixels}px) with very low speed (${mouse.movementPattern.avgSpeed}px/s) - automated pattern`);
+    }
+
+    // Check 3: Click patterns with minimal movement
     if (mouse.totalClicks > 20 && mouse.distancePixels < 100) {
       suspicionScores.push(0.8);
       reasons.push(`Many clicks (${mouse.totalClicks}) with minimal movement (${mouse.distancePixels}px)`);
     }
 
-    // Check 3: Scroll patterns
+    // Check 4: Moderate clicks with low movement speed (PyAutoGUI pattern)
+    if (mouse.totalClicks >= 5 && mouse.movementPattern &&
+        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 2) {
+      suspicionScores.push(0.85);
+      reasons.push(`Clicks with extremely slow movement speed (${mouse.movementPattern.avgSpeed}px/s)`);
+    }
+
+    // Check 5: Scroll patterns
     if (mouse.totalScrolls > 50 && mouse.totalClicks === 0) {
       suspicionScores.push(0.6);
       reasons.push('Excessive scrolling without any clicks');
     }
 
-    // Check 4: Zero movement with activity
+    // Check 6: Scrolling with slow movement (PyAutoGUI pattern)
+    if (mouse.totalScrolls >= 10 && mouse.movementPattern &&
+        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 3) {
+      suspicionScores.push(0.85);
+      reasons.push(`Scrolling with extremely slow movement speed (${mouse.movementPattern.avgSpeed}px/s)`);
+    }
+
+    // Check 7: Zero movement with activity
     if ((mouse.totalClicks > 0 || mouse.totalScrolls > 0) && mouse.distancePixels === 0) {
       suspicionScores.push(0.9);
       reasons.push('Activity detected but zero mouse movement');

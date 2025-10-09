@@ -96,7 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('debug:enable-foreign-keys'),
   },
   on: (channel: string, callback: (...args: any[]) => void) => {
-    const validChannels = ['idle-status', 'session-update', 'screenshot-captured', 'request-recent-activities', 'note-updated', 'tracking-state-changed', 'concurrent-session-detected', 'invalid-operation-detected', 'navigate-to-login', 'version-upgrade-required'];
+    const validChannels = ['idle-status', 'session-update', 'screenshot-captured', 'request-recent-activities', 'note-updated', 'tracking-state-changed', 'concurrent-session-detected', 'invalid-operation-detected', 'navigate-to-login', 'version-upgrade-required', 'bot-activity-detected', 'show-start-tracking-modal'];
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => callback(...args));
     }
