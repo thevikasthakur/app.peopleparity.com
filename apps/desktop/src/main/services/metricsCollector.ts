@@ -457,7 +457,7 @@ export class MetricsCollector {
       return {
         detected: true,
         confidence: 0.35,
-        reason: `Character-by-character bot detected (${(burstRatio * 100).toFixed(1)}% burst typing, expected >20%)`
+        reason: `Character-by-character bot detected. ${(burstRatio * 100).toFixed(1)}% burst typing`
       };
     }
 
