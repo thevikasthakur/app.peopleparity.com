@@ -339,6 +339,58 @@ export class BotDetectionService {
       return { detected: false, confidence: 0, reason: '' };
     }
 
+    // CRITICAL: Check for single-key repetitions (bot signature)
+    const keyFrequency = new Map<number, number>();
+    for (const key of keystrokeCodes) {
+      keyFrequency.set(key, (keyFrequency.get(key) || 0) + 1);
+    }
+
+    // Find most frequent key
+    let maxFrequency = 0;
+    let mostFrequentKey = 0;
+    for (const [key, freq] of keyFrequency.entries()) {
+      if (freq > maxFrequency) {
+        maxFrequency = freq;
+        mostFrequentKey = key;
+      }
+    }
+
+    // Check for massive single-key repetitions (like 61008 repeated 100+ times)
+    const repetitionRatio = maxFrequency / keystrokeCodes.length;
+    if (repetitionRatio > 0.4 && maxFrequency > 50) {
+      // 40% of keystrokes are the same key - DEFINITE BOT
+      return {
+        detected: true,
+        confidence: 0.95,
+        reason: `Bot detected: Key ${mostFrequentKey} pressed ${maxFrequency} times (${(repetitionRatio * 100).toFixed(0)}% of all keystrokes)`
+      };
+    }
+
+    // Check for consecutive repetitions of the same key
+    let maxConsecutive = 0;
+    let currentConsecutive = 1;
+    let consecutiveKey = 0;
+    for (let i = 1; i < keystrokeCodes.length; i++) {
+      if (keystrokeCodes[i] === keystrokeCodes[i - 1]) {
+        currentConsecutive++;
+        if (currentConsecutive > maxConsecutive) {
+          maxConsecutive = currentConsecutive;
+          consecutiveKey = keystrokeCodes[i];
+        }
+      } else {
+        currentConsecutive = 1;
+      }
+    }
+
+    if (maxConsecutive >= 8) {
+      // Same key pressed 8+ times in a row - BOT BEHAVIOR
+      return {
+        detected: true,
+        confidence: 0.9,
+        reason: `Bot detected: Key ${consecutiveKey} pressed ${maxConsecutive} times consecutively`
+      };
+    }
+
     // Check for different sequence lengths
     const sequenceLengths = [10, 15, 20, 30, 40];
     let highestConfidence = 0;
