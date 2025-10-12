@@ -82,7 +82,11 @@ export class ActivityService {
           const botDetectionResult = this.botDetectionService.detectBotActivity(createActivityDto.metrics);
 
           // Add bot detection results to metrics
-          createActivityDto.metrics.botDetection = botDetectionResult;
+          // Map 'reasons' to 'details' for admin app compatibility
+          createActivityDto.metrics.botDetection = {
+            ...botDetectionResult,
+            details: botDetectionResult.reasons  // Admin app expects 'details' field
+          };
 
           // Log if bot activity detected
           if (botDetectionResult.keyboardBotDetected || botDetectionResult.mouseBotDetected) {

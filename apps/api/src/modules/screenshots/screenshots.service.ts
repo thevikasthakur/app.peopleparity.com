@@ -267,7 +267,10 @@ export class ScreenshotsService {
         const detection = period.metrics.botDetection;
         if (detection.keyboardBotDetected || detection.mouseBotDetected) {
           botDetectedCount++;
-          if (detection.reasons) {
+          // Check both 'reasons' and 'details' fields for compatibility
+          if (detection.details) {
+            botDetectionReasons.push(...detection.details);
+          } else if (detection.reasons) {
             botDetectionReasons.push(...detection.reasons);
           }
         }

@@ -89,13 +89,15 @@ app.whenReady().then(async () => {
     
     // Notify renderer that session has stopped
     if (mainWindow) {
-      mainWindow.webContents.send('session-update', { isActive: false });
+      mainWindow.webContents.send('session-update', {
+        isActive: false,
+        session: null
+      });
     }
   });
   
   // Listen for session start events to start screenshot service
   activityTracker.on('session:started', async (session: any) => {
-    console.log('📷 Session started event received, starting screenshot service for new session:', session.id);
     try {
       // Re-enable auto session creation in case it was disabled
       screenshotService.enableAutoSessionCreation();
@@ -118,6 +120,13 @@ app.whenReady().then(async () => {
   apiSyncService = new ApiSyncService(databaseService, store);
   browserBridge = new BrowserExtensionBridge();
   console.log('✅ API sync and browser bridge initialized');
+
+  // Start sync if user is already authenticated
+  const authToken = store.get('authToken');
+  if (authToken) {
+    console.log('📡 User already authenticated, starting sync service...');
+    apiSyncService.start();
+  }
 
   // Listen for version upgrade required (426 status)
   app.on('version-upgrade-required' as any, async (event: any) => {
@@ -267,7 +276,12 @@ app.on('activate', () => {
 function setupIpcHandlers() {
   // Auth handlers
   ipcMain.handle('auth:login', async (_, email: string, password: string) => {
-    return apiSyncService.login(email, password);
+    const result = await apiSyncService.login(email, password);
+    if (result.success) {
+      // Start syncing after successful login
+      apiSyncService.start();
+    }
+    return result;
   });
   
   ipcMain.handle('auth:current-user', async () => {

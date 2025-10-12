@@ -6,6 +6,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { ManualTimeEntry } from './pages/ManualTimeEntry';
 import AppVersions from './pages/AppVersions';
+import { SyncQueueMonitor } from './components/SyncQueueMonitor';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -54,6 +55,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AppVersions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sync-queue"
+              element={
+                <ProtectedRoute>
+                  <SyncQueueMonitor />
                 </ProtectedRoute>
               }
             />

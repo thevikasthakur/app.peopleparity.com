@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Settings, ChevronDown, Clock, Package } from 'lucide-react';
+import { LogOut, Settings, ChevronDown, Clock, Package, Database } from 'lucide-react';
 
 interface ProfileDropdownProps {
   user: any;
@@ -30,6 +30,11 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
   const handleAppVersions = () => {
     setIsOpen(false);
     navigate('/app-versions');
+  };
+
+  const handleSyncQueue = () => {
+    setIsOpen(false);
+    navigate('/sync-queue');
   };
 
   return (
@@ -76,6 +81,17 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
               >
                 <Package className="w-4 h-4" />
                 App Versions
+              </button>
+            )}
+
+            {/* Sync Queue Monitor - Only for super admins */}
+            {user?.role === 'super_admin' && (
+              <button
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                onClick={handleSyncQueue}
+              >
+                <Database className="w-4 h-4" />
+                Sync Queue Monitor
               </button>
             )}
 

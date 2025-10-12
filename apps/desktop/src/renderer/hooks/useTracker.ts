@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface TrackerData {
@@ -27,12 +27,19 @@ export function useTracker() {
   const queryClient = useQueryClient();
   const [isIdle, setIsIdle] = useState(false);
   const [isOperationInProgress, setIsOperationInProgress] = useState(false);
+  const [localSessionState, setLocalSessionState] = useState<any>(null);
+  const [stateVerified, setStateVerified] = useState(false);
 
   // Main dashboard data query
   const { data: dashboardData = getDefaultData(), refetch: refetchDashboard } = useQuery({
     queryKey: ['dashboard'],
     queryFn: async () => {
       const data = await window.electronAPI.dashboard.getData();
+      // Verify the state matches local state
+      if (!stateVerified) {
+        setLocalSessionState(data.currentSession);
+        setStateVerified(true);
+      }
       return data;
     },
     // Only refetch when not in an operation
@@ -55,6 +62,10 @@ export function useTracker() {
       setIsOperationInProgress(true);
       try {
         const result = await window.electronAPI.session.start(mode, task, projectId);
+        // Optimistically update local state
+        if (result.success && result.session) {
+          setLocalSessionState(result.session);
+        }
         // Wait for backend to fully process
         await new Promise(resolve => setTimeout(resolve, 1000));
         // Immediately refetch to get the latest state
@@ -89,6 +100,8 @@ export function useTracker() {
       setIsOperationInProgress(true);
       try {
         const result = await window.electronAPI.session.stop();
+        // Optimistically clear local state
+        setLocalSessionState(null);
         // Wait for backend to fully process
         await new Promise(resolve => setTimeout(resolve, 1000));
         // Immediately refetch to get the latest state
@@ -100,14 +113,40 @@ export function useTracker() {
     },
   });
 
+  // Track last update time to prevent rapid updates
+  const lastUpdateRef = useRef<number>(0);
+
   // Listen for session updates from main process
   useEffect(() => {
     const handleIdleStatus = (event: any, idle: boolean) => {
       setIsIdle(idle);
     };
-    
+
     const handleSessionUpdate = (event: any, data: any) => {
+      // Debounce rapid updates (ignore if within 100ms of last update)
+      const now = Date.now();
+      if (now - lastUpdateRef.current < 100) {
+        console.log('Ignoring rapid session update');
+        return;
+      }
+      lastUpdateRef.current = now;
+
       console.log('Session update received:', data);
+
+      // Handle undefined data
+      if (!data) {
+        console.warn('Session update received with undefined data - ignoring');
+        return;
+      }
+
+      // Update local state immediately
+      // Support both isTracking and isActive properties
+      const isTracking = data.isTracking !== undefined ? data.isTracking : data.isActive;
+
+      if (isTracking !== undefined) {
+        setLocalSessionState(isTracking ? data.session : null);
+      }
+
       // Only refetch if we're not in the middle of an operation
       if (!isOperationInProgress) {
         refetchDashboard();
@@ -124,13 +163,14 @@ export function useTracker() {
   }, [isOperationInProgress, refetchDashboard]);
 
   return {
-    currentSession: dashboardData.currentSession,
+    // Use local state if available, fallback to dashboard data
+    currentSession: localSessionState !== null ? localSessionState : dashboardData.currentSession,
     todayStats: dashboardData.todayStats,
     weekStats: dashboardData.weekStats,
     screenshots,
     isIdle,
     isOperationInProgress,
-    startSession: (mode: string, task: string, projectId?: string) => 
+    startSession: (mode: string, task: string, projectId?: string) =>
       startSessionMutation.mutateAsync({ mode, task, projectId }),
     switchMode: (mode: string, task: string, projectId?: string) =>
       switchModeMutation.mutateAsync({ mode, task, projectId }),

@@ -69,7 +69,11 @@
       "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"\\d app_versions\")",
       "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT version, \"\"isSupported\"\", \"\"deprecationDate\"\" FROM app_versions ORDER BY \"\"releaseDate\"\" DESC;\")",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZThjMWFiYS0wZWQ4LTRkOGEtYTkzNy03MTlmN2UwMjU1NDMiLCJlbWFpbCI6InZpa2FzQGluemludC5jb20iLCJyb2xlIjoiZGV2ZWxvcGVyIiwib3JnYW5pemF0aW9uSWQiOm51bGwsImlhdCI6MTc2MDAyNTA4OSwiZXhwIjoxNzYwNjI5ODg5fQ.e8zhVWGXGjUcBz868HqBc5WhS7xBU48Lh_ocl86zP0Y\")",
-      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT s.id, s.\"\"capturedAt\"\", ap.\"\"startTime\"\", ap.\"\"endTime\"\", ap.metrics FROM screenshots s JOIN activity_periods ap ON ap.\"\"screenshotId\"\" = s.id WHERE s.id = ''72c329b9-5b7c-4ca2-af33-ae90edb02e11'' ORDER BY ap.\"\"startTime\"\";\")"
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT s.id, s.\"\"capturedAt\"\", ap.\"\"startTime\"\", ap.\"\"endTime\"\", ap.metrics FROM screenshots s JOIN activity_periods ap ON ap.\"\"screenshotId\"\" = s.id WHERE s.id = ''72c329b9-5b7c-4ca2-af33-ae90edb02e11'' ORDER BY ap.\"\"startTime\"\";\")",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT version, \"\"isSupported\"\", \"\"deprecationDate\"\", \"\"releaseDate\"\" FROM app_versions WHERE version = ''1.1.0'';\")",
+      "Read(//Users/thakur/**)",
+      "Bash(PGPASSWORD=postgres psql -h ppv1-db.c6lwoh7tpmqk.ap-south-1.rds.amazonaws.com -U postgres -d ppv1_db -c \"SELECT version, is_supported, release_date, deprecation_date FROM app_versions WHERE version = ''1.1.0'';\")",
+      "Bash(brew install:*)"
     ],
     "deny": [],
     "ask": []

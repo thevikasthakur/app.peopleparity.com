@@ -122,6 +122,9 @@ export class MetricsCollector {
       intervals.push(timestamps[i] - timestamps[i - 1]);
     }
 
+    // Add unique key variety check (better bot detection like API service)
+    const uniqueKeysCheck = this.checkKeyVariety();
+
     // Check for superhuman speed
     const tooFastCount = intervals.filter(i => i < this.BOT_INTERVAL_THRESHOLD).length;
     const superhumanSpeed = tooFastCount > intervals.length * 0.3;
@@ -148,6 +151,12 @@ export class MetricsCollector {
 
     const reasons: string[] = [];
     let confidence = 0;
+
+    // Add unique key variety check results
+    if (uniqueKeysCheck.detected) {
+      reasons.push(uniqueKeysCheck.reason);
+      confidence += uniqueKeysCheck.confidence;
+    }
 
     if (superhumanSpeed) {
       reasons.push(`Superhuman typing speed detected (${tooFastCount} intervals < ${this.BOT_INTERVAL_THRESHOLD}ms)`);
@@ -465,6 +474,60 @@ export class MetricsCollector {
   }
 
   /**
+   * Check key variety for bot detection (like API service)
+   */
+  private checkKeyVariety(): {
+    detected: boolean;
+    confidence: number;
+    reason: string;
+  } {
+    if (this.keystrokeCodes.length < 20) {
+      return { detected: false, confidence: 0, reason: '' };
+    }
+
+    const uniqueKeys = new Set(this.keystrokeCodes).size;
+    const totalKeys = this.keystrokeCodes.length;
+    const productiveKeys = this.productiveKeys.size;
+    const productiveRatio = totalKeys > 0 ? productiveKeys / totalKeys : 0;
+
+    // Check for very limited key variety (strong bot indicator)
+    if (uniqueKeys <= 2 && totalKeys > 20) {
+      return {
+        detected: true,
+        confidence: 0.5,
+        reason: `Only ${uniqueKeys} unique keys used in ${totalKeys} keystrokes`
+      };
+    }
+
+    if (uniqueKeys <= 4 && totalKeys > 50) {
+      return {
+        detected: true,
+        confidence: 0.35,
+        reason: `Low key variety: ${uniqueKeys} unique keys in ${totalKeys} keystrokes`
+      };
+    }
+
+    // Check for unusual productive keystroke ratio
+    if (productiveRatio === 1 && totalKeys > 50) {
+      return {
+        detected: true,
+        confidence: 0.3,
+        reason: `100% productive keystrokes is unusual (${productiveKeys}/${totalKeys})`
+      };
+    }
+
+    if (productiveRatio === 0 && totalKeys > 30) {
+      return {
+        detected: true,
+        confidence: 0.35,
+        reason: `No productive keystrokes despite ${totalKeys} keys pressed`
+      };
+    }
+
+    return { detected: false, confidence: 0, reason: '' };
+  }
+
+  /**
    * Detect repeating key sequences (bot typing from same file repeatedly)
    */
   private detectRepeatingSequences(intervals: number[]): {
@@ -476,31 +539,71 @@ export class MetricsCollector {
       return { detected: false, confidence: 0, reason: '' };
     }
 
-    // Look for exact sequence repetitions in the key codes
-    // Bot typing from file will have identical sequences
-    const sequenceLength = 20; // Check for 20-key sequences
-    const sequences = new Map<string, number>();
+    // Check for different sequence lengths to avoid false positives
+    const sequenceLengths = [10, 15, 20, 30, 40];
+    let highestConfidence = 0;
+    let mostSuspiciousPattern = '';
 
-    // Extract sequences from keystroke codes
-    for (let i = 0; i <= this.keystrokeCodes.length - sequenceLength; i++) {
-      const sequence = this.keystrokeCodes.slice(i, i + sequenceLength).join(',');
-      sequences.set(sequence, (sequences.get(sequence) || 0) + 1);
-    }
+    for (const sequenceLength of sequenceLengths) {
+      if (this.keystrokeCodes.length < sequenceLength) continue;
 
-    // Find the most common sequence
-    let maxRepetitions = 0;
-    for (const count of sequences.values()) {
-      if (count > maxRepetitions) {
-        maxRepetitions = count;
+      const sequences = new Map<string, number>();
+
+      // Extract sequences from keystroke codes
+      for (let i = 0; i <= this.keystrokeCodes.length - sequenceLength; i++) {
+        const sequence = this.keystrokeCodes.slice(i, i + sequenceLength).join(',');
+        sequences.set(sequence, (sequences.get(sequence) || 0) + 1);
+      }
+
+      // Find the most common sequence
+      let maxRepetitions = 0;
+      let mostCommonSequence = '';
+      for (const [seq, count] of sequences.entries()) {
+        if (count > maxRepetitions) {
+          maxRepetitions = count;
+          mostCommonSequence = seq;
+        }
+      }
+
+      // Check if it's just arrow keys or space (common in presentations)
+      const keyArray = mostCommonSequence.split(',').map(k => parseInt(k));
+      const isPresentationKeys = keyArray.every(key =>
+        key === 32 || // Space
+        key === 13 || // Enter
+        (key >= 37 && key <= 40) // Arrow keys
+      );
+
+      // Skip if it's presentation navigation keys
+      if (isPresentationKeys) continue;
+
+      // Calculate confidence based on sequence length and repetitions
+      // Much higher thresholds to avoid false positives
+      if (maxRepetitions >= 8 && sequenceLength >= 30) {
+        const confidence = 0.35; // Reduced confidence
+        if (confidence > highestConfidence) {
+          highestConfidence = confidence;
+          mostSuspiciousPattern = `Identical ${sequenceLength}-key sequence repeated ${maxRepetitions} times`;
+        }
+      } else if (maxRepetitions >= 12 && sequenceLength >= 20) {
+        const confidence = 0.3; // Require many more repetitions
+        if (confidence > highestConfidence) {
+          highestConfidence = confidence;
+          mostSuspiciousPattern = `Identical ${sequenceLength}-key sequence repeated ${maxRepetitions} times`;
+        }
+      } else if (maxRepetitions >= 20 && sequenceLength >= 10) {
+        const confidence = 0.25; // Very high threshold for short sequences
+        if (confidence > highestConfidence) {
+          highestConfidence = confidence;
+          mostSuspiciousPattern = `Short ${sequenceLength}-key pattern repeated ${maxRepetitions} times`;
+        }
       }
     }
 
-    // If same 20-key sequence appears 3+ times, it's likely a bot
-    if (maxRepetitions >= 3) {
+    if (highestConfidence > 0) {
       return {
         detected: true,
-        confidence: 0.4,
-        reason: `Identical ${sequenceLength}-key sequence repeated ${maxRepetitions} times (bot typing from file)`
+        confidence: highestConfidence,
+        reason: mostSuspiciousPattern
       };
     }
 
@@ -557,9 +660,16 @@ export class MetricsCollector {
         reasons.push(dpiCheck.reason);
         confidence += dpiCheck.confidence;
       }
+
+      // 6. PyAutoGUI-specific Pattern Detection
+      const pyAutoGUICheck = this.detectPyAutoGUIPatterns(positions);
+      if (pyAutoGUICheck.detected) {
+        reasons.push(pyAutoGUICheck.reason);
+        confidence += pyAutoGUICheck.confidence;
+      }
     }
 
-    // 6. Click Pattern Analysis
+    // 7. Click Pattern Analysis
     if (clicks.length > 5) {
       const clickIntervals: number[] = [];
       for (let i = 1; i < clicks.length; i++) {
@@ -627,19 +737,22 @@ export class MetricsCollector {
     const perfectAngleRatio = perfectAngles / curvatures.length;
 
     // Bot signature: Very low curvature (straight lines) or many perfect angles
-    if (straightLineRatio > 0.8) {
+    // Increased thresholds to reduce false positives during presentations
+    if (straightLineRatio > 0.9) { // Increased from 0.8
       return {
         detected: true,
-        confidence: 0.4,
+        confidence: 0.35, // Reduced from 0.4
         reason: `Robotic linear paths detected (${(straightLineRatio * 100).toFixed(0)}% perfectly straight segments)`
       };
     }
 
-    if (perfectAngleRatio > 0.6) {
+    // During presentations, people move mouse in straight lines between slides/points
+    // Only flag if VERY high percentage and combined with other factors
+    if (perfectAngleRatio > 0.75 && positions.length > 50) { // Increased from 0.6, require more data
       return {
         detected: true,
-        confidence: 0.75, // Increased from 0.35 - perfect angles are strong bot indicator
-        reason: `Unnatural 45°/90° angle dominance (${(perfectAngleRatio * 100).toFixed(0)}% perfect angles)`
+        confidence: 0.4, // Reduced from 0.75 - presentations can have straight movements
+        reason: `High 45°/90° angle frequency (${(perfectAngleRatio * 100).toFixed(0)}% perfect angles)`
       };
     }
 
@@ -846,6 +959,136 @@ export class MetricsCollector {
           reason: `No micro-corrections to targets (${perfectStops}/${targetApproaches} pixel-perfect stops)`
         };
       }
+    }
+
+    return { detected: false, confidence: 0, reason: '' };
+  }
+
+  /**
+   * Detect PyAutoGUI-specific patterns
+   */
+  private detectPyAutoGUIPatterns(
+    positions: Array<{ x: number; y: number; timestamp: number }>
+  ): {
+    detected: boolean;
+    confidence: number;
+    reason: string;
+  } {
+    const suspicionScores: number[] = [];
+    const reasons: string[] = [];
+
+    // Pattern 1: Very slow, smooth movement (PyAutoGUI signature)
+    if (positions.length > 10) {
+      const speeds: number[] = [];
+      for (let i = 1; i < positions.length; i++) {
+        const dist = Math.sqrt(
+          Math.pow(positions[i].x - positions[i - 1].x, 2) +
+          Math.pow(positions[i].y - positions[i - 1].y, 2)
+        );
+        const time = positions[i].timestamp - positions[i - 1].timestamp;
+        if (time > 0 && dist > 0) {
+          speeds.push(dist / time);
+        }
+      }
+
+      if (speeds.length > 5) {
+        const avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+        const slowMovements = speeds.filter(s => s > 0.001 && s < 0.003).length; // 1-3 px/ms is PyAutoGUI range
+        const slowRatio = slowMovements / speeds.length;
+
+        // PyAutoGUI moves very slowly and smoothly
+        if (slowRatio > 0.6 && avgSpeed < 0.005) {
+          suspicionScores.push(0.85);
+          reasons.push(`PyAutoGUI-like slow movement (${(slowRatio * 100).toFixed(0)}% at 1-3px/ms, avg: ${(avgSpeed * 1000).toFixed(2)}px/s)`);
+        }
+      }
+    }
+
+    // Pattern 2: Delays between actions match PyAutoGUI sleep patterns
+    if (positions.length > 20) {
+      const delays: number[] = [];
+      for (let i = 1; i < positions.length; i++) {
+        const delay = positions[i].timestamp - positions[i - 1].timestamp;
+        if (delay > 50) { // Only consider significant delays
+          delays.push(delay);
+        }
+      }
+
+      if (delays.length > 5) {
+        // Check for clustering around typical PyAutoGUI delays (150-500ms, 1000-3000ms)
+        const typicalDelays = delays.filter(d =>
+          (d >= 150 && d <= 500) || (d >= 1000 && d <= 3000)
+        ).length;
+
+        const typicalRatio = typicalDelays / delays.length;
+        if (typicalRatio > 0.7) {
+          suspicionScores.push(0.8);
+          reasons.push(`PyAutoGUI timing pattern (${(typicalRatio * 100).toFixed(0)}% delays in 150-500ms or 1-3s ranges)`);
+        }
+      }
+    }
+
+    // Pattern 3: Movement with perfect angles combined with slow speed
+    if (positions.length > 15) {
+      let angleMovements = 0;
+      let slowAngleMovements = 0;
+
+      for (let i = 2; i < positions.length; i++) {
+        const dist1 = Math.sqrt(
+          Math.pow(positions[i-1].x - positions[i-2].x, 2) +
+          Math.pow(positions[i-1].y - positions[i-2].y, 2)
+        );
+        const dist2 = Math.sqrt(
+          Math.pow(positions[i].x - positions[i-1].x, 2) +
+          Math.pow(positions[i].y - positions[i-1].y, 2)
+        );
+
+        // Check angle between movements
+        const angle1 = Math.atan2(
+          positions[i-1].y - positions[i-2].y,
+          positions[i-1].x - positions[i-2].x
+        );
+        const angle2 = Math.atan2(
+          positions[i].y - positions[i-1].y,
+          positions[i].x - positions[i-1].x
+        );
+
+        let angleDiff = Math.abs(angle1 - angle2);
+        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+
+        const degrees = (angleDiff * 180) / Math.PI;
+
+        // Check for perfect angles
+        if (Math.abs(degrees - 45) < 2 || Math.abs(degrees - 90) < 2 || degrees < 2) {
+          angleMovements++;
+
+          // Check if movement is also slow (PyAutoGUI signature)
+          const time = positions[i].timestamp - positions[i-1].timestamp;
+          const speed = dist2 / time;
+          if (speed < 0.005) { // < 5px/ms
+            slowAngleMovements++;
+          }
+        }
+      }
+
+      const angleRatio = angleMovements / (positions.length - 2);
+      const slowAngleRatio = slowAngleMovements / Math.max(angleMovements, 1);
+
+      // PyAutoGUI often produces perfect angles with slow movement
+      if (angleRatio > 0.5 && slowAngleRatio > 0.7) {
+        suspicionScores.push(0.9);
+        reasons.push(`PyAutoGUI angle pattern (${(angleRatio * 100).toFixed(0)}% perfect angles, ${(slowAngleRatio * 100).toFixed(0)}% with slow movement)`);
+      }
+    }
+
+    const maxConfidence = suspicionScores.length > 0 ? Math.max(...suspicionScores) : 0;
+
+    if (maxConfidence > 0) {
+      return {
+        detected: true,
+        confidence: maxConfidence,
+        reason: reasons.join('; ')
+      };
     }
 
     return { detected: false, confidence: 0, reason: '' };
@@ -1181,11 +1424,10 @@ export class MetricsCollector {
     periodDuration: number
   ): DetailedActivityMetrics {
     const startTime = Date.now();
-    
-    // Analyze patterns
-    const keyboardBotAnalysis = this.analyzeKeystrokePatterns(this.keystrokeTimestamps);
-    const mouseBotAnalysis = this.analyzeMousePatterns(this.mousePositions, this.clickTimestamps);
-    
+
+    // REMOVED: Bot detection now happens on backend
+    // We only collect and send raw metrics
+
     // Calculate detailed metrics
     const keyboardMetrics = {
       totalKeystrokes: rawMetrics.keyHits || 0,
@@ -1195,11 +1437,14 @@ export class MetricsCollector {
       productiveUniqueKeys: rawMetrics.productiveUniqueKeys?.size || 0,
       keysPerMinute: ((rawMetrics.keyHits || 0) / (periodDuration / 60)),
       typingRhythm: {
-        consistent: !keyboardBotAnalysis.isBotLike,
+        consistent: true, // No bot analysis, default to consistent
         avgIntervalMs: this.calculateAvgInterval(this.keystrokeTimestamps),
         stdDeviationMs: this.calculateStdDeviation(this.keystrokeTimestamps)
       },
-      keystrokeIntervals: this.getLastIntervals(this.keystrokeTimestamps, 100)
+      keystrokeIntervals: this.getLastIntervals(this.keystrokeTimestamps, 100),
+      // Add raw keystroke data for backend analysis
+      keystrokeCodes: [...this.keystrokeCodes], // Send actual key codes for backend to analyze
+      keystrokeTimestamps: [...this.keystrokeTimestamps] // Send timestamps for pattern analysis
     };
     
     const mouseMetrics = {
@@ -1211,21 +1456,25 @@ export class MetricsCollector {
       distancePixels: Math.round(rawMetrics.mouseDistance || 0),
       distancePerMinute: (rawMetrics.mouseDistance || 0) / (periodDuration / 60),
       movementPattern: {
-        smooth: !mouseBotAnalysis.isBotLike,
+        smooth: true, // No bot analysis, default to smooth
         avgSpeed: this.calculateAvgMouseSpeed(),
         maxSpeed: this.calculateMaxMouseSpeed()
       },
-      clickIntervals: this.getLastIntervals(this.clickTimestamps, 50)
+      clickIntervals: this.getLastIntervals(this.clickTimestamps, 50),
+      // Add raw mouse data for backend analysis
+      mousePositions: [...this.mousePositions], // Send positions for pattern analysis
+      clickTimestamps: [...this.clickTimestamps] // Send click times for pattern analysis
     };
-    
+
+    // Bot detection now happens on backend - send neutral values
     const botDetection = {
-      keyboardBotDetected: keyboardBotAnalysis.isBotLike,
-      mouseBotDetected: mouseBotAnalysis.isBotLike,
-      repetitivePatterns: 0, // Will be calculated based on patterns
-      suspiciousIntervals: keyboardBotAnalysis.reasons.length + mouseBotAnalysis.reasons.length,
-      penaltyApplied: (keyboardBotAnalysis.isBotLike ? 0.25 : 0) + (mouseBotAnalysis.isBotLike ? 0.25 : 0),
-      confidence: (keyboardBotAnalysis.confidence + mouseBotAnalysis.confidence) / 2,
-      details: [...keyboardBotAnalysis.reasons, ...mouseBotAnalysis.reasons]
+      keyboardBotDetected: false, // Always false - backend will determine
+      mouseBotDetected: false, // Always false - backend will determine
+      repetitivePatterns: 0,
+      suspiciousIntervals: 0,
+      penaltyApplied: 0,
+      confidence: 0,
+      details: [] // Empty - backend will provide reasons
     };
     
     const timeMetrics = {

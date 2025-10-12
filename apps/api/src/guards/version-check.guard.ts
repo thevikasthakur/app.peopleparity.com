@@ -34,6 +34,7 @@ export class VersionCheckGuard implements CanActivate {
     });
 
     if (!versionRecord) {
+      console.log(`Version ${appVersion} not found in database - rejecting as unknown`);
       throw new HttpException(
         {
           statusCode: UPGRADE_REQUIRED,
@@ -45,6 +46,7 @@ export class VersionCheckGuard implements CanActivate {
     }
 
     if (!versionRecord.isSupported) {
+      console.log(`Version ${appVersion} found but marked as unsupported`);
       throw new HttpException(
         {
           statusCode: UPGRADE_REQUIRED,
@@ -55,6 +57,8 @@ export class VersionCheckGuard implements CanActivate {
         UPGRADE_REQUIRED,
       );
     }
+
+    console.log(`Version ${appVersion} is supported`);
     return true;
   }
 }

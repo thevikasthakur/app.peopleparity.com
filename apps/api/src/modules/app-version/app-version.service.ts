@@ -57,9 +57,25 @@ export class AppVersionService {
   }
 
   async isVersionSupported(version: string): Promise<boolean> {
+    // Trim whitespace and log the exact version being checked
+    const trimmedVersion = version.trim();
+    console.log(`Checking version support for: "${trimmedVersion}" (original: "${version}")`);
+
     const appVersion = await this.appVersionRepository.findOne({
-      where: { version, isSupported: true },
+      where: { version: trimmedVersion },
     });
-    return !!appVersion;
+
+    if (!appVersion) {
+      console.log(`Version "${trimmedVersion}" not found in database - treating as unsupported`);
+      // Let's also check what versions ARE in the database
+      const allVersions = await this.appVersionRepository.find();
+      console.log('Available versions in database:', allVersions.map(v => `"${v.version}" (supported: ${v.isSupported})`).join(', '));
+      return false;
+    }
+
+    console.log(`Version "${trimmedVersion}" found in database - isSupported: ${appVersion.isSupported}, type: ${typeof appVersion.isSupported}, record:`, appVersion);
+
+    // Return the boolean value directly
+    return appVersion.isSupported;
   }
 }

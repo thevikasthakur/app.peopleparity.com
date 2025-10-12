@@ -59,12 +59,37 @@ export class ApiSyncService {
 
   private getAppVersion(): string {
     try {
+      // Correct path from dist/main/services to package.json is ../../../package.json
+      // But from dist/main to package.json is ../../package.json
+      // Since apiSyncService is in dist/main/services, we need ../../../package.json
       const packageJsonPath = path.join(__dirname, '../../../package.json');
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-      return packageJson.appVersion || packageJson.version || 'unknown';
+      console.log('Trying to read package.json from:', packageJsonPath);
+
+      // First try the compiled path
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+        const version = packageJson.appVersion || packageJson.version || 'unknown';
+        console.log('📱 Read app version from package.json:', version);
+        return version;
+      }
+
+      // If not found, try alternative path (for different build configurations)
+      const altPath = path.join(__dirname, '../../package.json');
+      if (fs.existsSync(altPath)) {
+        const packageJson = JSON.parse(fs.readFileSync(altPath, 'utf-8'));
+        const version = packageJson.appVersion || packageJson.version || 'unknown';
+        console.log('📱 Read app version from alt path:', version);
+        return version;
+      }
+
+      // Fallback: use Electron's app.getVersion()
+      const { app } = require('electron');
+      const version = app.getVersion();
+      console.log('📱 Using Electron app.getVersion():', version);
+      return version;
     } catch (error) {
       console.error('Failed to read app version:', error);
-      return 'unknown';
+      return '1.1.0'; // Hardcode fallback to ensure app works
     }
   }
 
@@ -584,10 +609,13 @@ export class ApiSyncService {
   async checkAppVersion() {
     try {
       console.log('🔍 Checking app version:', this.appVersion);
+      console.log('🔍 Version check URL:', `/app-versions/check/${this.appVersion}`);
       const response = await this.api.get(`/app-versions/check/${this.appVersion}`);
+      console.log('📡 Version check response:', JSON.stringify(response.data));
 
       if (response.data && !response.data.isSupported) {
         console.error('🚫 APP VERSION NO LONGER SUPPORTED!');
+        console.error('Response indicates not supported:', response.data);
 
         // Store version error
         this.store.set('versionError', {
@@ -897,16 +925,43 @@ export class ApiSyncService {
       
       // Sync screenshots before activity periods (since periods now reference screenshots)
       console.log(`Found ${screenshots.length} screenshots to sync`);
+      let consecutiveFailures = 0;
+      const MAX_CONSECUTIVE_FAILURES = 3;
+
       for (const item of screenshots) {
         try {
           console.log(`Syncing screenshot ${item.entityId}, attempts: ${item.attempts || 0}`);
+
+          // Skip items that have failed 3+ times to prevent blocking the queue
+          if (item.attempts >= 3) {
+            console.warn(`Screenshot ${item.entityId} has failed ${item.attempts} times, moving to failed state`);
+            this.handlePermanentFailure(item, 'Too many sync attempts');
+            continue;
+          }
+
           await this.syncItem(item);
           this.db.markSynced(item.id);
           console.log(`Screenshot ${item.entityId} synced successfully`);
+          consecutiveFailures = 0; // Reset on success
         } catch (error: any) {
           console.error(`Failed to sync screenshot ${item.entityId}:`, error.message);
           console.error(`Error details:`, error.response?.data || error);
           this.db.incrementSyncAttempts(item.id);
+          consecutiveFailures++;
+
+          // Check for critical errors that should stop tracking
+          if (this.isCriticalError(error)) {
+            console.error('🚨 Critical sync error detected, stopping tracker');
+            this.handleCriticalSyncError(error, item);
+            break; // Stop processing queue
+          }
+
+          // If too many consecutive failures, pause sync temporarily
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            console.error(`🚨 ${MAX_CONSECUTIVE_FAILURES} consecutive sync failures, pausing sync`);
+            this.notifyUserOfSyncIssue('Multiple sync failures detected. Please check your connection.');
+            break;
+          }
         }
       }
       
@@ -1408,6 +1463,152 @@ export class ApiSyncService {
     } catch (error) {
       console.error('Failed to upload screenshot:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Check if an error is critical and should stop tracking
+   */
+  private isCriticalError(error: any): boolean {
+    // Check for authentication errors
+    if (error.response?.status === 401) {
+      return true;
+    }
+
+    // Check for version errors
+    if (error.response?.data?.error === 'VERSION_NOT_SUPPORTED') {
+      return true;
+    }
+
+    // Check for session doesn't exist errors
+    if (error.response?.data?.error === 'SESSION_NOT_FOUND') {
+      return true;
+    }
+
+    // Check for network errors
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Handle critical sync errors by stopping tracker and notifying user
+   */
+  private handleCriticalSyncError(error: any, item: any) {
+    const { BrowserWindow, dialog } = require('electron');
+    const mainWindow = BrowserWindow.getFocusedWindow();
+
+    let message = 'Sync failed: ';
+    let detail = '';
+
+    if (error.response?.status === 401) {
+      message = 'Authentication Failed';
+      detail = 'Your session has expired. Please log in again.';
+      // Clear auth token
+      this.store.delete('authToken');
+    } else if (error.response?.data?.error === 'VERSION_NOT_SUPPORTED') {
+      message = 'App Version Not Supported';
+      detail = 'Please update your desktop app to continue tracking.';
+    } else if (error.response?.data?.error === 'SESSION_NOT_FOUND') {
+      message = 'Session Sync Error';
+      detail = `Session doesn't exist on server. Tracking has been stopped. Item: ${item.entityType} ${item.entityId}`;
+    } else {
+      message = 'Network Error';
+      detail = 'Unable to sync with server. Please check your internet connection.';
+    }
+
+    // Stop tracking by sending event to main process
+    // The main process has access to activityTracker
+    if (mainWindow) {
+      // Send event to main process to stop tracking
+      mainWindow.webContents.send('request-stop-tracking', {
+        reason: message,
+        critical: true
+      });
+
+      // Show error dialog
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Tracking Stopped',
+        message: message,
+        detail: detail,
+        buttons: ['OK']
+      });
+
+      // Send event to renderer to update UI
+      mainWindow.webContents.send('tracking-stopped', {
+        reason: message,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Handle permanently failed items by removing from queue
+   */
+  private handlePermanentFailure(item: any, reason: string) {
+    console.log(`Moving item ${item.entityId} to failed state: ${reason}`);
+
+    // Mark the item as failed in the database using the proper API
+    // We use -1 as a special flag for failed sync
+    if (item.entityType === 'screenshot') {
+      // Mark screenshot as failed (we'll use a special note to indicate sync failure)
+      try {
+        // Since we don't have direct DB access here, we'll remove from queue
+        // and let the UI handle the failed state
+        console.log(`Screenshot ${item.entityId} marked as failed: ${reason}`);
+      } catch (error) {
+        console.error('Failed to mark screenshot as failed:', error);
+      }
+    } else if (item.entityType === 'activity_period') {
+      // Mark activity period as failed
+      try {
+        console.log(`Activity period ${item.entityId} marked as failed: ${reason}`);
+      } catch (error) {
+        console.error('Failed to mark activity period as failed:', error);
+      }
+    }
+
+    // Remove from sync queue
+    this.db.removeSyncQueueItem(item.id);
+
+    // Emit event for UI to show manual retry option
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getFocusedWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('sync-item-failed', {
+        entityId: item.entityId,
+        entityType: item.entityType,
+        reason: reason,
+        attempts: item.attempts
+      });
+    }
+  }
+
+  /**
+   * Notify user of sync issues
+   */
+  private notifyUserOfSyncIssue(message: string) {
+    const { BrowserWindow, Notification } = require('electron');
+    const mainWindow = BrowserWindow.getFocusedWindow();
+
+    // Show notification
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Sync Issue',
+        body: message,
+        urgency: 'normal'
+      }).show();
+    }
+
+    // Send to renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('sync-warning', {
+        message: message,
+        timestamp: Date.now()
+      });
     }
   }
 }

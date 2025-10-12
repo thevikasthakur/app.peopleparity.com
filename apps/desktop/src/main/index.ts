@@ -8,6 +8,7 @@ import { ApiSyncService } from './services/apiSyncService';
 import { BrowserExtensionBridge } from './services/browserExtensionBridge';
 import { ProductiveHoursService } from './services/productiveHoursService';
 import { PermissionsService } from './services/permissionsService';
+import { TrackingReminderService } from './services/trackingReminderService';
 import { calculateScreenshotScore, calculateTop80Average } from './utils/activityScoreCalculator';
 import Store from 'electron-store';
 
@@ -111,6 +112,7 @@ let apiSyncService: ApiSyncService;
 let browserBridge: BrowserExtensionBridge;
 let productiveHoursService: ProductiveHoursService;
 let permissionsService: PermissionsService;
+let trackingReminderService: TrackingReminderService;
 
 // Helper function to get app icon path
 const getAppIcon = () => {
@@ -883,6 +885,24 @@ app.whenReady().then(async () => {
     });
   });
 
+  // Listen for critical sync errors that require stopping tracking
+  ipcMain.on('request-stop-tracking', async (event, data) => {
+    console.log('🚨 Received request to stop tracking due to sync error:', data.reason);
+
+    // Stop tracking
+    if (activityTracker.getCurrentSessionId()) {
+      await activityTracker.stopSession();
+      console.log('✅ Tracking stopped due to critical sync error');
+    }
+
+    // Update UI
+    mainWindow?.webContents.send('session-update', {
+      isTracking: false,
+      session: null,
+      stoppedReason: data.reason
+    });
+  });
+
   // Initialize screenshot service V2 (BEFORE restoring session)
   screenshotService = new ScreenshotServiceV2(databaseService);
   screenshotService.setActivityTracker(activityTracker);
@@ -893,7 +913,8 @@ app.whenReady().then(async () => {
   browserBridge = new BrowserExtensionBridge();
   productiveHoursService = new ProductiveHoursService(databaseService);
   permissionsService = new PermissionsService();
-  console.log('✅ API sync, browser bridge, productive hours, and permissions service initialized');
+  trackingReminderService = new TrackingReminderService(store);
+  console.log('✅ API sync, browser bridge, productive hours, permissions, and reminder service initialized');
 
   // Check app version on startup
   const versionCheck = await apiSyncService.checkVersion();
@@ -960,6 +981,8 @@ app.whenReady().then(async () => {
         );
         screenshotService.enableAutoSessionCreation();
         screenshotService.start();
+        // Clear any reminders since tracking is active
+        trackingReminderService.onTrackingStarted();
         console.log('✅ Session restored and screenshot service started');
       } else {
         console.log(`⚠️ Session not restored: ${reason}`);
@@ -974,12 +997,19 @@ app.whenReady().then(async () => {
           urgency: 'normal'
         });
         notification.show();
+
+        // Start reminder service for stopped tracking
+        trackingReminderService.restoreReminders(false);
       }
     } else {
       console.log('ℹ️ No active session found - screenshot service NOT started');
+      // Start reminder service for stopped tracking
+      trackingReminderService.restoreReminders(false);
     }
   } catch (error) {
     console.error('❌ Failed to restore session:', error);
+    // Start reminders in case of error
+    trackingReminderService.restoreReminders(false);
   }
   
   // Listen for session stop events to stop screenshot service
@@ -987,12 +1017,18 @@ app.whenReady().then(async () => {
     console.log('📷 Stopping screenshot service due to session stop');
     screenshotService.stop();
 
+    // Start tracking reminders
+    trackingReminderService.onTrackingStopped();
+
     // Update tray menu
     updateTrayMenu();
 
     // Notify renderer that session has stopped
     if (mainWindow) {
-      mainWindow.webContents.send('session-update', { isActive: false });
+      mainWindow.webContents.send('session-update', {
+        isActive: false,
+        session: null
+      });
     }
   });
 
@@ -1027,7 +1063,10 @@ app.whenReady().then(async () => {
 
     // Notify renderer
     if (mainWindow) {
-      mainWindow.webContents.send('session-update', { isActive: false });
+      mainWindow.webContents.send('session-update', {
+        isActive: false,
+        session: null
+      });
       mainWindow.webContents.send('midnight-stop', data);
     }
 
@@ -1107,6 +1146,9 @@ app.whenReady().then(async () => {
   console.log('🎯 Setting up session:started event listener on activityTracker');
   const sessionStartedListener = async (session: any) => {
 
+    // Clear tracking reminders since tracking has started
+    trackingReminderService.onTrackingStarted();
+
     // Update tray menu
     updateTrayMenu();
 
@@ -1120,12 +1162,12 @@ app.whenReady().then(async () => {
       console.error('❌ Failed to start screenshot service:', error);
       console.error('Error stack:', error.stack);
     }
-    
+
     // Notify renderer that session has started
     if (mainWindow) {
-      mainWindow.webContents.send('session-update', { 
-        isActive: true, 
-        session: session 
+      mainWindow.webContents.send('session-update', {
+        isActive: true,
+        session: session
       });
     }
   };
