@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, RefreshCw, Trash2, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
-import { api } from '../lib/api';
+import { AlertTriangle, RefreshCw, Trash2, XCircle, Clock, AlertCircle } from 'lucide-react';
+import api from '../services/apiService';
 import { formatDistanceToNow } from 'date-fns';
 
 interface SyncQueueItem {
@@ -33,7 +33,7 @@ export function SyncQueueMonitor() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
   // Fetch sync queue data
-  const { data: queueData, isLoading, error, refetch } = useQuery({
+  const { data: queueData, isLoading, refetch } = useQuery({
     queryKey: ['syncQueue', selectedUser, selectedStatus],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -128,7 +128,7 @@ export function SyncQueueMonitor() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          {stats?.failed > 0 && (
+          {stats?.failed && stats.failed > 0 && (
             <button
               onClick={() => {
                 if (confirm('Clear all failed items from the sync queue?')) {
