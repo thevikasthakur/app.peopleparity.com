@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Monitor, X, ChevronLeft, ChevronRight, Calendar, Check, Loader, Keyboard, MousePointer, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Monitor, X, ChevronLeft, ChevronRight, Calendar, Check, Loader, Keyboard, MousePointer, AlertCircle, ChevronDown, ChevronUp, Bot } from 'lucide-react';
 import { apiService } from '../services/apiService';
 
 interface ActivityPeriod {
@@ -622,8 +622,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                         </div>
                         {screenshot.hasBotDetection && (
                           <div className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium bg-orange-500/90 text-white flex items-center gap-0.5">
-                            <AlertCircle className="w-2.5 h-2.5" />
-                            🤖
+                            <Bot className="w-2.5 h-2.5" />
+                            
                           </div>
                         )}
                       </div>
@@ -910,10 +910,6 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                   {/* Bot Detection Summary */}
                   {detailedScreenshot?.botDetectionSummary && (
                     <div className="mx-4 mb-4 bg-orange-50 rounded-lg p-3 border border-orange-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertCircle className="w-5 h-5 text-orange-500" />
-                        <span className="font-semibold text-orange-900">Bot Activity Detected</span>
-                      </div>
                       <div className="text-sm text-orange-800">
                         <p className="mb-1">
                           {detailedScreenshot.botDetectionSummary.periodsWithBotActivity} of {detailedScreenshot.botDetectionSummary.totalPeriods} activity periods flagged
