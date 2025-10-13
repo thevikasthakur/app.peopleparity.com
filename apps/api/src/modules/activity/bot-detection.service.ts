@@ -206,54 +206,25 @@ export class BotDetectionService {
       }
     }
 
-    // Check 1: ONLY flag if BOTH slow movement AND large distance (bot signature)
-    // Slow movement alone (reading, thinking) is NOT bot activity
-    if (mouse.movementPattern && mouse.distancePixels > 3000) {
-      // Large distance (3000+ pixels) with extremely slow speed = automated pattern
-      if (mouse.movementPattern.smooth &&
-          mouse.movementPattern.avgSpeed > 0 &&
-          mouse.movementPattern.avgSpeed <= 1.5) {
-        suspicionScores.push(0.95);
-        reasons.push(`Large distance (${mouse.distancePixels}px) with extremely slow speed (${mouse.movementPattern.avgSpeed}px/s) - automated pattern`);
-      }
-    }
+    // IMPORTANT: Slow mouse movement during reading/browsing is NORMAL
+    // Only flag as bot if there are IMPOSSIBLE or HIGHLY UNNATURAL patterns
 
-    // Check 2: Perfect straight lines or geometric patterns with high speed
-    if (mouse.movementPattern && !mouse.movementPattern.smooth && mouse.movementPattern.avgSpeed > 10000) {
-      suspicionScores.push(0.8);
-      reasons.push(`Unnatural mouse movement: ${mouse.movementPattern.avgSpeed}px/s`);
-    }
-
-    // Check 3: Many clicks with minimal movement AND slow speed (both required)
-    if (mouse.totalClicks > 30 && mouse.distancePixels < 100 && mouse.movementPattern &&
-        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed < 1) {
-      suspicionScores.push(0.85);
-      reasons.push(`Many clicks (${mouse.totalClicks}) with minimal movement (${mouse.distancePixels}px) and extremely slow speed`);
-    }
-
-    // Check 4: Moderate clicks with extremely slow movement speed (PyAutoGUI pattern)
-    // Requires both clicks AND slow speed AND moderate distance
-    if (mouse.totalClicks >= 5 && mouse.distancePixels > 1000 && mouse.movementPattern &&
-        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 1) {
-      suspicionScores.push(0.85);
-      reasons.push(`Clicks with extremely slow movement speed (${mouse.movementPattern.avgSpeed}px/s)`);
-    }
-
-    // Check 5: REMOVED - scrolling without clicks is normal reading behavior
-
-    // Check 6: Scrolling with extremely slow movement AND large distance (bot pattern)
-    // Normal reading: slow scrolling is fine. Bot: slow + large distance + many scrolls
-    if (mouse.totalScrolls >= 20 && mouse.distancePixels > 2000 && mouse.movementPattern &&
-        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 1) {
-      suspicionScores.push(0.85);
-      reasons.push(`Many scrolls (${mouse.totalScrolls}) with large distance (${mouse.distancePixels}px) and extremely slow speed (${mouse.movementPattern.avgSpeed}px/s)`);
-    }
-
-    // Check 7: Zero movement with many clicks/scrolls (impossible)
-    if ((mouse.totalClicks > 10 || mouse.totalScrolls > 20) && mouse.distancePixels === 0) {
+    // Check 1: Extremely high speed (superhuman - instant teleportation)
+    if (mouse.movementPattern && mouse.movementPattern.avgSpeed > 10000) {
       suspicionScores.push(0.9);
-      reasons.push('Many clicks/scrolls but zero mouse movement - impossible pattern');
+      reasons.push(`Superhuman mouse speed: ${mouse.movementPattern.avgSpeed}px/s (impossible for humans)`);
     }
+
+    // Check 2: Zero movement with clicks/scrolls (physically impossible)
+    // Only flag if there are MANY clicks/scrolls with literally ZERO movement
+    if ((mouse.totalClicks > 20 || mouse.totalScrolls > 30) && mouse.distancePixels === 0) {
+      suspicionScores.push(0.95);
+      reasons.push(`${mouse.totalClicks} clicks and ${mouse.totalScrolls} scrolls but zero mouse movement - impossible`);
+    }
+
+    // Check 3: REMOVED all "slow movement" checks - slow movement is normal for reading
+    // Check 4: REMOVED all "scrolling without clicks" - normal reading behavior
+    // Check 5: REMOVED all distance + speed combinations - can't distinguish from reading
 
     // Calculate final confidence
     const confidence = suspicionScores.length > 0
@@ -525,57 +496,78 @@ export class BotDetectionService {
     confidence: number;
     reason: string;
   } {
-    if (!positions || positions.length < 20) {
+    if (!positions || positions.length < 30) {
       return { detected: false, confidence: 0, reason: '' };
     }
 
-    let perfectAngles = 0;
-    let straightLines = 0;
+    // Bot detection criteria:
+    // 1. Exactly straight lines (near-zero curvature)
+    // 2. Sharp programmatic angles (30°, 45°, 60°, 90°, 120°, 150°, 210°, 240°, 270°, 300°, 330°)
+
+    const programmaticAngles = [30, 45, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+    let perfectStraightSegments = 0;
+    let programmaticAngleCount = 0;
+    let totalSegments = 0;
 
     // Analyze movement patterns
-    for (let i = 2; i < positions.length; i++) {
-      const angle1 = Math.atan2(
-        positions[i - 1].y - positions[i - 2].y,
-        positions[i - 1].x - positions[i - 2].x
-      );
-      const angle2 = Math.atan2(
-        positions[i].y - positions[i - 1].y,
-        positions[i].x - positions[i - 1].x
-      );
+    for (let i = 1; i < positions.length; i++) {
+      const dx = positions[i].x - positions[i - 1].x;
+      const dy = positions[i].y - positions[i - 1].y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-      let angleDiff = Math.abs(angle1 - angle2);
-      if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+      // Skip if points are too close (no meaningful movement)
+      if (distance < 5) continue;
 
-      const degrees = (angleDiff * 180) / Math.PI;
+      totalSegments++;
 
-      // Check for perfect angles (45° or 90°)
-      if (Math.abs(degrees - 45) < 2 || Math.abs(degrees - 90) < 2) {
-        perfectAngles++;
+      // Calculate angle from horizontal
+      const angleRad = Math.atan2(dy, dx);
+      let angleDeg = (angleRad * 180) / Math.PI;
+      if (angleDeg < 0) angleDeg += 360;
+
+      // Check 1: Perfectly straight lines (exactly 0°, 90°, 180°, 270°)
+      const isExactlyStraight =
+        Math.abs(angleDeg) < 0.5 ||
+        Math.abs(angleDeg - 90) < 0.5 ||
+        Math.abs(angleDeg - 180) < 0.5 ||
+        Math.abs(angleDeg - 270) < 0.5 ||
+        Math.abs(angleDeg - 360) < 0.5;
+
+      if (isExactlyStraight) {
+        perfectStraightSegments++;
       }
 
-      // Check for straight lines
-      if (degrees < 2) {
-        straightLines++;
+      // Check 2: Programmatic angles (within 2° tolerance)
+      for (const targetAngle of programmaticAngles) {
+        if (Math.abs(angleDeg - targetAngle) < 2) {
+          programmaticAngleCount++;
+          break;
+        }
       }
     }
 
-    const perfectAngleRatio = perfectAngles / (positions.length - 2);
-    const straightLineRatio = straightLines / (positions.length - 2);
+    if (totalSegments < 10) {
+      return { detected: false, confidence: 0, reason: '' };
+    }
 
-    // Higher thresholds for presentations
-    if (perfectAngleRatio > 0.8 && positions.length > 50) {
+    const straightRatio = perfectStraightSegments / totalSegments;
+    const programmaticRatio = programmaticAngleCount / totalSegments;
+
+    // Criterion 1: >80% exactly straight lines (bot signature)
+    if (straightRatio > 0.8) {
       return {
         detected: true,
-        confidence: 0.7,
-        reason: `High 45°/90° angle frequency (${(perfectAngleRatio * 100).toFixed(0)}% perfect angles)`
+        confidence: 0.9,
+        reason: `Perfectly straight mouse paths (${(straightRatio * 100).toFixed(0)}% exact 0°/90°/180°/270° angles) - bot-like`
       };
     }
 
-    if (straightLineRatio > 0.9) {
+    // Criterion 2: >70% sharp programmatic angles with near-zero curvature (bot signature)
+    if (programmaticRatio > 0.7 && straightRatio > 0.5) {
       return {
         detected: true,
-        confidence: 0.6,
-        reason: `Mostly straight line movements (${(straightLineRatio * 100).toFixed(0)}%)`
+        confidence: 0.85,
+        reason: `Programmatic angle pattern (${(programmaticRatio * 100).toFixed(0)}% sharp angles at 30°/45°/60°/90°/etc) - bot-like`
       };
     }
 
