@@ -319,14 +319,48 @@ export class BotDetectionService {
   } {
     console.log(`[Bot Detection] analyzeKeystrokeSequences called with ${keystrokeCodes?.length || 0} codes`);
 
-    if (keystrokeCodes.length < 50) {
-      console.log(`[Bot Detection] Not enough keystroke codes (${keystrokeCodes.length} < 50)`);
+    // SANITIZATION: Remove navigation and modifier keys that can cause false positives
+    // These keys (arrow keys, shift, ctrl, etc.) are often held down or auto-repeated
+    const keysToFilter = new Set([
+      // Arrow keys
+      61008, // Down arrow (the phantom key!)
+      61001, // Up arrow
+      60999, // Left arrow
+      61009, // Right arrow
+      // Modifiers
+      42,    // Shift (left)
+      54,    // Shift (right)
+      29,    // Ctrl (left)
+      3613,  // Ctrl (right)
+      56,    // Alt (left)
+      3640,  // Alt (right)
+      3675,  // Windows/Command (left)
+      3676,  // Windows/Command (right)
+      // Navigation
+      61007, // Page Up
+      61009, // Page Down
+      3655,  // Home
+      3663,  // End
+      // Editing
+      14,    // Backspace
+      57,    // Space
+      3637,  // Delete
+      28,    // Enter
+      15,    // Tab
+      1,     // Escape
+    ]);
+
+    const sanitizedCodes = keystrokeCodes.filter(code => !keysToFilter.has(code));
+    console.log(`[Bot Detection] Filtered ${keystrokeCodes.length - sanitizedCodes.length} navigation/modifier keys, ${sanitizedCodes.length} remaining`);
+
+    if (sanitizedCodes.length < 50) {
+      console.log(`[Bot Detection] Not enough productive keystroke codes after filtering (${sanitizedCodes.length} < 50)`);
       return { detected: false, confidence: 0, reason: '' };
     }
 
     // CRITICAL: Check for single-key repetitions (bot signature)
     const keyFrequency = new Map<number, number>();
-    for (const key of keystrokeCodes) {
+    for (const key of sanitizedCodes) {
       keyFrequency.set(key, (keyFrequency.get(key) || 0) + 1);
     }
 
@@ -340,32 +374,41 @@ export class BotDetectionService {
       }
     }
 
-    console.log(`[Bot Detection] Most frequent key: ${mostFrequentKey}, count: ${maxFrequency}, total: ${keystrokeCodes.length}`);
+    const uniqueKeyCount = keyFrequency.size;
+    console.log(`[Bot Detection] Most frequent key: ${mostFrequentKey}, count: ${maxFrequency}, total: ${sanitizedCodes.length}, unique keys: ${uniqueKeyCount}`);
 
     // Check for massive single-key repetitions (like 61008 repeated 100+ times)
-    const repetitionRatio = maxFrequency / keystrokeCodes.length;
+    const repetitionRatio = maxFrequency / sanitizedCodes.length;
     console.log(`[Bot Detection] Repetition ratio: ${(repetitionRatio * 100).toFixed(1)}%`);
 
-    if (repetitionRatio > 0.4 && maxFrequency > 50) {
-      // 40% of keystrokes are the same key - DEFINITE BOT
-      console.log(`[Bot Detection] 🚨 BOT DETECTED! Key ${mostFrequentKey} = ${(repetitionRatio * 100).toFixed(0)}%`);
+    // CRITICAL FIX: If there are many unique keys (15+), it's likely real typing with phantom data
+    // Desktop app bug adds key 61008 phantom data, but real typing has 20+ unique keys
+    // Only flag as bot if BOTH high repetition AND low diversity
+    if (repetitionRatio > 0.4 && maxFrequency > 50 && uniqueKeyCount < 15) {
+      // 40% single key + low diversity (< 15 unique keys) = DEFINITE BOT
+      console.log(`[Bot Detection] 🚨 BOT DETECTED! Key ${mostFrequentKey} = ${(repetitionRatio * 100).toFixed(0)}%, only ${uniqueKeyCount} unique keys`);
       return {
         detected: true,
         confidence: 0.95,
-        reason: `Bot detected: Key ${mostFrequentKey} pressed ${maxFrequency} times (${(repetitionRatio * 100).toFixed(0)}% of all keystrokes)`
+        reason: `Bot detected: Key ${mostFrequentKey} pressed ${maxFrequency} times (${(repetitionRatio * 100).toFixed(0)}% of all keystrokes) with only ${uniqueKeyCount} unique keys`
       };
     }
 
-    // Check for consecutive repetitions of the same key
+    // If high repetition but good diversity, likely desktop app bug, not bot
+    if (repetitionRatio > 0.4 && uniqueKeyCount >= 15) {
+      console.log(`[Bot Detection] High repetition (${(repetitionRatio * 100).toFixed(0)}%) BUT good diversity (${uniqueKeyCount} unique keys) - likely phantom data, not bot`);
+    }
+
+    // Check for consecutive repetitions of the same key (using sanitized data)
     let maxConsecutive = 0;
     let currentConsecutive = 1;
     let consecutiveKey = 0;
-    for (let i = 1; i < keystrokeCodes.length; i++) {
-      if (keystrokeCodes[i] === keystrokeCodes[i - 1]) {
+    for (let i = 1; i < sanitizedCodes.length; i++) {
+      if (sanitizedCodes[i] === sanitizedCodes[i - 1]) {
         currentConsecutive++;
         if (currentConsecutive > maxConsecutive) {
           maxConsecutive = currentConsecutive;
-          consecutiveKey = keystrokeCodes[i];
+          consecutiveKey = sanitizedCodes[i];
         }
       } else {
         currentConsecutive = 1;
@@ -381,19 +424,19 @@ export class BotDetectionService {
       };
     }
 
-    // Check for different sequence lengths
+    // Check for different sequence lengths (using sanitized data)
     const sequenceLengths = [10, 15, 20, 30, 40];
     let highestConfidence = 0;
     let mostSuspiciousPattern = '';
 
     for (const sequenceLength of sequenceLengths) {
-      if (keystrokeCodes.length < sequenceLength) continue;
+      if (sanitizedCodes.length < sequenceLength) continue;
 
       const sequences = new Map<string, number>();
 
       // Extract sequences
-      for (let i = 0; i <= keystrokeCodes.length - sequenceLength; i++) {
-        const sequence = keystrokeCodes.slice(i, i + sequenceLength).join(',');
+      for (let i = 0; i <= sanitizedCodes.length - sequenceLength; i++) {
+        const sequence = sanitizedCodes.slice(i, i + sequenceLength).join(',');
         sequences.set(sequence, (sequences.get(sequence) || 0) + 1);
       }
 

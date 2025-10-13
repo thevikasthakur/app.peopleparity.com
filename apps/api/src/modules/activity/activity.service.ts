@@ -103,7 +103,7 @@ export class ActivityService {
           console.error('Error during bot detection:', error);
         }
       } else {
-        console.warn('BotDetectionService not available - skipping bot detection analysis');
+        console.warn('                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ');
       }
     }
     
