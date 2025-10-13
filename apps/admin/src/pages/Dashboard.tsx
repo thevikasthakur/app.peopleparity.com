@@ -6,7 +6,7 @@ import { ScreenshotGrid } from '../components/ScreenshotGrid';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
-import { Activity, Calendar, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { Activity, Calendar, ChevronLeft, ChevronRight, Users, RefreshCw } from 'lucide-react';
 
 const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
 
@@ -43,6 +43,7 @@ export function Dashboard() {
     return searchParams.get('userId') || null;
   });
   const [isChangingDate, setIsChangingDate] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // For developers, always use their own ID
   const effectiveUserId = user?.isDeveloper ? user.id : selectedUserId;
@@ -137,8 +138,15 @@ export function Dashboard() {
   };
 
   const handleRefresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['screenshots'] });
-    setRefreshKey(prev => prev + 1);
+    setIsRefreshing(true);
+    try {
+      // Only invalidate screenshots query to reload screenshots alone
+      await queryClient.invalidateQueries({ queryKey: ['screenshots', effectiveUserId, selectedDate.toISOString(), refreshKey] });
+      setRefreshKey(prev => prev + 1);
+    } finally {
+      // Add a small delay so the user can see the refresh animation
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
   };
 
   return (
@@ -300,6 +308,16 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Floating Refresh Button */}
+      <button
+        onClick={handleRefresh}
+        disabled={isRefreshing || isLoadingScreenshots}
+        className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center z-50 disabled:opacity-50 disabled:cursor-not-allowed group"
+        title="Refresh screenshots"
+      >
+        <RefreshCw className={`w-6 h-6 ${isRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-300'}`} />
+      </button>
     </div>
   );
 }

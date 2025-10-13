@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
-import { Clock, User, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
+import { Clock, User, Calendar, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+
+const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
 
 interface User {
   id: string;
@@ -17,6 +20,7 @@ interface TimeValidation {
 
 export function ManualTimeEntry() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [taskName, setTaskName] = useState('');
@@ -189,8 +193,24 @@ export function ManualTimeEntry() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-2xl mx-auto px-4">
+    <div className="min-h-screen bg-gray-50">
+      {/* Fixed Header */}
+      <div className="fixed top-0 left-0 right-0 h-8 bg-gray-100/80 backdrop-blur-sm border-b border-gray-300 flex items-center justify-center gap-2 z-50">
+        <img src={logoImage} alt="Logo" className="w-4 h-4 object-contain" />
+        <span className="text-xs text-gray-500 font-medium">People Parity Tracker - Manual Time Entry</span>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 pt-12 max-w-2xl mx-auto">
+        {/* Back Button */}
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </button>
+
         <div className="bg-white rounded-lg shadow-md">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
