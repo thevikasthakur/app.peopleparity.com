@@ -1,6 +1,6 @@
 appId: com.peopleparity.timetracker
-productName: People Parity
-copyright: Copyright © 2025 People Parity
+productName: PeopleParity
+copyright: Copyright © 2025 PeopleParity
 
 directories:
   output: dist-working
@@ -44,7 +44,7 @@ nsis:
   deleteAppDataOnUninstall: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: People Parity
+  shortcutName: PeopleParity
   installerIcon: null
   uninstallerIcon: null
   artifactName: ${productName}-Setup-${version}.${ext}

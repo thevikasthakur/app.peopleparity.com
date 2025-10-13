@@ -191,7 +191,7 @@ export class LocalDatabase {
       endTime: null,
       isActive: 1,
       task: data.task || null,
-      appVersion: packageJson.version || '1.0.0',
+      appVersion:  packageJson.appVersion || packageJson.version || '1.0.0',
       deviceInfo: metadata.deviceInfo,
       realIpAddress: metadata.realIpAddress,
       location: metadata.location ? JSON.stringify(metadata.location) : null,

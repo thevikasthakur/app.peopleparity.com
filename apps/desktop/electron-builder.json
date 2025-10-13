@@ -1,7 +1,7 @@
 {
   "appId": "com.peopleparity.timetracker",
-  "productName": "People Parity",
-  "copyright": "Copyright © 2025 People Parity",
+  "productName": "PeopleParity",
+  "copyright": "Copyright © 2025 PeopleParity",
   "directories": {
     "output": "dist-electron",
     "buildResources": "build"
@@ -104,7 +104,7 @@
     "deleteAppDataOnUninstall": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "People Parity",
+    "shortcutName": "PeopleParity",
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico",
     "installerHeaderIcon": "build/icon.ico"
@@ -134,7 +134,7 @@
   ],
   "afterSign": "scripts/notarize.js",
   "protocols": {
-    "name": "People Parity Protocol",
+    "name": "PeopleParity Protocol",
     "schemes": ["peopleparity"]
   }
 }
