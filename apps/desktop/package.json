@@ -1,7 +1,7 @@
 {
   "name": "@people-parity/desktop",
   "productName": "PeopleParity",
-  "version": "1.3.0",
+  "version": "1.0.0",
   "appVersion": "1.3.0",
   "description": "Time tracking and productivity monitoring application",
   "author": {

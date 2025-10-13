@@ -623,7 +623,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                         {screenshot.hasBotDetection && (
                           <div className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium bg-orange-500/90 text-white flex items-center gap-0.5">
                             <AlertCircle className="w-2.5 h-2.5" />
-                            BOT
+                            🤖
                           </div>
                         )}
                       </div>
@@ -919,6 +919,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                           {detailedScreenshot.botDetectionSummary.periodsWithBotActivity} of {detailedScreenshot.botDetectionSummary.totalPeriods} activity periods flagged
                         </p>
                         {/* Only show detailed patterns for admin users */}
+                         {/*
                         {(userRole === 'super_admin' || userRole === 'org_admin') && detailedScreenshot.botDetectionSummary.reasons.length > 0 && (
                           <div className="mt-2">
                             <p className="font-medium mb-1">Suspicious patterns detected:</p>
@@ -929,6 +930,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                             </ul>
                           </div>
                         )}
+                           */}
                       </div>
                     </div>
                   )}
@@ -1003,7 +1005,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                     <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-100 rounded-full">
                                       <AlertCircle className="w-3 h-3 text-orange-600" />
                                       <span className="text-xs font-medium text-orange-700">
-                                        Bot-like activity
+                                        🔍 Anomalous Activity
                                       </span>
                                     </div>
                                   )}
