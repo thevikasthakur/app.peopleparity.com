@@ -11,8 +11,10 @@ export class ActivityService {
     @InjectRepository(ActivityPeriod)
     private activityPeriodsRepository: Repository<ActivityPeriod>,
     @Inject(SessionsService) private readonly sessionsService: SessionsService,
-    private readonly botDetectionService: BotDetectionService,
-  ) {}
+    @Inject(BotDetectionService) private readonly botDetectionService: BotDetectionService,
+  ) {
+    console.log('[ACTIVITY SERVICE] Constructor - botDetectionService:', this.botDetectionService ? 'AVAILABLE' : 'NOT AVAILABLE');
+  }
 
   async create(createActivityDto: {
     id?: string;
@@ -74,12 +76,15 @@ export class ActivityService {
     // Analyze metrics for bot detection
     if (createActivityDto.metrics) {
       const metricsKeys = Object.keys(createActivityDto.metrics);
-      console.log('Activity period includes detailed metrics:', metricsKeys.join(', '));
+      console.log('[ACTIVITY SERVICE v2.0] Activity period includes detailed metrics:', metricsKeys.join(', '));
+      console.log('[ACTIVITY SERVICE] Keyboard keystrokeCodes length:', createActivityDto.metrics.keyboard?.keystrokeCodes?.length || 0);
 
       // Run bot detection analysis with defensive check
       if (this.botDetectionService) {
+        console.log('[ACTIVITY SERVICE] Bot detection service available, calling detectBotActivity...');
         try {
           const botDetectionResult = this.botDetectionService.detectBotActivity(createActivityDto.metrics);
+          console.log('[ACTIVITY SERVICE] Bot detection result:', botDetectionResult);
 
           // Add bot detection results to metrics
           // Map 'reasons' to 'details' for admin app compatibility

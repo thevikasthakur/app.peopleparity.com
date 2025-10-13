@@ -4,6 +4,7 @@ interface KeyboardMetrics {
   totalKeystrokes: number;
   uniqueKeys: number;
   productiveKeystrokes: number;
+  keysPerMinute?: number; // Keys per minute rate
   typingRhythm?: {
     consistent: boolean;
     stdDeviationMs: number;
@@ -38,6 +39,9 @@ export class BotDetectionService {
    * Analyze activity metrics to detect potential bot behavior
    */
   detectBotActivity(metrics: any): BotDetectionResult {
+    console.log('[Bot Detection v2.0] detectBotActivity called - NEW VERSION WITH SINGLE-KEY DETECTION');
+    console.log('[Bot Detection] Metrics keys:', metrics ? Object.keys(metrics).join(', ') : 'no metrics');
+
     const result: BotDetectionResult = {
       keyboardBotDetected: false,
       mouseBotDetected: false,
@@ -46,24 +50,47 @@ export class BotDetectionService {
     };
 
     if (!metrics) {
+      console.log('[Bot Detection] No metrics provided');
       return result;
     }
 
     // Analyze keyboard patterns
     if (metrics.keyboard) {
+      console.log('[Bot Detection] Analyzing keyboard...');
+      console.log('[Bot Detection] Keyboard keys:', Object.keys(metrics.keyboard).join(', '));
+      console.log('[Bot Detection] keystrokeCodes length:', metrics.keyboard.keystrokeCodes?.length || 0);
+
       const keyboardResult = this.analyzeKeyboardPattern(metrics.keyboard);
       result.keyboardBotDetected = keyboardResult.isBot;
       result.reasons.push(...keyboardResult.reasons);
       result.confidence = Math.max(result.confidence, keyboardResult.confidence);
+
+      console.log('[Bot Detection] Keyboard result:', {
+        isBot: keyboardResult.isBot,
+        confidence: keyboardResult.confidence,
+        reasonCount: keyboardResult.reasons.length
+      });
+    } else {
+      console.log('[Bot Detection] No keyboard metrics');
     }
 
     // Analyze mouse patterns
     if (metrics.mouse) {
+      console.log('[Bot Detection] Analyzing mouse...');
       const mouseResult = this.analyzeMousePattern(metrics.mouse);
       result.mouseBotDetected = mouseResult.isBot;
       result.reasons.push(...mouseResult.reasons);
       result.confidence = Math.max(result.confidence, mouseResult.confidence);
+    } else {
+      console.log('[Bot Detection] No mouse metrics');
     }
+
+    console.log('[Bot Detection] Final result:', {
+      keyboardBot: result.keyboardBotDetected,
+      mouseBot: result.mouseBotDetected,
+      confidence: result.confidence,
+      reasons: result.reasons.length
+    });
 
     return result;
   }
@@ -78,6 +105,13 @@ export class BotDetectionService {
   } {
     const suspicionScores: number[] = [];
     const reasons: string[] = [];
+
+    // CRITICAL FIX: If keysPerMinute is 0, ignore keystrokeCodes (phantom/cached data)
+    // This happens when desktop app has cached keystroke data from previous activity
+    if (keyboard.keysPerMinute !== undefined && keyboard.keysPerMinute === 0) {
+      // No real keyboard activity - don't analyze keystroke patterns
+      return { isBot: false, confidence: 0, reasons: [] };
+    }
 
     // NEW: Analyze raw keystroke codes if available
     if (keyboard.keystrokeCodes && keyboard.keystrokeCodes.length > 20) {
@@ -172,76 +206,53 @@ export class BotDetectionService {
       }
     }
 
-    // Check 1: Unnatural movement patterns
-    if (mouse.movementPattern) {
-      // Check for extremely slow, smooth movement (PyAutoGUI signature)
-      // Human movement typically has avgSpeed > 5px/s when moving
-      // Bot movement tends to be very slow and perfectly smooth (1-3 px/s)
+    // Check 1: ONLY flag if BOTH slow movement AND large distance (bot signature)
+    // Slow movement alone (reading, thinking) is NOT bot activity
+    if (mouse.movementPattern && mouse.distancePixels > 3000) {
+      // Large distance (3000+ pixels) with extremely slow speed = automated pattern
       if (mouse.movementPattern.smooth &&
           mouse.movementPattern.avgSpeed > 0 &&
-          mouse.movementPattern.avgSpeed <= 3) {
+          mouse.movementPattern.avgSpeed <= 1.5) {
         suspicionScores.push(0.95);
-        reasons.push(`Unnaturally slow smooth movement: ${mouse.movementPattern.avgSpeed}px/s (bot-like)`);
-      }
-
-      // Check for moderately slow smooth movement (still suspicious)
-      if (mouse.movementPattern.smooth &&
-          mouse.movementPattern.avgSpeed > 3 &&
-          mouse.movementPattern.avgSpeed <= 10) {
-        suspicionScores.push(0.75);
-        reasons.push(`Very slow smooth movement: ${mouse.movementPattern.avgSpeed}px/s (potentially automated)`);
-      }
-
-      // Perfect straight lines or geometric patterns with high speed
-      if (!mouse.movementPattern.smooth && mouse.movementPattern.avgSpeed > 10000) {
-        suspicionScores.push(0.8);
-        reasons.push(`Unnatural mouse movement: ${mouse.movementPattern.avgSpeed}px/s`);
-      }
-
-      // Too consistent speed (bot-like) - no movement at all
-      if (mouse.movementPattern.smooth && mouse.movementPattern.avgSpeed === 0) {
-        suspicionScores.push(0.7);
-        reasons.push('No mouse movement despite clicks');
+        reasons.push(`Large distance (${mouse.distancePixels}px) with extremely slow speed (${mouse.movementPattern.avgSpeed}px/s) - automated pattern`);
       }
     }
 
-    // Check 2: Large distance with low average speed suggests automated movement
-    if (mouse.distancePixels > 500 && mouse.movementPattern &&
-        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 5) {
-      suspicionScores.push(0.9);
-      reasons.push(`Large distance (${mouse.distancePixels}px) with very low speed (${mouse.movementPattern.avgSpeed}px/s) - automated pattern`);
-    }
-
-    // Check 3: Click patterns with minimal movement
-    if (mouse.totalClicks > 20 && mouse.distancePixels < 100) {
+    // Check 2: Perfect straight lines or geometric patterns with high speed
+    if (mouse.movementPattern && !mouse.movementPattern.smooth && mouse.movementPattern.avgSpeed > 10000) {
       suspicionScores.push(0.8);
-      reasons.push(`Many clicks (${mouse.totalClicks}) with minimal movement (${mouse.distancePixels}px)`);
+      reasons.push(`Unnatural mouse movement: ${mouse.movementPattern.avgSpeed}px/s`);
     }
 
-    // Check 4: Moderate clicks with low movement speed (PyAutoGUI pattern)
-    if (mouse.totalClicks >= 5 && mouse.movementPattern &&
-        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 2) {
+    // Check 3: Many clicks with minimal movement AND slow speed (both required)
+    if (mouse.totalClicks > 30 && mouse.distancePixels < 100 && mouse.movementPattern &&
+        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed < 1) {
+      suspicionScores.push(0.85);
+      reasons.push(`Many clicks (${mouse.totalClicks}) with minimal movement (${mouse.distancePixels}px) and extremely slow speed`);
+    }
+
+    // Check 4: Moderate clicks with extremely slow movement speed (PyAutoGUI pattern)
+    // Requires both clicks AND slow speed AND moderate distance
+    if (mouse.totalClicks >= 5 && mouse.distancePixels > 1000 && mouse.movementPattern &&
+        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 1) {
       suspicionScores.push(0.85);
       reasons.push(`Clicks with extremely slow movement speed (${mouse.movementPattern.avgSpeed}px/s)`);
     }
 
-    // Check 5: Scroll patterns
-    if (mouse.totalScrolls > 50 && mouse.totalClicks === 0) {
-      suspicionScores.push(0.6);
-      reasons.push('Excessive scrolling without any clicks');
-    }
+    // Check 5: REMOVED - scrolling without clicks is normal reading behavior
 
-    // Check 6: Scrolling with slow movement (PyAutoGUI pattern)
-    if (mouse.totalScrolls >= 10 && mouse.movementPattern &&
-        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 3) {
+    // Check 6: Scrolling with extremely slow movement AND large distance (bot pattern)
+    // Normal reading: slow scrolling is fine. Bot: slow + large distance + many scrolls
+    if (mouse.totalScrolls >= 20 && mouse.distancePixels > 2000 && mouse.movementPattern &&
+        mouse.movementPattern.avgSpeed > 0 && mouse.movementPattern.avgSpeed <= 1) {
       suspicionScores.push(0.85);
-      reasons.push(`Scrolling with extremely slow movement speed (${mouse.movementPattern.avgSpeed}px/s)`);
+      reasons.push(`Many scrolls (${mouse.totalScrolls}) with large distance (${mouse.distancePixels}px) and extremely slow speed (${mouse.movementPattern.avgSpeed}px/s)`);
     }
 
-    // Check 7: Zero movement with activity
-    if ((mouse.totalClicks > 0 || mouse.totalScrolls > 0) && mouse.distancePixels === 0) {
+    // Check 7: Zero movement with many clicks/scrolls (impossible)
+    if ((mouse.totalClicks > 10 || mouse.totalScrolls > 20) && mouse.distancePixels === 0) {
       suspicionScores.push(0.9);
-      reasons.push('Activity detected but zero mouse movement');
+      reasons.push('Many clicks/scrolls but zero mouse movement - impossible pattern');
     }
 
     // Calculate final confidence
@@ -335,7 +346,10 @@ export class BotDetectionService {
     confidence: number;
     reason: string;
   } {
+    console.log(`[Bot Detection] analyzeKeystrokeSequences called with ${keystrokeCodes?.length || 0} codes`);
+
     if (keystrokeCodes.length < 50) {
+      console.log(`[Bot Detection] Not enough keystroke codes (${keystrokeCodes.length} < 50)`);
       return { detected: false, confidence: 0, reason: '' };
     }
 
@@ -355,10 +369,15 @@ export class BotDetectionService {
       }
     }
 
+    console.log(`[Bot Detection] Most frequent key: ${mostFrequentKey}, count: ${maxFrequency}, total: ${keystrokeCodes.length}`);
+
     // Check for massive single-key repetitions (like 61008 repeated 100+ times)
     const repetitionRatio = maxFrequency / keystrokeCodes.length;
+    console.log(`[Bot Detection] Repetition ratio: ${(repetitionRatio * 100).toFixed(1)}%`);
+
     if (repetitionRatio > 0.4 && maxFrequency > 50) {
       // 40% of keystrokes are the same key - DEFINITE BOT
+      console.log(`[Bot Detection] 🚨 BOT DETECTED! Key ${mostFrequentKey} = ${(repetitionRatio * 100).toFixed(0)}%`);
       return {
         detected: true,
         confidence: 0.95,
