@@ -1271,56 +1271,44 @@ app.whenReady().then(async () => {
 
     // Multiple playful, sarcastic messages - pick one randomly
     const messages = [
-      `🤖 Well, well, well...
+  `🌀 Something feels... off.
 
-Someone's been using a bot! Our system caught you red-handed with those perfectly timed clicks and robotic typing patterns.
+We noticed regular key hits or movements that don’t quite match your usual workflow.  
+Maybe you were keeping the tracker active — or maybe just warming up the keyboard. 😅
 
-Come on, you're better than this! 😏
+No worries — tracking’s been paused for now.  
+When you’re back to real work, hit resume and we’ll keep things rolling! ⚡`,
 
-We've stopped your tracking session. When you're ready to do some actual work (with your actual fingers), feel free to start again.
+  `🎭 Caught in the rhythm?
 
-P.S. - Our bot detector is smarter than your bot. Just saying! 🎯`,
+Looks like a series of perfectly timed taps and scrolls — not much variation though.  
+Could be focus mode, could be... creative activity boosting. 😉
 
-      `🕵️ Detective Mode: ACTIVATED
+We’ve paused tracking to keep reports accurate.  
+Jump back in once you’re doing actual work again. 🖐️`,
 
-Interesting... 10 minutes of suspiciously perfect activity. Either you're a robot, or you're using one. We're betting on option 2.
+  `🤖 Almost too consistent...
 
-Look, we get it. Automation is cool. But not here, buddy! 🙅
+The last few minutes looked more like a metronome than a work session — steady, repetitive, no context changes.  
+We get it — nobody likes idle time warnings. But hey, real progress > fake activity. 🚀
 
-Your session's been stopped. Take a break, close that PyAutoGUI script, and come back when you're ready to work for real.
+Tracking’s paused temporarily. Let’s keep it genuine when you’re back. 👊`,
 
-Pro tip: Robots don't get paid. Humans do. 💰`,
+  `⚠️ Pattern alert!
 
-      `⚠️ Houston, we have a problem!
+We noticed a few repetitive actions — like random keys or quick clicks — that didn’t lead to any actual work changes.  
+Probably harmless, but it messes with your accuracy stats.
 
-Your last 10 minutes looked like a programming loop - same patterns, same timing, zero human touch.
+We’ve paused your session for now. Take a short break, then come back to real action. 💪`,
 
-Nice try though! Our AI is watching, and it's not impressed. 🤨
+  `🧠 Smart... but not that smart. 😉
 
-We've paused your tracking. When you're done experimenting with automation, start a fresh session.
+Our tracker picked up some steady movements that look more like “stay-active hacks” than real engagement.  
+Don’t worry, no penalty — we just paused tracking to stay fair.
 
-Remember: We track work, not scripts. Let's keep it real! ✌️`,
+Next time, let your work speak — not your spacebar. 😄`
+];
 
-      `🎭 Plot Twist!
-
-You thought you could trick the system? Our bot detector just called your bluff!
-
-Those clockwork movements and laser-precise timings gave you away. Very Matrix-like, but also very obviously automated. 😅
-
-Your session has been stopped. No hard feelings! Just... you know... use your actual hands next time?
-
-Life's too short for fake productivity. Let's do this for real! 💪`,
-
-      `🚨 Alert: Automation Detected!
-
-Okay, so here's the thing... we noticed your activity was a bit too "perfect" for the last 10 minutes. Humans don't type like metronomes, you know?
-
-Your tracking's been stopped. No drama, no escalation - just fix it and move on.
-
-Ready to track some genuine work? We're ready when you are! Just leave the bots out of it. 🤝
-
-P.S. - If this was actually you, please see a doctor. That's not normal. 😄`
-    ];
 
     // Pick a random message
     const message = messages[Math.floor(Math.random() * messages.length)];
@@ -1328,7 +1316,7 @@ P.S. - If this was actually you, please see a doctor. That's not normal. 😄`
     // Show notification to user
     if (mainWindow) {
       mainWindow.webContents.send('bot-activity-detected', {
-        title: 'Oops! Bot Activity Detected 🤖',
+        title: 'Oops! Anomaly Detected 🤖',
         message: message,
         periodsCount: event.periodsCount
       });
@@ -1338,8 +1326,8 @@ P.S. - If this was actually you, please see a doctor. That's not normal. 😄`
     const { dialog } = require('electron');
     dialog.showMessageBox({
       type: 'warning',
-      title: 'Bot Activity Detected 🤖',
-      message: 'Automation Alert!',
+      title: 'Anomaly Detected 🤖',
+      message: 'Something\'s unusual...',
       detail: message,
       buttons: ['Got It!', 'My Bad...']
     });

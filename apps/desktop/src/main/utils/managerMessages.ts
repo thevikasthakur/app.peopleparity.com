@@ -316,7 +316,7 @@ export function getManagerMessage(context: MessageContext): string {
       "Activity score pathetic! Are you even breathing?",
       "Mouse auto-mover detected? Don't try smart tricks!",
       "Screen recording ON! Explain this low activity!",
-      "Bot detection triggered! Manual verification required!",
+      "Anomaly detection triggered! Manual verification required!",
       "Zero activity? Salary deduction calculation started!"
     ]);
   } else if (lastActivityScore < 5) {

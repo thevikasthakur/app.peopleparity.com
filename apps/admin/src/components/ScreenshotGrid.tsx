@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Monitor, X, ChevronLeft, ChevronRight, Calendar, Check, Loader, Keyboard, MousePointer, AlertCircle, ChevronDown, ChevronUp, Bot } from 'lucide-react';
+import { Clock, Monitor, X, ChevronLeft, ChevronRight, Calendar, Check, Loader, Keyboard, MousePointer, AlertCircle, ChevronDown, ChevronUp, Shield } from 'lucide-react';
 import { apiService } from '../services/apiService';
 
 interface ActivityPeriod {
@@ -592,6 +592,15 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                       loading="lazy"
                     />
 
+                    {screenshot.hasBotDetection && (
+                      <div
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 p-1 bg-green-200/90 rounded-full backdrop-blur-sm shadow-lg"
+                        title="Defense Activated - Unusual activity patterns detected"
+                      >
+                        <Shield className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+
                     <button
                       className={`
                         absolute top-2 left-2 w-6 h-6 rounded-full z-10
@@ -620,12 +629,6 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                         >
                           {level.name}
                         </div>
-                        {screenshot.hasBotDetection && (
-                          <div className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium bg-orange-500/90 text-white flex items-center gap-0.5">
-                            <Bot className="w-2.5 h-2.5" />
-                            
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -1101,7 +1104,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                         <div className="bg-orange-50 rounded p-2 border border-orange-200">
                                           <div className="flex items-center gap-2 mb-2">
                                             <AlertCircle className="w-4 h-4 text-orange-500" />
-                                            <span className="text-xs font-medium">Bot Detection Analysis</span>
+                                            <span className="text-xs font-medium">Anomaly Analysis</span>
                                           </div>
                                           <div className="space-y-1 text-xs">
                                             <div className="flex justify-between">
