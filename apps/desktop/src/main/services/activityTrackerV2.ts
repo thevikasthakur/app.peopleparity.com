@@ -63,6 +63,11 @@ export class ActivityTrackerV2 extends EventEmitter {
   private periodStartTime: Date;
   private lastActivityTime: Date;
   private activeSeconds: number = 0;
+
+  // Per-minute keystroke tracking (resets every minute at 0th second)
+  private currentMinuteKeystrokeCodes: number[] = [];
+  private currentMinuteKeystrokeTimestamps: number[] = [];
+  private currentMinuteStartTime: Date = new Date();
   
   // Timers
   private periodTimer: NodeJS.Timeout | null = null;
@@ -376,6 +381,11 @@ export class ActivityTrackerV2 extends EventEmitter {
     this.lastActivityTime = new Date();
     this.activeSeconds = 0;
     this.metricsCollector.reset(); // Reset metrics collector
+
+    // Reset per-minute tracking
+    this.currentMinuteKeystrokeCodes = [];
+    this.currentMinuteKeystrokeTimestamps = [];
+    this.currentMinuteStartTime = new Date();
     
     // Start the window manager
     this.windowManager.startSession(sessionId, currentUser.id, mode);
@@ -473,6 +483,9 @@ export class ActivityTrackerV2 extends EventEmitter {
 
       // Record in metrics collector for bot detection
       this.metricsCollector.recordKeystroke(keycode, timestamp);
+
+      // Track per-minute keystrokes (for accurate bot detection without accumulation)
+      this.trackPerMinuteKeystroke(keycode, timestamp);
 
       // Classify key
       if (this.productiveKeys.has(keycode)) {
@@ -572,6 +585,35 @@ export class ActivityTrackerV2 extends EventEmitter {
   }
   
   /**
+   * Track keystrokes per minute (resets at 0th second of each minute)
+   * This prevents data accumulation bug where keystrokes from previous minutes
+   * were being included in subsequent minutes' bot detection analysis
+   */
+  private trackPerMinuteKeystroke(keycode: number, timestamp: number) {
+    const now = new Date(timestamp);
+    const currentMinute = now.getMinutes();
+    const lastMinute = this.currentMinuteStartTime.getMinutes();
+
+    // Check if we've crossed into a new minute (at 0th second)
+    if (currentMinute !== lastMinute) {
+      // Reset for new minute
+      this.currentMinuteKeystrokeCodes = [];
+      this.currentMinuteKeystrokeTimestamps = [];
+      this.currentMinuteStartTime = now;
+    }
+
+    // Add current keystroke
+    this.currentMinuteKeystrokeCodes.push(keycode);
+    this.currentMinuteKeystrokeTimestamps.push(timestamp);
+
+    // Prevent memory leaks - keep max 1000 keystrokes per minute
+    if (this.currentMinuteKeystrokeCodes.length > 1000) {
+      this.currentMinuteKeystrokeCodes.shift();
+      this.currentMinuteKeystrokeTimestamps.shift();
+    }
+  }
+
+  /**
    * Start the period timer (saves every minute)
    */
   private startPeriodTimer() {
@@ -660,6 +702,25 @@ export class ActivityTrackerV2 extends EventEmitter {
       },
       periodDuration
     );
+
+    // CRITICAL FIX: Override keystrokeCodes with per-minute data to prevent accumulation bug
+    // The metricsCollector accumulates keystrokes across the entire session, but we need
+    // only THIS minute's keystrokes for accurate bot detection
+    if (detailedMetrics.keyboard) {
+      const metricsCollectorCount = (detailedMetrics.keyboard as any).keystrokeCodes?.length || 0;
+      const perMinuteCount = this.currentMinuteKeystrokeCodes.length;
+
+      console.log(`[Per-Minute Fix] MetricsCollector had ${metricsCollectorCount} codes, replacing with ${perMinuteCount} per-minute codes`);
+
+      (detailedMetrics.keyboard as any).keystrokeCodes = [...this.currentMinuteKeystrokeCodes];
+      (detailedMetrics.keyboard as any).keystrokeTimestamps = [...this.currentMinuteKeystrokeTimestamps];
+
+      // IMPORTANT: Clear per-minute data after using it to prevent accumulation
+      // Note: New keystrokes will still be added if they come in before the next reset
+      this.currentMinuteKeystrokeCodes = [];
+      this.currentMinuteKeystrokeTimestamps = [];
+      this.currentMinuteStartTime = new Date();
+    }
     
     // If spike detection identifies bot activity with high confidence, set score to 0
     let activityScore = detailedMetrics.scoreCalculation.finalScore;
@@ -725,12 +786,15 @@ export class ActivityTrackerV2 extends EventEmitter {
     
     // Add to current window
     this.windowManager.addActivityPeriod(period);
-    
-    // Reset metrics for next period but keep metrics collector data
+
+    // Reset metrics for next period
     this.currentMetrics = this.createEmptyMetrics();
     this.periodStartTime = new Date();
     this.activeSeconds = 0;
+
     // Note: We don't reset metricsCollector here as it maintains rolling windows
+    // Instead, we use per-minute keystroke tracking (currentMinuteKeystrokeCodes)
+    // which automatically resets at the 0th second of each minute
     
     // Get window info
     const windowInfo = this.windowManager.getCurrentWindowInfo();

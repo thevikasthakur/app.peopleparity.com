@@ -1,9 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany, Index } from 'typeorm';
 import { User } from './user.entity';
 import { Session } from './session.entity';
 import { ActivityPeriod } from './activity-period.entity';
 
 @Entity("screenshots")
+@Index("idx_screenshots_user_time_deleted", ["userId", "capturedAt", "isDeleted"])
+@Index("idx_screenshots_session", ["sessionId"])
 export class Screenshot {
   @PrimaryGeneratedColumn("uuid")
   id: string;

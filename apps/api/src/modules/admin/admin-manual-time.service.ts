@@ -112,6 +112,61 @@ export class AdminManualTimeService {
     };
   }
 
+  async getBotDetectionReport(userId: string, date: string) {
+    // Validate input
+    if (!userId || !date) {
+      throw new BadRequestException('userId and date are required');
+    }
+
+    // Parse date to get start and end of day
+    const startOfDay = new Date(date + 'T00:00:00.000Z');
+    const endOfDay = new Date(date + 'T23:59:59.999Z');
+
+    if (isNaN(startOfDay.getTime())) {
+      throw new BadRequestException('Invalid date format. Use YYYY-MM-DD');
+    }
+
+    // Fetch all activity periods for the user on this date that have bot detection
+    const activityPeriods = await this.activityPeriodRepository
+      .createQueryBuilder('ap')
+      .leftJoinAndSelect('ap.screenshot', 'screenshot')
+      .where('ap.userId = :userId', { userId })
+      .andWhere('ap.periodStart >= :startOfDay', { startOfDay })
+      .andWhere('ap.periodEnd <= :endOfDay', { endOfDay })
+      .andWhere(
+        `(
+          ap.metrics->'botDetection'->>'keyboardBotDetected' = 'true' OR
+          ap.metrics->'botDetection'->>'mouseBotDetected' = 'true'
+        )`
+      )
+      .orderBy('ap.periodStart', 'ASC')
+      .getMany();
+
+    // Transform the data for the report
+    const instances = activityPeriods.map(period => {
+      const botDetection = period.metrics?.botDetection || {};
+
+      return {
+        screenshotId: period.screenshotId,
+        capturedAt: period.screenshot?.capturedAt || period.periodStart,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        botDetection: {
+          keyboardBotDetected: botDetection.keyboardBotDetected || false,
+          mouseBotDetected: botDetection.mouseBotDetected || false,
+          confidence: botDetection.confidence || 0,
+          details: botDetection.details || [],
+        },
+      };
+    });
+
+    return {
+      success: true,
+      instances,
+      totalCount: instances.length,
+    };
+  }
+
   private async generateSessionData(
     sessionId: string,
     userId: string,

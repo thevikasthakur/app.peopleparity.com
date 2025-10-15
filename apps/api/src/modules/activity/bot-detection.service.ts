@@ -341,12 +341,12 @@ export class BotDetectionService {
       61009, // Page Down
       3655,  // Home
       3663,  // End
-      // Editing
-      14,    // Backspace
-      57,    // Space
+      // Editing keys - Normal to press multiple times consecutively
+      14,    // Backspace - Often pressed 10+ times when correcting typos
+      57,    // Space - Can be pressed multiple times
       3637,  // Delete
-      28,    // Enter
-      15,    // Tab
+      28,    // Enter - Can be pressed multiple times for line breaks
+      15,    // Tab - Can be pressed multiple times for indentation
       1,     // Escape
     ]);
 
@@ -415,8 +415,11 @@ export class BotDetectionService {
       }
     }
 
-    if (maxConsecutive >= 8) {
-      // Same key pressed 8+ times in a row - BOT BEHAVIOR
+    // IMPORTANT: Threshold set to 10 for productive keys only (after filtering)
+    // Navigation/editing keys (Backspace, Enter, Space, etc.) are already filtered out
+    // Pressing the same productive letter key 10+ times consecutively is unusual for real typing
+    if (maxConsecutive >= 10) {
+      // Same key pressed 10+ times in a row - BOT BEHAVIOR
       return {
         detected: true,
         confidence: 0.9,

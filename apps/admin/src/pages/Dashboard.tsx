@@ -6,7 +6,8 @@ import { ScreenshotGrid } from '../components/ScreenshotGrid';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
-import { Activity, Calendar, ChevronLeft, ChevronRight, Users, RefreshCw } from 'lucide-react';
+import { Activity, Calendar, ChevronLeft, ChevronRight, Users, RefreshCw, Download, Loader2 } from 'lucide-react';
+import { generateBotDetectionTextReport, generateBotDetectionCSV, downloadFile } from '../utils/botReportGenerator';
 
 const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
 
@@ -44,9 +45,13 @@ export function Dashboard() {
   });
   const [isChangingDate, setIsChangingDate] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   // For developers, always use their own ID
-  const effectiveUserId = user?.isDeveloper ? user.id : selectedUserId;
+  // Validate that user.id is not 'unknown' (indicates invalid auth)
+  const effectiveUserId = user?.isDeveloper
+    ? (user.id !== 'unknown' ? user.id : null)
+    : selectedUserId;
 
   // Fetch team members (only for admins)
   const { data: teamMembers } = useQuery({
@@ -78,13 +83,28 @@ export function Dashboard() {
   });
 
   // Fetch screenshots for the user/team and date
-  const { data: screenshots, isLoading: isLoadingScreenshots } = useQuery({
+  const { data: screenshotsData, isLoading: isLoadingScreenshots } = useQuery({
     queryKey: ['screenshots', effectiveUserId, selectedDate.toISOString(), refreshKey],
     queryFn: () => apiService.getScreenshots({
       userId: effectiveUserId || undefined,
       date: selectedDate.toISOString().split('T')[0],
     }),
   });
+
+  // Normalize screenshots data - ensure it's always an array
+  const screenshots = useMemo(() => {
+    if (!screenshotsData) return [];
+    if (Array.isArray(screenshotsData)) return screenshotsData;
+    // Handle cases where API returns { screenshots: [...] } or similar
+    if (screenshotsData.screenshots && Array.isArray(screenshotsData.screenshots)) {
+      return screenshotsData.screenshots;
+    }
+    if (screenshotsData.data && Array.isArray(screenshotsData.data)) {
+      return screenshotsData.data;
+    }
+    console.warn('Unexpected screenshots data format:', screenshotsData);
+    return [];
+  }, [screenshotsData]);
 
   // Fetch sessions for the user and date
   const { data: sessions } = useQuery({
@@ -149,6 +169,62 @@ export function Dashboard() {
     }
   };
 
+  const handleDownloadBotReport = async (format: 'txt' | 'csv') => {
+    if (!selectedUserId) {
+      alert('Please select a user first');
+      return;
+    }
+
+    setIsDownloadingReport(true);
+    try {
+      const dateStr = selectedDate.toISOString().split('T')[0];
+
+      // Fetch bot detection data from API
+      const reportData = await apiService.getBotDetectionReport({
+        userId: selectedUserId,
+        date: dateStr,
+      });
+
+      // Get developer name
+      const selectedMember = teamMembers?.find((m: any) => m.id === selectedUserId);
+      const developerName = selectedMember?.name || selectedMember?.email || 'Unknown';
+
+      // Prepare report data
+      const formattedReportData = {
+        developerName,
+        userId: selectedUserId,
+        date: dateStr,
+        instances: reportData.instances || [],
+        downloadedBy: user?.name || user?.email || 'Admin',
+        downloadedAt: new Date().toLocaleString('en-US', {
+          timeZone: user?.timezone || 'UTC',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      };
+
+      // Generate and download report
+      if (format === 'csv') {
+        const csvContent = generateBotDetectionCSV(formattedReportData, selectedDeveloperTimezone || user?.timezone);
+        const filename = `bot-detection-${developerName.replace(/\s+/g, '-')}-${dateStr}.csv`;
+        downloadFile(csvContent, filename, 'text/csv');
+      } else {
+        const txtContent = generateBotDetectionTextReport(formattedReportData, selectedDeveloperTimezone || user?.timezone);
+        const filename = `bot-detection-${developerName.replace(/\s+/g, '-')}-${dateStr}.txt`;
+        downloadFile(txtContent, filename, 'text/plain');
+      }
+    } catch (error) {
+      console.error('Error downloading bot detection report:', error);
+      alert('Failed to download report. Please try again.');
+    } finally {
+      setIsDownloadingReport(false);
+    }
+  };
+
   return (
     <div className="min-h-screen" data-mode="client">
       {/* Content */}
@@ -192,6 +268,46 @@ export function Dashboard() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bot Detection Report Download - Only show when user is selected */}
+                {user?.isAdmin && selectedUserId && (
+                  <div className="relative group">
+                    <button
+                      onClick={() => handleDownloadBotReport('txt')}
+                      disabled={isDownloadingReport}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Download Defense Activation Report"
+                    >
+                      {isDownloadingReport ? (
+                        <Loader2 className="w-3.5 h-3.5 text-orange-600 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-orange-600" />
+                      )}
+                      <span className="text-xs font-medium text-orange-700">
+                        Defense Report
+                      </span>
+                    </button>
+                    {/* Dropdown for format selection */}
+                    <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                      <div className="py-1 min-w-[120px]">
+                        <button
+                          onClick={() => handleDownloadBotReport('txt')}
+                          disabled={isDownloadingReport}
+                          className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Download as TXT
+                        </button>
+                        <button
+                          onClick={() => handleDownloadBotReport('csv')}
+                          disabled={isDownloadingReport}
+                          className="w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Download as CSV
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -280,7 +396,7 @@ export function Dashboard() {
               </div>
             ) : (
               <ScreenshotGrid
-                screenshots={screenshots || []}
+                screenshots={screenshots}
                 isLoading={isLoadingScreenshots}
                 onRefresh={handleRefresh}
                 userRole={user?.role}

@@ -218,6 +218,19 @@ export const apiService = {
     const response = await api.post('/admin/manual-time', data);
     return response.data;
   },
+
+  // Bot detection report
+  async getBotDetectionReport(params: {
+    userId: string;
+    date: string;
+  }) {
+    const queryParams: any = {
+      userId: params.userId,
+      date: params.date,
+    };
+    const response = await api.get('/admin/manual-time/bot-detection-report', { params: queryParams });
+    return response.data;
+  },
 };
 
 export default api;

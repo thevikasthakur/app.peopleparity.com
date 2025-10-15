@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req, Inject } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Inject, Get, Query } from '@nestjs/common';
 import { AdminManualTimeService } from './admin-manual-time.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
@@ -27,5 +27,14 @@ export class AdminManualTimeController {
       createManualTimeDto,
       req.user
     );
+  }
+
+  @Get('bot-detection-report')
+  async getBotDetectionReport(
+    @Query('userId') userId: string,
+    @Query('date') date: string,
+    @Req() req: any
+  ) {
+    return this.adminManualTimeService.getBotDetectionReport(userId, date);
   }
 }

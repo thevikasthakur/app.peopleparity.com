@@ -310,6 +310,12 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
     // Use developer's timezone for grouping/ordering
     const tz = developerTimezone || userTimezone || 'Asia/Kolkata';
 
+    // Defensive check: ensure screenshots is actually an array
+    if (!Array.isArray(screenshots)) {
+      console.error('Screenshots is not an array:', screenshots);
+      return groups;
+    }
+
     screenshots.forEach(screenshot => {
       const timestamp = new Date(getTimestamp(screenshot));
       const year = timestamp.toLocaleString('en-US', {

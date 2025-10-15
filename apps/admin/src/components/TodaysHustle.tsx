@@ -119,8 +119,28 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
     return null;
   }
 
-  const { productiveHours, averageActivityScore, activityLevel, markers, message, attendance } = hustleData;
-  const percentage = Math.min((productiveHours / markers.maxScale) * 100, 100);
+  // Defensive destructuring with defaults
+  const {
+    productiveHours = 0,
+    averageActivityScore = 0,
+    activityLevel,
+    markers = {
+      halfAttendance: 4.5,
+      threeQuarterAttendance: 6.75,
+      fullAttendance: 9,
+      maxScale: 12,
+      isHolidayWeek: false
+    },
+    message = "No data available",
+    attendance = {
+      earned: 0,
+      status: "No Attendance",
+      color: "#ef4444",
+      isWeekend: false
+    }
+  } = hustleData;
+
+  const percentage = Math.min((productiveHours / (markers?.maxScale || 12)) * 100, 100);
 
   // Get activity level label - use server-provided value or fall back to local calculation
   const getActivityLevel = (score: number) => {
@@ -133,16 +153,21 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
   };
 
   // Calculate marker positions as percentages
-  const halfMarkerPos = (markers.halfAttendance / markers.maxScale) * 100;
-  const threeQuarterMarkerPos = (markers.threeQuarterAttendance / markers.maxScale) * 100;
-  const fullMarkerPos = (markers.fullAttendance / markers.maxScale) * 100;
+  const maxScale = markers?.maxScale || 12;
+  const halfMarkerPos = ((markers?.halfAttendance || 4.5) / maxScale) * 100;
+  const threeQuarterMarkerPos = ((markers?.threeQuarterAttendance || 6.75) / maxScale) * 100;
+  const fullMarkerPos = ((markers?.fullAttendance || 9) / maxScale) * 100;
 
   // Determine milestone status - Only ONE status should be active
   const getMilestoneStatus = () => {
-    if (productiveHours > markers.fullAttendance) return 'extra';
-    if (productiveHours >= markers.fullAttendance && productiveHours <= markers.fullAttendance) return 'full';
-    if (productiveHours >= markers.threeQuarterAttendance && productiveHours < markers.fullAttendance) return 'three-quarter';
-    if (productiveHours >= markers.halfAttendance && productiveHours < markers.threeQuarterAttendance) return 'half';
+    const fullAtt = markers?.fullAttendance || 9;
+    const threeQuarterAtt = markers?.threeQuarterAttendance || 6.75;
+    const halfAtt = markers?.halfAttendance || 4.5;
+
+    if (productiveHours > fullAtt) return 'extra';
+    if (productiveHours >= fullAtt && productiveHours <= fullAtt) return 'full';
+    if (productiveHours >= threeQuarterAtt && productiveHours < fullAtt) return 'three-quarter';
+    if (productiveHours >= halfAtt && productiveHours < threeQuarterAtt) return 'half';
     return 'none';
   };
 
@@ -150,13 +175,16 @@ export const TodaysHustle: React.FC<TodaysHustleProps> = ({ selectedDate, isToda
 
   // Get progress bar color based on milestone
   const getProgressGradient = () => {
-    if (productiveHours > markers.fullAttendance)
+    const fullAtt = markers?.fullAttendance || 9;
+    const threeQuarterAtt = markers?.threeQuarterAttendance || 6.75;
+
+    if (productiveHours > fullAtt)
       return 'linear-gradient(90deg, #9333ea 0%, #7c3aed 100%)'; // Purple for extra
-    if (productiveHours >= markers.fullAttendance)
+    if (productiveHours >= fullAtt)
       return 'linear-gradient(90deg, #10b981 0%, #059669 100%)'; // Green for full
-    if (productiveHours >= markers.threeQuarterAttendance)
+    if (productiveHours >= threeQuarterAtt)
       return 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)'; // Blue for good
-    if (productiveHours >= markers.halfAttendance)
+    if (productiveHours >= (markers?.halfAttendance || 4.5))
       return 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)'; // Amber for half
     return 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)'; // Red for none
   };
