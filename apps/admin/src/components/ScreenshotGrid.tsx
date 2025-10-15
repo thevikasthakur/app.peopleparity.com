@@ -58,6 +58,7 @@ interface Screenshot {
   deviceInfo?: string;
   activityPeriods?: ActivityPeriod[];
   hasBotDetection?: boolean;
+  botDetectionCount?: number;
 }
 
 interface DetailedScreenshot extends Screenshot {
@@ -143,6 +144,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [signedFullUrl, setSignedFullUrl] = useState<string | null>(null);
   const [loadingSignedUrl, setLoadingSignedUrl] = useState(false);
   const [activityPeriods, setActivityPeriods] = useState<ActivityPeriod[]>([]);
@@ -598,14 +600,90 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                       loading="lazy"
                     />
 
-                    {screenshot.hasBotDetection && (
-                      <div
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 p-1 bg-green-200/90 rounded-full backdrop-blur-sm shadow-lg"
-                        title="Defense Activated - Unusual activity patterns detected"
-                      >
-                        <Shield className="w-3 h-3 text-white" />
-                      </div>
-                    )}
+                    {(() => {
+                      // Only show shield if screenshot is on or after Oct 15, 2025
+                      const screenshotDate = new Date(getTimestamp(screenshot));
+                      const cutoffDate = new Date('2025-10-15T00:00:00Z');
+
+                      if (!screenshot.hasBotDetection || screenshotDate < cutoffDate) {
+                        return null;
+                      }
+
+                      // Get anomaly count from API response
+                      const anomalyCount = screenshot.botDetectionCount || 0;
+
+                      // Calculate background color based on anomaly count (0-10 scale)
+                      // 0 anomalies: dark green
+                      // 10 anomalies: dark red
+                      const getShieldColor = (count: number) => {
+                        const clampedCount = Math.min(count, 10);
+                        const ratio = clampedCount / 10;
+
+                        // Interpolate from dark green (rgb(21, 128, 61)) to dark red (rgb(153, 27, 27))
+                        const r = Math.round(21 + (153 - 21) * ratio);
+                        const g = Math.round(128 + (27 - 128) * ratio);
+                        const b = Math.round(61 + (27 - 61) * ratio);
+
+                        return `rgba(${r}, ${g}, ${b}, 0.95)`;
+                      };
+
+                      const getTooltipMessage = (count: number) => {
+                        if (count === 1) return "Caught ya! One sketchy moment detected 🤨";
+                        if (count <= 3) return `Well, well... ${count} suspicious moments spotted 👀`;
+                        if (count <= 5) return `Hmm, ${count} red flags detected. Multitasking or...? 🤔`;
+                        if (count <= 7) return `${count} anomalies!? Someone's been busy... 🕵️`;
+                        return `Whoa! ${count} anomalies detected. That's... impressive? 🚨`;
+                      };
+
+                      return (
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 group z-10">
+                          <div
+                            className="p-1 rounded-full backdrop-blur-sm shadow-lg flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-hover:shadow-xl"
+                            style={{ backgroundColor: getShieldColor(anomalyCount) }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipPosition({
+                                x: rect.left + rect.width / 2,
+                                y: rect.top
+                              });
+                            }}
+                            onMouseLeave={() => setTooltipPosition(null)}
+                          >
+                            <div className="relative flex items-center justify-center">
+                              <Shield className="w-5 h-5 text-white opacity-40" />
+                              <span className="absolute text-[10px] font-bold text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                                {anomalyCount}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Modern animated tooltip */}
+                          {hoveredId === screenshot.id && tooltipPosition && ReactDOM.createPortal(
+                            <div
+                              className="fixed pointer-events-none z-[9998]"
+                              style={{
+                                left: `${tooltipPosition.x}px`,
+                                top: `${tooltipPosition.y}px`,
+                                transform: 'translate(-50%, calc(-100% - 8px))'
+                              }}
+                            >
+                              <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                transition={{ duration: 0.15, ease: "easeOut" }}
+                              >
+                                <div className="bg-gradient-to-r from-orange-600 to-red-600 text-white text-[10px] font-medium px-2 py-1 rounded shadow-2xl whitespace-nowrap backdrop-blur-sm">
+                                  {getTooltipMessage(anomalyCount)}
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2">
+                                    <div className="border-[4px] border-transparent border-t-red-600"></div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            </div>,
+                            document.body
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <button
                       className={`

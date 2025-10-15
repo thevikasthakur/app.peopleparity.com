@@ -216,14 +216,15 @@ export class ScreenshotsService {
       // Use the proper weighted average calculation
       const activityScore = this.calculateScreenshotScore(activityPeriods);
 
-      // Check if any activity period has bot detection
+      // Check if any activity period has bot detection and count them
       let hasBotDetection = false;
+      let botDetectionCount = 0;
       for (const period of activityPeriods) {
         if (period.metrics?.botDetection) {
           const detection = period.metrics.botDetection;
           if (detection.keyboardBotDetected || detection.mouseBotDetected) {
             hasBotDetection = true;
-            break;
+            botDetectionCount++;
           }
         }
       }
@@ -232,6 +233,7 @@ export class ScreenshotsService {
         ...screenshot,
         activityScore,
         hasBotDetection,
+        botDetectionCount,
         deviceInfo: includeDeviceInfo ? (screenshot.session?.deviceInfo || null) : undefined,
         activityPeriods: undefined,
       };
