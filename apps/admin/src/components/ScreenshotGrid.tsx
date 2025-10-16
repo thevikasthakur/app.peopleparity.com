@@ -603,7 +603,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     {(() => {
                       // Only show shield if screenshot is on or after Oct 15, 2025
                       const screenshotDate = new Date(getTimestamp(screenshot));
-                      const cutoffDate = new Date('2025-10-15T00:00:00Z');
+                      const cutoffDate = new Date('2025-10-16T04:30:00Z');
 
                       if (!screenshot.hasBotDetection || screenshotDate < cutoffDate) {
                         return null;
