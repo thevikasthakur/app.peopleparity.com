@@ -175,6 +175,7 @@ export class ScreenshotsController {
       mode?: 'client_hours' | 'command_hours';
       userId?: string;
       notes?: string;
+      trackerVersion?: string; // Version of the desktop tracker app
     },
     @Request() req,
   ) {
@@ -262,6 +263,7 @@ export class ScreenshotsController {
         capturedAt: new Date(body.capturedAt),
         mode: body.mode || 'client_hours',
         notes: body.notes || '',
+        trackerVersion: body.trackerVersion || null,
       });
 
       console.log(`Screenshot created successfully: ${screenshot.id} for session: ${body.sessionId}`);

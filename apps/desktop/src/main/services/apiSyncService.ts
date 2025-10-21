@@ -1247,6 +1247,11 @@ export class ApiSyncService {
           
           // Step 2: Send screenshot data with S3 URLs to the server
           console.log('Creating screenshot record on server with S3 URLs');
+
+          // Get app version from package.json
+          const packageInfo = require('../../../package.json');
+          const trackerVersion = packageInfo.appVersion || packageInfo.version || '1.0.0';
+
           const screenshotResponse = await this.api.post('/screenshots/create', {
             id: item.entityId,
             sessionId: data.sessionId,
@@ -1255,7 +1260,8 @@ export class ApiSyncService {
             thumbnailUrl: s3ThumbnailUrl,
             capturedAt: new Date(data.capturedAt).toISOString(),
             mode: data.mode || 'client_hours',
-            notes: data.notes || ''
+            notes: data.notes || '',
+            trackerVersion: trackerVersion
           });
           
           if (!screenshotResponse.data.success) {

@@ -48,6 +48,9 @@ export class Screenshot {
   @Column({ type: 'boolean', default: false })
   isDeleted: boolean;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  trackerVersion: string; // Version of the desktop tracker app
+
   @OneToMany(() => ActivityPeriod, activityPeriod => activityPeriod.screenshot)
   activityPeriods: ActivityPeriod[];
 

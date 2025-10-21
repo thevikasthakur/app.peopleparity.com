@@ -322,36 +322,57 @@ export class BotDetectionService {
     // SANITIZATION: Remove navigation and modifier keys that can cause false positives
     // These keys (arrow keys, shift, ctrl, etc.) are often held down or auto-repeated
     const keysToFilter = new Set([
-      // Arrow keys
-      61008, // Down arrow (the phantom key!)
-      61001, // Up arrow
-      60999, // Left arrow
-      61009, // Right arrow
       // Modifiers
       42,    // Shift (left)
       54,    // Shift (right)
       29,    // Ctrl (left)
-      3613,  // Ctrl (right)
       56,    // Alt (left)
-      3640,  // Alt (right)
-      3675,  // Windows/Command (left)
-      3676,  // Windows/Command (right)
-      // Navigation
-      61007, // Page Up
-      61009, // Page Down
-      3655,  // Home
-      3663,  // End
       // Editing keys - Normal to press multiple times consecutively
       14,    // Backspace - Often pressed 10+ times when correcting typos
       57,    // Space - Can be pressed multiple times
-      3637,  // Delete
       28,    // Enter - Can be pressed multiple times for line breaks
       15,    // Tab - Can be pressed multiple times for indentation
       1,     // Escape
     ]);
 
-    const sanitizedCodes = keystrokeCodes.filter(code => !keysToFilter.has(code));
-    console.log(`[Bot Detection] Filtered ${keystrokeCodes.length - sanitizedCodes.length} navigation/modifier keys, ${sanitizedCodes.length} remaining`);
+    // Range-based filtering for cleaner code and better maintainability
+    const isPhantomOrNavigationKey = (code: number): boolean => {
+      // Navigation keys and special keys typically in these ranges
+      if (code >= 3600 && code <= 3700) return true;  // Special keys range (Home, End, Delete, etc.)
+      if (code >= 60999 && code <= 61009) return true; // Arrow keys and navigation (Left, Right, Up, Down, PageUp, PageDown)
+      if (code >= 57000 && code <= 58000) return true; // Phantom keys range (57390, 57421, etc.)
+      if (code > 10000) return true; // Any suspiciously high key code is likely corrupted
+      return false;
+    };
+
+    // Track phantom keys for debugging
+    const phantomKeyCounts = new Map<number, number>();
+    const sanitizedCodes = keystrokeCodes.filter(code => {
+      // Filter out known problematic individual keys
+      if (keysToFilter.has(code)) return false;
+
+      // Filter out keys in phantom/navigation ranges
+      if (isPhantomOrNavigationKey(code)) {
+        // Track high-value phantom keys for debugging
+        if (code >= 10000) {
+          phantomKeyCounts.set(code, (phantomKeyCounts.get(code) || 0) + 1);
+        }
+        return false;
+      }
+
+      return true;
+    });
+
+    // Log phantom keys if detected
+    if (phantomKeyCounts.size > 0) {
+      const phantomInfo = Array.from(phantomKeyCounts.entries())
+        .map(([key, count]) => `${key}(${count}x)`)
+        .join(', ');
+      console.log(`[Bot Detection] ⚠️ Detected phantom key codes: ${phantomInfo}`);
+      console.log(`[Bot Detection] This indicates a desktop app bug - these keys should not be recorded`);
+    }
+
+    console.log(`[Bot Detection] Filtered ${keystrokeCodes.length - sanitizedCodes.length} navigation/modifier/phantom keys, ${sanitizedCodes.length} remaining`);
 
     if (sanitizedCodes.length < 50) {
       console.log(`[Bot Detection] Not enough productive keystroke codes after filtering (${sanitizedCodes.length} < 50)`);

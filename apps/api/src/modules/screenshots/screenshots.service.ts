@@ -162,6 +162,7 @@ export class ScreenshotsService {
     capturedAt: Date;
     mode: "client_hours" | "command_hours";
     notes?: string;
+    trackerVersion?: string; // Version of the desktop tracker app
   }) {
     // Create the main screenshot record with properly populated columns
     const screenshot = this.screenshotsRepository.create({
@@ -173,6 +174,7 @@ export class ScreenshotsService {
       capturedAt: createScreenshotDto.capturedAt,
       mode: createScreenshotDto.mode,
       notes: createScreenshotDto.notes || "", // Copy of session task
+      trackerVersion: createScreenshotDto.trackerVersion || null,
     });
 
     const savedScreenshot = await this.screenshotsRepository.save(screenshot);

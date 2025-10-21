@@ -2,7 +2,7 @@
   "name": "@people-parity/desktop",
   "productName": "PeopleParity",
   "version": "1.0.0",
-  "appVersion": "1.4.0",
+  "appVersion": "1.5.0",
   "description": "Time tracking and productivity monitoring application",
   "author": {
     "name": "Vikas Thakur",

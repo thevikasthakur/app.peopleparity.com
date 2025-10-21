@@ -94,7 +94,9 @@
       "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql -h aws-1-ap-south-1.pooler.supabase.com -p 6543 -U postgres.wbqjfspfleboymnvkkte -d postgres -c \"SELECT jsonb_pretty(ap.metrics->''keyboard'') as keyboard_structure FROM activity_periods ap WHERE ap.\"\"screenshotId\"\" = ''f4df2243-e935-46d1-aa68-92bf96771ac2'' LIMIT 1;\")",
       "Bash(serverless deploy:*)",
       "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql -h aws-1-ap-south-1.pooler.supabase.com -p 6543 -U postgres.wbqjfspfleboymnvkkte -d postgres -c \"SELECT jsonb_pretty(ap.metrics->''botDetection'') as bot_detection FROM activity_periods ap WHERE ap.\"\"userId\"\" = ''9e8c1aba-0ed8-4d8a-a937-719f7e025543'' AND ap.\"\"periodStart\"\" = ''2025-10-12 20:55:00+00'';\")",
-      "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql:*)"
+      "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql:*)",
+      "Bash(serverless offline --aws-profile pp-api --stage prod)",
+      "Bash(kill 70866)"
     ],
     "deny": [],
     "ask": []

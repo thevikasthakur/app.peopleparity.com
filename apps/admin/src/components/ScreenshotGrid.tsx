@@ -59,6 +59,7 @@ interface Screenshot {
   activityPeriods?: ActivityPeriod[];
   hasBotDetection?: boolean;
   botDetectionCount?: number;
+  trackerVersion?: string;
 }
 
 interface DetailedScreenshot extends Screenshot {
@@ -724,6 +725,11 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                       }`} style={{ width: '27px' }}>
                         {(screenshot.mode === 'client' || screenshot.mode === 'client_hours') ? 'CLIENT' : 'CMD'}
                       </div>
+                      {screenshot.trackerVersion && (
+                        <div className="px-1 py-0.5 rounded text-[8px] font-medium backdrop-blur text-white bg-gray-800/70">
+                          v{screenshot.trackerVersion}
+                        </div>
+                      )}
                       <div className="px-2 py-1 rounded text-xs font-semibold backdrop-blur text-white bg-black/70">
                         {isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone ? (
                           <div className="flex flex-col gap-0.5">
@@ -983,6 +989,12 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                         <div>
                           <label className="text-xs text-gray-500 uppercase tracking-wider">Device</label>
                           <p className="text-sm font-medium mt-1">{selectedScreenshot.deviceInfo}</p>
+                        </div>
+                      )}
+                      {selectedScreenshot.trackerVersion && (
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-wider">Tracker Version</label>
+                          <p className="text-sm font-medium mt-1">v{selectedScreenshot.trackerVersion}</p>
                         </div>
                       )}
                       {(userRole === 'super_admin' || userRole === 'org_admin') && (
