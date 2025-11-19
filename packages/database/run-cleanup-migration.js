@@ -1,13 +1,29 @@
 const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../../apps/api/.env') });
 
-// Database connection from environment or use the remote database
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres.vxlbkyolncuglymauscq:FIr5FKZ3YqwRuxxv@aws-1-ap-south-1.pooler.supabase.com:5432/postgres';
+// Build database URL from environment variables
+function getDatabaseUrl() {
+  const host = process.env.DATABASE_HOST;
+  const port = process.env.DATABASE_PORT || 5432;
+  const user = process.env.DATABASE_USER;
+  const password = process.env.DATABASE_PASSWORD;
+  const database = process.env.DATABASE_NAME || 'postgres';
+
+  if (!host || !user || !password) {
+    console.error('ERROR: Missing required database environment variables.');
+    console.error('Please ensure DATABASE_HOST, DATABASE_USER, and DATABASE_PASSWORD are set in apps/api/.env');
+    process.exit(1);
+  }
+
+  return `postgresql://${user}:${password}@${host}:${port}/${database}`;
+}
 
 async function runMigration() {
   const client = new Client({
-    connectionString: DATABASE_URL,
+    connectionString: getDatabaseUrl(),
+    ssl: { rejectUnauthorized: false }
   });
 
   try {

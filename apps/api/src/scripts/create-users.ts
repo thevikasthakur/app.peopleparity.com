@@ -20,6 +20,7 @@ async function createUsers() {
     user: process.env.DATABASE_USER,
     password: process.env.DATABASE_PASSWORD,
     database: process.env.DATABASE_NAME,
+    ssl: { rejectUnauthorized: false },
   });
 
   try {
@@ -96,6 +97,11 @@ async function createUsers() {
         email: 'himanshu@inzint.com',
         name: 'Himanshu',
         password: '#!manshu2025~'
+      },
+      {
+        email: 'vansh@inzint.com',
+        name: 'Vansh',
+        password: 'V@nsh2025~$ec!'
       }
     ];
 

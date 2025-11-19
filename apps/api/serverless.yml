@@ -49,6 +49,14 @@ provider:
 
     # S3 Bucket for screenshots
     SCREENSHOTS_BUCKET: ${self:custom.screenshotsBucket}
+    
+  vpc:
+    securityGroupIds:
+      - sg-0fdccdf5d10f8662a
+    subnetIds:
+      - subnet-07295521085c45dc7
+      - subnet-0c4f14477d3073f65
+      - subnet-0a1c95de0d838a12b
 
   # Lambda execution role permissions (scoped to this stage's bucket)
   iam:

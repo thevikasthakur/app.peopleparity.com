@@ -11,8 +11,10 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "name" character varying NOT NULL,
                 "code" character varying NOT NULL,
                 "timezone" character varying DEFAULT 'UTC',
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "firstDayOfWeek" character varying DEFAULT 'sunday',
+                "isActive" boolean DEFAULT true,
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_organizations" PRIMARY KEY ("id"),
                 CONSTRAINT "UQ_organizations_code" UNIQUE ("code")
             )
@@ -28,8 +30,8 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "role" character varying NOT NULL DEFAULT 'developer',
                 "organizationId" uuid,
                 "isActive" boolean NOT NULL DEFAULT true,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_users" PRIMARY KEY ("id"),
                 CONSTRAINT "UQ_users_email" UNIQUE ("email")
             )
@@ -43,8 +45,8 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "organizationId" uuid NOT NULL,
                 "color" character varying,
                 "isActive" boolean NOT NULL DEFAULT true,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_projects" PRIMARY KEY ("id")
             )
         `);
@@ -57,16 +59,16 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "projectId" uuid,
                 "mode" character varying NOT NULL,
                 "task" character varying,
-                "startTime" TIMESTAMP NOT NULL,
-                "endTime" TIMESTAMP,
+                "startTime" TIMESTAMPTZ NOT NULL,
+                "endTime" TIMESTAMPTZ,
                 "isActive" boolean NOT NULL DEFAULT true,
                 "appVersion" character varying,
                 "deviceInfo" character varying,
                 "realIpAddress" character varying,
                 "location" jsonb,
                 "isVpnDetected" boolean DEFAULT false,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_sessions" PRIMARY KEY ("id")
             )
         `);
@@ -77,14 +79,14 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "userId" uuid NOT NULL,
                 "sessionId" uuid NOT NULL,
-                "capturedAt" TIMESTAMP NOT NULL,
+                "capturedAt" TIMESTAMPTZ NOT NULL,
                 "url" character varying,
                 "thumbnailUrl" character varying,
                 "mode" character varying NOT NULL,
                 "notes" text,
                 "isDeleted" boolean NOT NULL DEFAULT false,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_screenshots" PRIMARY KEY ("id")
             )
         `);
@@ -96,16 +98,16 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "sessionId" uuid NOT NULL,
                 "userId" uuid NOT NULL,
                 "screenshotId" uuid,
-                "periodStart" TIMESTAMP NOT NULL,
-                "periodEnd" TIMESTAMP NOT NULL,
+                "periodStart" TIMESTAMPTZ NOT NULL,
+                "periodEnd" TIMESTAMPTZ NOT NULL,
                 "mode" character varying NOT NULL,
                 "notes" text,
                 "activityScore" real DEFAULT 0,
                 "isValid" boolean NOT NULL DEFAULT true,
                 "classification" character varying,
                 "metricsBreakdown" jsonb,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_activity_periods" PRIMARY KEY ("id")
             )
         `);
@@ -120,8 +122,8 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "mouseClicks" integer DEFAULT 0,
                 "mouseScrolls" integer DEFAULT 0,
                 "mouseDistance" real DEFAULT 0,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_command_hour_activities" PRIMARY KEY ("id")
             )
         `);
@@ -139,8 +141,8 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "tabsSwitchedCount" integer DEFAULT 0,
                 "netLinesCount" integer DEFAULT 0,
                 "copilotSuggestionsAccepted" integer DEFAULT 0,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_client_hour_activities" PRIMARY KEY ("id")
             )
         `);
@@ -155,8 +157,8 @@ export class InitialSchema1755701146993 implements MigrationInterface {
                 "title" character varying,
                 "category" character varying,
                 "durationSeconds" integer DEFAULT 0,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT "PK_browser_activities" PRIMARY KEY ("id")
             )
         `);

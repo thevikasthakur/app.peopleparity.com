@@ -50,9 +50,7 @@ import { AppVersion } from './entities/app-version.entity';
         synchronize: false, // Use migrations for schema management
         migrationsRun: true, // Enable migrations to run automatically
         logging: process.env.NODE_ENV === 'development',
-        ssl: configService.get('DATABASE_HOST')?.includes('supabase.com') 
-          ? { rejectUnauthorized: false }
-          : false,
+        ssl: { rejectUnauthorized: false },
         connectTimeoutMS: 30000,
         extra: {
           max: 10,
