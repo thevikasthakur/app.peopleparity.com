@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, User, ChevronDown } from 'lucide-react';
+import { LogOut, User, ChevronDown, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ClearDataModal } from './ClearDataModal';
 
 export function ProfileDropdown() {
   const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+  const [isClearDataModalOpen, setIsClearDataModalOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -134,7 +136,18 @@ export function ProfileDropdown() {
                   <User className="w-4 h-4" />
                   View Profile
                 </button>
-                
+
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    setIsClearDataModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Clear Data
+                </button>
+
                 <button
                   onClick={async () => {
                     setIsOpen(false);
@@ -151,6 +164,12 @@ export function ProfileDropdown() {
         </AnimatePresence>,
         document.body
       )}
+
+      {/* Clear Data Modal */}
+      <ClearDataModal
+        isOpen={isClearDataModalOpen}
+        onClose={() => setIsClearDataModalOpen(false)}
+      />
     </>
   );
 }

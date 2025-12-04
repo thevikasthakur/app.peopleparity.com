@@ -25,6 +25,7 @@ build/
 out/
 coverage/
 *.tsbuildinfo
+.claude/
 
 # ---- TypeScript compiled output in src (should only be in dist) ----
 **/src/**/*.js

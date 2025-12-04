@@ -75,7 +75,11 @@ interface Screenshot {
 export class LocalDatabase {
   private db: Database.Database;
   private dbPath: string;
-  
+
+  // Stats cache for CPU optimization (reduces repeated heavy queries)
+  private statsCache: Map<string, { data: any; timestamp: number }> = new Map();
+  private readonly STATS_CACHE_TTL_MS: number = 30000; // Cache stats for 30 seconds
+
   constructor() {
     // Store database in user's app data directory
     const userDataPath = app.getPath('userData');
@@ -370,14 +374,69 @@ export class LocalDatabase {
   
   updateActivityPeriodScreenshot(periodId: string, screenshotId: string) {
     const stmt = this.db.prepare(`
-      UPDATE activity_periods 
+      UPDATE activity_periods
       SET screenshotId = ?, isSynced = 0
       WHERE id = ?
     `);
-    
+
     stmt.run(screenshotId, periodId);
   }
-  
+
+  /**
+   * Update activity period with server-calculated data (score and bot detection)
+   * Called after successful sync to update local data with server response
+   */
+  updateActivityPeriodFromServer(periodId: string, serverData: {
+    activityScore: number;
+    metrics?: {
+      botDetection?: {
+        keyboardBotDetected: boolean;
+        mouseBotDetected: boolean;
+        confidence: number;
+        reasons?: string[];
+        details?: string[];
+      };
+    };
+  }) {
+    // Get existing period to merge metricsBreakdown
+    const existingPeriod = this.getActivityPeriod(periodId) as any;
+    if (!existingPeriod) {
+      console.warn(`[updateActivityPeriodFromServer] Period ${periodId} not found`);
+      return;
+    }
+
+    // Parse existing metricsBreakdown
+    let metricsBreakdown: any = {};
+    if (existingPeriod.metricsBreakdown) {
+      try {
+        metricsBreakdown = typeof existingPeriod.metricsBreakdown === 'string'
+          ? JSON.parse(existingPeriod.metricsBreakdown)
+          : existingPeriod.metricsBreakdown;
+      } catch (e) {
+        console.warn('[updateActivityPeriodFromServer] Failed to parse existing metricsBreakdown');
+      }
+    }
+
+    // Merge bot detection from server into metricsBreakdown
+    console.log(`[updateActivityPeriodFromServer] serverData.metrics:`, serverData.metrics ? 'present' : 'missing');
+    console.log(`[updateActivityPeriodFromServer] serverData.metrics?.botDetection:`, serverData.metrics?.botDetection ? 'present' : 'missing');
+    if (serverData.metrics?.botDetection) {
+      metricsBreakdown.botDetection = serverData.metrics.botDetection;
+      console.log(`[updateActivityPeriodFromServer] Added botDetection to metricsBreakdown:`, JSON.stringify(serverData.metrics.botDetection));
+    }
+
+    const stmt = this.db.prepare(`
+      UPDATE activity_periods
+      SET activityScore = ?, metricsBreakdown = ?
+      WHERE id = ?
+    `);
+
+    const metricsJson = JSON.stringify(metricsBreakdown);
+    console.log(`[updateActivityPeriodFromServer] Saving metricsBreakdown (${metricsJson.length} chars), hasBotDetection: ${!!metricsBreakdown.botDetection}`);
+    stmt.run(serverData.activityScore, metricsJson, periodId);
+    console.log(`[updateActivityPeriodFromServer] Updated period ${periodId} with server score: ${serverData.activityScore}`);
+  }
+
   getActivityPeriodsForTimeRange(sessionId: string, windowStart: Date, windowEnd: Date): any[] {
     // Get all activity periods that fall within or overlap with the time window
     // Normalize timestamps to avoid millisecond issues
@@ -497,29 +556,22 @@ export class LocalDatabase {
     ) as ActivityPeriod | undefined;
     
     if (existingPeriod) {
-      // Apply 15% boost to activity score for updates too
-      const boostedScore = Math.min(100, data.activityScore * 1.15);
-      console.log(`Activity period already exists for ${normalizedStart.toISOString()} to ${normalizedEnd.toISOString()}, ID: ${existingPeriod.id}, existing score: ${existingPeriod.activityScore}, new score: ${data.activityScore}, boosted: ${boostedScore}`);
+      console.log(`Activity period already exists for ${normalizedStart.toISOString()} to ${normalizedEnd.toISOString()}, ID: ${existingPeriod.id}, existing score: ${existingPeriod.activityScore}, new score: ${data.activityScore}`);
 
-      // Always update the score if the new boosted score is higher (for placeholder periods)
-      if (boostedScore > existingPeriod.activityScore) {
+      // Always update the score if the new score is higher (for placeholder periods)
+      if (data.activityScore > existingPeriod.activityScore) {
         const updateStmt = this.db.prepare(`
           UPDATE activity_periods
           SET activityScore = ?, classification = ?, isSynced = 0
           WHERE id = ?
         `);
-        updateStmt.run(boostedScore, data.classification || existingPeriod.classification, existingPeriod.id);
-        existingPeriod.activityScore = boostedScore;
-        console.log(`[Activity Score Boost] Updated period ${existingPeriod.id} from ${existingPeriod.activityScore} to ${boostedScore} (+15% boost)`);
+        updateStmt.run(data.activityScore, data.classification || existingPeriod.classification, existingPeriod.id);
+        console.log(`Updated period ${existingPeriod.id} from ${existingPeriod.activityScore} to ${data.activityScore}`);
+        existingPeriod.activityScore = data.activityScore;
       }
       return existingPeriod;
     }
     
-    // Apply 15% boost to activity score to make it easier for users to achieve higher scores
-    // This boost is applied at the storage level, so it affects all downstream calculations
-    const boostedScore = Math.min(100, data.activityScore * 1.15);
-    console.log(`[Activity Score Boost] Original: ${data.activityScore}, Boosted (+15%): ${boostedScore}`);
-
     const period = {
       id: data.id || crypto.randomUUID(),
       sessionId: data.sessionId,
@@ -529,7 +581,7 @@ export class LocalDatabase {
       periodEnd: normalizedEnd.getTime(),
       mode: data.mode,
       notes: null,
-      activityScore: boostedScore,  // Use boosted score
+      activityScore: data.activityScore,  // Use raw score - boost applied on API server
       isValid: data.isValid ? 1 : 0,
       classification: data.classification || null,
       metricsBreakdown: data.metricsBreakdown ? JSON.stringify(data.metricsBreakdown) : null,
@@ -667,31 +719,54 @@ export class LocalDatabase {
     const screenshots = stmt.all(userId, dateStart.getTime(), dateEnd.getTime()) as any[];
     
     console.log('getScreenshotsByDate - found', screenshots.length, 'screenshots for user', userId, 'on date', dateStart.toDateString());
-    
+
     // For each screenshot, get its associated activity periods and calculate weighted score
     return screenshots.map((s: any) => {
       // Get activity periods for this screenshot
       const periods = this.getActivityPeriodsForScreenshot(s.id);
-      
+
       // Extract scores for weighted average calculation
       const scores = periods.map((p: any) => p.activityScore || 0);
-      
+
       // Calculate weighted average using our new function
       const aggregatedScore = calculateScreenshotScore(scores);
-      
+
       // Extract period IDs for fetching detailed metrics
       const periodIds = periods.map((p: any) => p.id);
-      
+
       // Get sync status for screenshot and its periods
       const syncStatus = this.getScreenshotSyncStatus(s.id, periodIds);
-      
+
+      // Check for bot detection in activity periods (synced from server)
+      let hasBotDetection = false;
+      let botDetectionCount = 0;
+      for (const period of periods) {
+        let metricsBreakdown = period.metricsBreakdown;
+        if (typeof metricsBreakdown === 'string') {
+          try {
+            metricsBreakdown = JSON.parse(metricsBreakdown);
+          } catch (e) {
+            metricsBreakdown = null;
+          }
+        }
+        if (metricsBreakdown?.botDetection) {
+          const detection = metricsBreakdown.botDetection;
+          if (detection.keyboardBotDetected || detection.mouseBotDetected) {
+            hasBotDetection = true;
+            botDetectionCount++;
+          }
+        }
+      }
+
       return {
         ...s,
         activityScore: aggregatedScore,
         aggregatedScore: aggregatedScore, // For backward compatibility
         relatedPeriods: periods,
         activityPeriodIds: periodIds, // Add period IDs for metrics fetching
-        syncStatus // Add sync status information
+        syncStatus, // Add sync status information
+        hasBotDetection, // Bot detection flag (synced from server)
+        botDetectionCount // Number of activity periods with bot detection
       };
     });
   }
@@ -716,35 +791,62 @@ export class LocalDatabase {
     
     const screenshots = stmt.all(userId, startOfDay.getTime(), endOfDay.getTime()) as any[];
     console.log('getTodayScreenshots - found', screenshots.length, 'screenshots for user', userId);
-    
+
     // For each screenshot, get its associated activity periods and calculate weighted score
     return screenshots.map((s: any) => {
       // Get activity periods for this screenshot
       const periods = this.getActivityPeriodsForScreenshot(s.id);
-      
+
       // Extract scores for weighted average calculation
       const scores = periods.map((p: any) => p.activityScore || 0);
-      
+
       // Calculate weighted average using our new function
       const aggregatedScore = calculateScreenshotScore(scores);
-      
+
       // Extract period IDs for fetching detailed metrics
       const periodIds = periods.map((p: any) => p.id);
-      
+
       // Get sync status for screenshot and its periods
       const syncStatus = this.getScreenshotSyncStatus(s.id, periodIds);
-      
+
+      // Check for bot detection in activity periods (synced from server)
+      let hasBotDetection = false;
+      let botDetectionCount = 0;
+      for (const period of periods) {
+        let metricsBreakdown = period.metricsBreakdown;
+        if (typeof metricsBreakdown === 'string') {
+          try {
+            metricsBreakdown = JSON.parse(metricsBreakdown);
+          } catch (e) {
+            metricsBreakdown = null;
+          }
+        }
+        if (metricsBreakdown?.botDetection) {
+          const detection = metricsBreakdown.botDetection;
+          console.log(`[getTodayScreenshots] Period ${period.id} has botDetection: kbd=${detection.keyboardBotDetected}, mouse=${detection.mouseBotDetected}`);
+          if (detection.keyboardBotDetected || detection.mouseBotDetected) {
+            hasBotDetection = true;
+            botDetectionCount++;
+          }
+        }
+      }
+      if (hasBotDetection) {
+        console.log(`[getTodayScreenshots] Screenshot ${s.id} hasBotDetection: ${hasBotDetection}, count: ${botDetectionCount}`);
+      }
+
       return {
         ...s,
         activityScore: aggregatedScore,
         aggregatedScore: aggregatedScore, // For backward compatibility
         relatedPeriods: periods,
         activityPeriodIds: periodIds, // Add period IDs for metrics fetching
-        syncStatus // Add sync status information
+        syncStatus, // Add sync status information
+        hasBotDetection, // Bot detection flag (synced from server)
+        botDetectionCount // Number of activity periods with bot detection
       };
     });
   }
-  
+
   getScreenshot(screenshotId: string) {
     return this.db.prepare(`
       SELECT * FROM screenshots WHERE id = ?
@@ -1044,12 +1146,20 @@ export class LocalDatabase {
   
   // Analytics operations
   getDateStats(userId: string, date: Date) {
+    // Check cache first (CPU optimization)
+    const cacheKey = `stats_${userId}_${date.toISOString().split('T')[0]}`;
+    const cached = this.statsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < this.STATS_CACHE_TTL_MS) {
+      console.log('[getDateStats] Returning cached stats for', cacheKey);
+      return cached.data;
+    }
+
     // Get all screenshots for specified date (10 min per valid screenshot rule)
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setUTCHours(23, 59, 59, 999);
-    
+
     console.log('[getDateStats] Input date:', date.toISOString());
     console.log('[getDateStats] UTC range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
     console.log('[getDateStats] Timestamps:', startOfDay.getTime(), 'to', endOfDay.getTime());
@@ -1207,15 +1317,36 @@ export class LocalDatabase {
         'next:', next ? next.uiScore.toFixed(1) : 'none');
     }
     
-    console.log('[getDateStats] Valid screenshots:', validCount, 
-      'Client minutes:', clientMinutes, 
+    console.log('[getDateStats] Valid screenshots:', validCount,
+      'Client minutes:', clientMinutes,
       'Command minutes:', commandMinutes);
-    
-    return {
+
+    const result = {
       clientHours: clientMinutes / 60,
       commandHours: commandMinutes / 60,
       totalHours: (clientMinutes + commandMinutes) / 60
     };
+
+    // Cache the result for subsequent calls (CPU optimization)
+    this.statsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+    return result;
+  }
+
+  // Invalidate stats cache (call when screenshots or activity periods change)
+  invalidateStatsCache(userId?: string) {
+    if (userId) {
+      // Invalidate only for specific user
+      for (const key of this.statsCache.keys()) {
+        if (key.startsWith(`stats_${userId}_`)) {
+          this.statsCache.delete(key);
+        }
+      }
+    } else {
+      // Clear entire cache
+      this.statsCache.clear();
+    }
+    console.log('[LocalDatabase] Stats cache invalidated');
   }
   
   getTodayStats(userId: string) {
@@ -1482,16 +1613,68 @@ export class LocalDatabase {
   }
   
   // Cleanup and maintenance
-  clearOldData(daysToKeep = 30) {
+  clearOldData(daysToKeep = 15) {
     const cutoffTime = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
-    
-    // Delete old synced data
-    this.db.prepare('DELETE FROM sessions WHERE createdAt < ? AND isSynced = 1').run(cutoffTime);
-    this.db.prepare('DELETE FROM activity_periods WHERE createdAt < ? AND isSynced = 1').run(cutoffTime);
-    this.db.prepare('DELETE FROM screenshots WHERE createdAt < ? AND isSynced = 1').run(cutoffTime);
-    
-    // Clean up sync queue
-    this.db.prepare('DELETE FROM sync_queue WHERE attempts >= 5').run();
+    const cutoffDate = new Date(cutoffTime).toISOString();
+
+    // Delete old synced data in correct order to respect foreign key constraints:
+    // 1. First delete from tables that have FK references (most dependent first)
+    // 2. Then delete from parent tables
+
+    // Order: command_hour_activities, client_hour_activities, browser_activities -> activity_periods -> screenshots -> sessions
+
+    // Step 1: Delete activity metrics (they reference activity_periods)
+    const commandHourResult = this.db.prepare(`
+      DELETE FROM command_hour_activities
+      WHERE activityPeriodId IN (
+        SELECT id FROM activity_periods WHERE createdAt < ? AND isSynced = 1
+      )
+    `).run(cutoffTime);
+
+    const clientHourResult = this.db.prepare(`
+      DELETE FROM client_hour_activities
+      WHERE activityPeriodId IN (
+        SELECT id FROM activity_periods WHERE createdAt < ? AND isSynced = 1
+      )
+    `).run(cutoffTime);
+
+    const browserResult = this.db.prepare(`
+      DELETE FROM browser_activities
+      WHERE activityPeriodId IN (
+        SELECT id FROM activity_periods WHERE createdAt < ? AND isSynced = 1
+      )
+    `).run(cutoffTime);
+
+    // Step 2: Delete activity_periods (they reference sessions and screenshots)
+    const periodsResult = this.db.prepare('DELETE FROM activity_periods WHERE createdAt < ? AND isSynced = 1').run(cutoffTime);
+
+    // Step 3: Delete screenshots (they reference sessions)
+    const screenshotsResult = this.db.prepare('DELETE FROM screenshots WHERE createdAt < ? AND isSynced = 1').run(cutoffTime);
+
+    // Step 4: Delete sessions (parent table - delete last)
+    // Only delete sessions that have no remaining activity_periods or screenshots
+    const sessionsResult = this.db.prepare(`
+      DELETE FROM sessions
+      WHERE createdAt < ? AND isSynced = 1
+      AND id NOT IN (SELECT DISTINCT sessionId FROM activity_periods WHERE sessionId IS NOT NULL)
+      AND id NOT IN (SELECT DISTINCT sessionId FROM screenshots WHERE sessionId IS NOT NULL)
+    `).run(cutoffTime);
+
+    // Clean up sync queue (failed items)
+    const queueResult = this.db.prepare('DELETE FROM sync_queue WHERE attempts >= 5').run();
+
+    // Only log if something was actually deleted
+    const totalDeleted = sessionsResult.changes + periodsResult.changes + screenshotsResult.changes + queueResult.changes;
+    if (totalDeleted > 0) {
+      console.log(`🧹 Cleaned up old synced data (older than ${cutoffDate}):`);
+      if (sessionsResult.changes > 0) console.log(`   - ${sessionsResult.changes} sessions`);
+      if (periodsResult.changes > 0) console.log(`   - ${periodsResult.changes} activity periods`);
+      if (screenshotsResult.changes > 0) console.log(`   - ${screenshotsResult.changes} screenshots`);
+      if (commandHourResult.changes > 0) console.log(`   - ${commandHourResult.changes} command hour activities`);
+      if (clientHourResult.changes > 0) console.log(`   - ${clientHourResult.changes} client hour activities`);
+      if (browserResult.changes > 0) console.log(`   - ${browserResult.changes} browser activities`);
+      if (queueResult.changes > 0) console.log(`   - ${queueResult.changes} failed sync queue items`);
+    }
   }
   
   clearSyncQueue() {
@@ -1577,13 +1760,238 @@ export class LocalDatabase {
     const stmt = this.db.prepare(`
       SELECT id, sessionId, periodStart, periodEnd, activityScore
       FROM activity_periods
-      WHERE sessionId = ? 
+      WHERE sessionId = ?
         AND isValid = 1
         AND activityScore >= 4.0
         AND screenshotId IS NOT NULL
       ORDER BY periodStart ASC
     `);
-    
+
     return stmt.all(sessionId) || [];
+  }
+
+  /**
+   * Get statistics about local data for the Clear Data feature
+   */
+  getDataStats(): {
+    screenshots: { count: number; syncedCount: number; unsyncedCount: number; sizeBytes: number };
+    activityPeriods: { count: number; syncedCount: number; unsyncedCount: number };
+    sessions: { count: number; syncedCount: number; unsyncedCount: number };
+    syncQueue: { count: number };
+    recentNotes: { count: number };
+    totalSizeBytes: number;
+  } {
+    // Screenshots stats
+    const screenshotStats = this.db.prepare(`
+      SELECT
+        COUNT(*) as count,
+        SUM(CASE WHEN isSynced = 1 THEN 1 ELSE 0 END) as syncedCount,
+        SUM(CASE WHEN isSynced = 0 THEN 1 ELSE 0 END) as unsyncedCount
+      FROM screenshots
+    `).get() as any;
+
+    // Calculate screenshot files size
+    let screenshotSizeBytes = 0;
+    const screenshots = this.db.prepare('SELECT localPath, thumbnailPath FROM screenshots').all() as any[];
+    for (const ss of screenshots) {
+      try {
+        if (ss.localPath && fs.existsSync(ss.localPath)) {
+          screenshotSizeBytes += fs.statSync(ss.localPath).size;
+        }
+        if (ss.thumbnailPath && fs.existsSync(ss.thumbnailPath)) {
+          screenshotSizeBytes += fs.statSync(ss.thumbnailPath).size;
+        }
+      } catch (e) {
+        // File might not exist
+      }
+    }
+
+    // Activity periods stats
+    const activityStats = this.db.prepare(`
+      SELECT
+        COUNT(*) as count,
+        SUM(CASE WHEN isSynced = 1 THEN 1 ELSE 0 END) as syncedCount,
+        SUM(CASE WHEN isSynced = 0 THEN 1 ELSE 0 END) as unsyncedCount
+      FROM activity_periods
+    `).get() as any;
+
+    // Sessions stats
+    const sessionStats = this.db.prepare(`
+      SELECT
+        COUNT(*) as count,
+        SUM(CASE WHEN isSynced = 1 THEN 1 ELSE 0 END) as syncedCount,
+        SUM(CASE WHEN isSynced = 0 THEN 1 ELSE 0 END) as unsyncedCount
+      FROM sessions
+    `).get() as any;
+
+    // Sync queue count
+    const syncQueueStats = this.db.prepare('SELECT COUNT(*) as count FROM sync_queue').get() as any;
+
+    // Recent notes count
+    const recentNotesStats = this.db.prepare('SELECT COUNT(*) as count FROM recent_notes').get() as any;
+
+    // Total database size
+    const totalSizeBytes = this.getDatabaseSize() + screenshotSizeBytes;
+
+    return {
+      screenshots: {
+        count: screenshotStats?.count || 0,
+        syncedCount: screenshotStats?.syncedCount || 0,
+        unsyncedCount: screenshotStats?.unsyncedCount || 0,
+        sizeBytes: screenshotSizeBytes
+      },
+      activityPeriods: {
+        count: activityStats?.count || 0,
+        syncedCount: activityStats?.syncedCount || 0,
+        unsyncedCount: activityStats?.unsyncedCount || 0
+      },
+      sessions: {
+        count: sessionStats?.count || 0,
+        syncedCount: sessionStats?.syncedCount || 0,
+        unsyncedCount: sessionStats?.unsyncedCount || 0
+      },
+      syncQueue: {
+        count: syncQueueStats?.count || 0
+      },
+      recentNotes: {
+        count: recentNotesStats?.count || 0
+      },
+      totalSizeBytes
+    };
+  }
+
+  /**
+   * Clear selected data types with option to preserve unsynced data
+   */
+  clearSelectedData(options: {
+    types: {
+      screenshots: boolean;
+      activityPeriods: boolean;
+      sessions: boolean;
+      syncQueue: boolean;
+      recentNotes: boolean;
+    };
+    includeUnsynced: boolean;
+  }): { success: boolean; deletedCount: number; freedBytes: number; error?: string } {
+    const { types, includeUnsynced } = options;
+    let deletedCount = 0;
+    let freedBytes = 0;
+
+    console.log('[clearSelectedData] Starting with options:', JSON.stringify(options));
+
+    try {
+      // Disable foreign key checks temporarily for clean deletion
+      this.db.pragma('foreign_keys = OFF');
+
+      // Clear screenshots
+      if (types.screenshots) {
+        // Get files to delete first
+        const whereClause = includeUnsynced ? '' : 'WHERE isSynced = 1';
+        const screenshotsToDelete = this.db.prepare(`SELECT id, localPath, thumbnailPath FROM screenshots ${whereClause}`).all() as any[];
+
+        // Delete files from disk
+        for (const ss of screenshotsToDelete) {
+          try {
+            if (ss.localPath && fs.existsSync(ss.localPath)) {
+              freedBytes += fs.statSync(ss.localPath).size;
+              fs.unlinkSync(ss.localPath);
+            }
+            if (ss.thumbnailPath && fs.existsSync(ss.thumbnailPath)) {
+              freedBytes += fs.statSync(ss.thumbnailPath).size;
+              fs.unlinkSync(ss.thumbnailPath);
+            }
+          } catch (e) {
+            console.error(`[clearSelectedData] Failed to delete file:`, e);
+          }
+        }
+
+        // Delete from database
+        const deleteStmt = this.db.prepare(`DELETE FROM screenshots ${whereClause}`);
+        const result = deleteStmt.run();
+        deletedCount += result.changes;
+        console.log(`[clearSelectedData] Deleted ${result.changes} screenshots`);
+
+        // Also clear related sync queue items
+        if (screenshotsToDelete.length > 0) {
+          const ids = screenshotsToDelete.map(s => s.id);
+          for (const id of ids) {
+            this.db.prepare(`DELETE FROM sync_queue WHERE entityType = 'screenshot' AND entityId = ?`).run(id);
+          }
+        }
+      }
+
+      // Clear activity periods
+      if (types.activityPeriods) {
+        const whereClause = includeUnsynced ? '' : 'WHERE isSynced = 1';
+
+        // Get IDs first for sync queue cleanup
+        const periodsToDelete = this.db.prepare(`SELECT id FROM activity_periods ${whereClause}`).all() as any[];
+
+        const deleteStmt = this.db.prepare(`DELETE FROM activity_periods ${whereClause}`);
+        const result = deleteStmt.run();
+        deletedCount += result.changes;
+        console.log(`[clearSelectedData] Deleted ${result.changes} activity periods`);
+
+        // Clear related sync queue items
+        for (const period of periodsToDelete) {
+          this.db.prepare(`DELETE FROM sync_queue WHERE entityType = 'activity_period' AND entityId = ?`).run(period.id);
+        }
+
+        // Also clear command_hour_activities and client_hour_activities
+        this.db.prepare('DELETE FROM command_hour_activities').run();
+        this.db.prepare('DELETE FROM client_hour_activities').run();
+        this.db.prepare('DELETE FROM browser_activities').run();
+      }
+
+      // Clear sessions
+      if (types.sessions) {
+        const whereClause = includeUnsynced ? 'WHERE isActive = 0' : 'WHERE isSynced = 1 AND isActive = 0';
+
+        // Get IDs first for sync queue cleanup
+        const sessionsToDelete = this.db.prepare(`SELECT id FROM sessions ${whereClause}`).all() as any[];
+
+        const deleteStmt = this.db.prepare(`DELETE FROM sessions ${whereClause}`);
+        const result = deleteStmt.run();
+        deletedCount += result.changes;
+        console.log(`[clearSelectedData] Deleted ${result.changes} sessions`);
+
+        // Clear related sync queue items
+        for (const session of sessionsToDelete) {
+          this.db.prepare(`DELETE FROM sync_queue WHERE entityType = 'session' AND entityId = ?`).run(session.id);
+        }
+      }
+
+      // Clear sync queue
+      if (types.syncQueue) {
+        const result = this.db.prepare('DELETE FROM sync_queue').run();
+        deletedCount += result.changes;
+        console.log(`[clearSelectedData] Deleted ${result.changes} sync queue items`);
+      }
+
+      // Clear recent notes
+      if (types.recentNotes) {
+        const result = this.db.prepare('DELETE FROM recent_notes').run();
+        deletedCount += result.changes;
+        console.log(`[clearSelectedData] Deleted ${result.changes} recent notes`);
+      }
+
+      // Re-enable foreign key checks
+      this.db.pragma('foreign_keys = ON');
+
+      // Vacuum to reclaim space
+      this.vacuum();
+
+      // Invalidate stats cache
+      this.invalidateStatsCache();
+
+      console.log(`[clearSelectedData] Completed. Deleted ${deletedCount} items, freed ${freedBytes} bytes`);
+
+      return { success: true, deletedCount, freedBytes };
+    } catch (error: any) {
+      console.error('[clearSelectedData] Error:', error);
+      // Re-enable foreign key checks on error
+      this.db.pragma('foreign_keys = ON');
+      return { success: false, deletedCount: 0, freedBytes: 0, error: error.message };
+    }
   }
 }

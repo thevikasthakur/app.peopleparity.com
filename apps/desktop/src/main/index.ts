@@ -2393,4 +2393,36 @@ function setupIpcHandlers() {
   ipcMain.handle('debug:enable-foreign-keys', async () => {
     return databaseService.enableForeignKeys();
   });
+
+  // Data management handlers for Clear Data feature
+  ipcMain.handle('data:get-stats', async () => {
+    try {
+      console.log('[data:get-stats] Getting data statistics...');
+      const stats = databaseService.getDataStats();
+      console.log('[data:get-stats] Stats retrieved:', JSON.stringify(stats));
+      return stats;
+    } catch (error: any) {
+      console.error('[data:get-stats] Failed to get data stats:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('data:clear', async (_, options: {
+    types: {
+      screenshots: boolean;
+      activityPeriods: boolean;
+      sessions: boolean;
+      syncQueue: boolean;
+      recentNotes: boolean;
+    };
+    includeUnsynced: boolean;
+  }) => {
+    try {
+      console.log('Clearing data with options:', options);
+      return databaseService.clearSelectedData(options);
+    } catch (error: any) {
+      console.error('Failed to clear data:', error);
+      return { success: false, deletedCount: 0, freedBytes: 0, error: error.message };
+    }
+  });
 }
