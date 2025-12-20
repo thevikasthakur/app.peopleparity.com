@@ -2,6 +2,10 @@ service: ppv1
 frameworkVersion: "4"
 useDotenv: true
 
+params:
+  default:
+    dotenvPath: .env.${sls:stage}
+
 provider:
   name: aws
   profile: pp-api
@@ -74,10 +78,10 @@ functions:
     events:
       - httpApi:
           method: ANY
-          path: "/{proxy+}"
+          path: "/${sls:stage}/{proxy+}"
       - httpApi:
           method: ANY
-          path: "/"
+          path: "/${sls:stage}"
 
 plugins:
   - serverless-offline
@@ -99,6 +103,7 @@ custom:
 
   dotenv:
     logging: false
+    path: ${param:dotenvPath}
 
   serverless-offline:
     httpPort: 3001
