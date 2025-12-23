@@ -5,6 +5,7 @@ import { TodaysHustle } from '../components/TodaysHustle';
 import { ScreenshotGrid } from '../components/ScreenshotGrid';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { apiService } from '../services/apiService';
 import { Activity, Calendar, ChevronLeft, ChevronRight, Users, RefreshCw, Download, Loader2 } from 'lucide-react';
 import { generateBotDetectionTextReport, generateBotDetectionCSV, downloadFile } from '../utils/botReportGenerator';
@@ -13,6 +14,7 @@ const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/peop
 
 export function Dashboard() {
   const { user } = useAuth();
+  const { isInIndia } = useLocation();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -368,14 +370,17 @@ export function Dashboard() {
           </div>
 
           {/* Time Stats - Today's Hustle only (no Weekly Marathon for admin) */}
-          <div className="grid grid-cols-1 gap-4">
-            <TodaysHustle
-              key={`hustle-${refreshKey}`}
-              selectedDate={selectedDate}
-              isToday={isToday}
-              userId={effectiveUserId || undefined}
-            />
-          </div>
+          {/* Hide Today's Hustle for users outside India */}
+          {isInIndia && (
+            <div className="grid grid-cols-1 gap-4">
+              <TodaysHustle
+                key={`hustle-${refreshKey}`}
+                selectedDate={selectedDate}
+                isToday={isToday}
+                userId={effectiveUserId || undefined}
+              />
+            </div>
+          )}
 
           {/* Snapshots Section - exactly like desktop */}
           <div className="glass-card p-4">
@@ -403,6 +408,7 @@ export function Dashboard() {
                 userTimezone={user?.timezone}
                 developerTimezone={selectedDeveloperTimezone}
                 isViewingAsAdmin={isViewingAsAdmin}
+                isInIndia={isInIndia}
               />
             )}
           </div>

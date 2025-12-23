@@ -78,6 +78,7 @@ interface ScreenshotGridProps {
   userTimezone?: string;
   developerTimezone?: string;
   isViewingAsAdmin?: boolean;
+  isInIndia?: boolean;
 }
 
 function percentageToTenScale(percentage: number): number {
@@ -140,7 +141,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
-export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone, developerTimezone, isViewingAsAdmin }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone, developerTimezone, isViewingAsAdmin, isInIndia = true }: ScreenshotGridProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -465,7 +466,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
         const hourScore = validScreenshots.length > 0
           ? validScreenshots.reduce((sum, s) => sum + percentageToTenScale(s.activityScore || 0), 0) / validScreenshots.length
           : 0;
-        const hourLevel = getActivityLevel(hourScore);
+        // For non-India users, use neutral color; otherwise use score-based color
+        const hourLevel = isInIndia ? getActivityLevel(hourScore) : { name: '', color: '#E5E7EB', bgColor: 'bg-gray-200', textColor: 'text-gray-400' };
 
         const activityGroups: { activity: string; count: number; startIdx: number }[] = [];
         let currentActivity = '';
@@ -602,6 +604,11 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     />
 
                     {(() => {
+                      // Hide shield icon for users outside India
+                      if (!isInIndia) {
+                        return null;
+                      }
+
                       // Only show shield if screenshot is on or after Oct 15, 2025
                       const screenshotDate = new Date(getTimestamp(screenshot));
                       const cutoffDate = new Date('2025-10-16T04:30:00Z');
@@ -700,31 +707,37 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                       {isSelected && <Check className="w-4 h-4" />}
                     </button>
 
-                    <div className="absolute top-2 right-2">
-                      <div className="text-right">
-                        <div
-                          className="px-1 py-0 rounded-full text-[8px] font-medium backdrop-blur text-white"
-                          style={{ backgroundColor: level.color + 'CC' }}
-                        >
-                          {scoreOutOf10.toFixed(1)}
-                        </div>
-                        <div
-                          className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium backdrop-blur text-white"
-                          style={{ backgroundColor: level.color + 'AA' }}
-                        >
-                          {level.name}
+                    {/* Activity score badge - hidden for non-India users */}
+                    {isInIndia && (
+                      <div className="absolute top-2 right-2">
+                        <div className="text-right">
+                          <div
+                            className="px-1 py-0 rounded-full text-[8px] font-medium backdrop-blur text-white"
+                            style={{ backgroundColor: level.color + 'CC' }}
+                          >
+                            {scoreOutOf10.toFixed(1)}
+                          </div>
+                          <div
+                            className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium backdrop-blur text-white"
+                            style={{ backgroundColor: level.color + 'AA' }}
+                          >
+                            {level.name}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <div className="absolute bottom-2 left-2 flex flex-col gap-1">
-                      <div className={`px-[2px] py-0.5 rounded text-[9px] font-medium backdrop-blur text-white ${
-                        (screenshot.mode === 'client' || screenshot.mode === 'client_hours')
-                          ? 'bg-indigo-500/80'
-                          : 'bg-emerald-500/80'
-                      }`} style={{ width: '27px' }}>
-                        {(screenshot.mode === 'client' || screenshot.mode === 'client_hours') ? 'CLIENT' : 'CMD'}
-                      </div>
+                      {/* Mode badge (CLIENT/CMD) - hidden for non-India users */}
+                      {isInIndia && (
+                        <div className={`px-[2px] py-0.5 rounded text-[9px] font-medium backdrop-blur text-white ${
+                          (screenshot.mode === 'client' || screenshot.mode === 'client_hours')
+                            ? 'bg-indigo-500/80'
+                            : 'bg-emerald-500/80'
+                        }`} style={{ width: '27px' }}>
+                          {(screenshot.mode === 'client' || screenshot.mode === 'client_hours') ? 'CLIENT' : 'CMD'}
+                        </div>
+                      )}
                       {screenshot.trackerVersion && (
                         <div className="px-1 py-0.5 rounded text-[8px] font-medium backdrop-blur text-white bg-gray-800/70">
                           v{screenshot.trackerVersion}
@@ -770,7 +783,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                   return (
                     <div
                       key={idx}
-                      className="absolute h-full flex items-center justify-center text-[11px] font-medium text-white px-1 rounded-sm"
+                      className={`absolute h-full flex items-center justify-center text-[11px] font-medium px-1 rounded-sm ${isInIndia ? 'text-white' : 'text-gray-600'}`}
                       style={{
                         left: `${leftPosition}%`,
                         width: `calc(${width}% - 3px)`,
@@ -785,15 +798,18 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     </div>
                   );
                 })}
-                <div
-                  className="absolute right-0 top-0 h-full px-2 flex items-center text-[10px] font-bold text-white"
-                  style={{
-                    backgroundColor: hourLevel.color,
-                    minWidth: '45px'
-                  }}
-                >
-                  {hourScore.toFixed(1)}
-                </div>
+                {/* Score badge on ribbon - hidden for non-India users */}
+                {isInIndia && (
+                  <div
+                    className="absolute right-0 top-0 h-full px-2 flex items-center text-[10px] font-bold text-white"
+                    style={{
+                      backgroundColor: hourLevel.color,
+                      minWidth: '45px'
+                    }}
+                  >
+                    {hourScore.toFixed(1)}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -823,14 +839,17 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
               <div className="flex items-center justify-between p-4 border-b">
                 <div className="flex items-center gap-4">
                   <h3 className="text-lg font-semibold">Screenshot Details</h3>
-                  <span className={`
-                    px-2 py-1 rounded-full text-xs font-medium
-                    ${(selectedScreenshot.mode === 'client' || selectedScreenshot.mode === 'client_hours')
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-emerald-100 text-emerald-700'}
-                  `}>
-                    {(selectedScreenshot.mode === 'client' || selectedScreenshot.mode === 'client_hours') ? 'CLIENT' : 'COMMAND'}
-                  </span>
+                  {/* Mode badge (CLIENT/COMMAND) - hidden for non-India users */}
+                  {isInIndia && (
+                    <span className={`
+                      px-2 py-1 rounded-full text-xs font-medium
+                      ${(selectedScreenshot.mode === 'client' || selectedScreenshot.mode === 'client_hours')
+                        ? 'bg-indigo-100 text-indigo-700'
+                        : 'bg-emerald-100 text-emerald-700'}
+                    `}>
+                      {(selectedScreenshot.mode === 'client' || selectedScreenshot.mode === 'client_hours') ? 'CLIENT' : 'COMMAND'}
+                    </span>
+                  )}
                   {isViewingAsAdmin && developerTimezone && developerTimezone !== userTimezone ? (
                     <div className="flex flex-col text-sm">
                       <span className="text-gray-700 font-medium">
@@ -909,105 +928,108 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                 </div>
 
                 <div className="w-[400px] border-l bg-white overflow-y-auto">
-                  <div className="p-4 border-b">
-                    <h3 className="text-sm font-semibold mb-3">Activity Summary</h3>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-gray-500 uppercase tracking-wider">Overall Score</label>
-                        <div className="flex items-center gap-3 mt-1">
-                          {(() => {
-                            // Calculate the correct average of activity scores
-                            // Matching the exact implementation from the API/desktop app
-                            let calculatedScore = selectedScreenshot.activityScore || 0;
+                  {/* Activity Summary - hidden for non-India users */}
+                  {isInIndia && (
+                    <div className="p-4 border-b">
+                      <h3 className="text-sm font-semibold mb-3">Activity Summary</h3>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs text-gray-500 uppercase tracking-wider">Overall Score</label>
+                          <div className="flex items-center gap-3 mt-1">
+                            {(() => {
+                              // Calculate the correct average of activity scores
+                              // Matching the exact implementation from the API/desktop app
+                              let calculatedScore = selectedScreenshot.activityScore || 0;
 
-                            if (activityPeriods && activityPeriods.length > 0) {
-                              const allScores = activityPeriods.map(p => p.activityScore || 0);
-                              const sortedScores = allScores.sort((a, b) => b - a);
+                              if (activityPeriods && activityPeriods.length > 0) {
+                                const allScores = activityPeriods.map(p => p.activityScore || 0);
+                                const sortedScores = allScores.sort((a, b) => b - a);
 
-                              let scoresToAverage: number[];
+                                let scoresToAverage: number[];
 
-                              if (allScores.length > 8) {
-                                // More than 8 periods: Take best 8 scores only
-                                scoresToAverage = sortedScores.slice(0, 8);
-                              } else if (allScores.length > 4) {
-                                // 5-8 periods: Discard worst 1 score
-                                scoresToAverage = sortedScores.slice(0, -1);
-                              } else {
-                                // 4 or fewer periods: Simple average of all scores
-                                scoresToAverage = sortedScores;
+                                if (allScores.length > 8) {
+                                  // More than 8 periods: Take best 8 scores only
+                                  scoresToAverage = sortedScores.slice(0, 8);
+                                } else if (allScores.length > 4) {
+                                  // 5-8 periods: Discard worst 1 score
+                                  scoresToAverage = sortedScores.slice(0, -1);
+                                } else {
+                                  // 4 or fewer periods: Simple average of all scores
+                                  scoresToAverage = sortedScores;
+                                }
+
+                                // Calculate average of selected scores
+                                if (scoresToAverage.length > 0) {
+                                  calculatedScore = scoresToAverage.reduce((acc, score) => acc + score, 0) / scoresToAverage.length;
+                                }
                               }
 
-                              // Calculate average of selected scores
-                              if (scoresToAverage.length > 0) {
-                                calculatedScore = scoresToAverage.reduce((acc, score) => acc + score, 0) / scoresToAverage.length;
-                              }
-                            }
-
-                            const scoreOutOf10 = percentageToTenScale(calculatedScore);
-                            const level = getActivityLevel(scoreOutOf10);
-                            return (
-                              <>
-                                <div className="flex-1">
-                                  <div className="bg-gray-200 rounded-full h-2">
-                                    <div
-                                      className="h-full rounded-full"
-                                      style={{
-                                        width: `${calculatedScore}%`,
-                                        backgroundColor: level.color
-                                      }}
-                                    />
+                              const scoreOutOf10 = percentageToTenScale(calculatedScore);
+                              const level = getActivityLevel(scoreOutOf10);
+                              return (
+                                <>
+                                  <div className="flex-1">
+                                    <div className="bg-gray-200 rounded-full h-2">
+                                      <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                          width: `${calculatedScore}%`,
+                                          backgroundColor: level.color
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex justify-between text-[9px] mt-1 text-gray-400">
+                                      <span>Critical</span>
+                                      <span>Poor</span>
+                                      <span>Low</span>
+                                      <span>Fair</span>
+                                      <span>Good</span>
+                                    </div>
                                   </div>
-                                  <div className="flex justify-between text-[9px] mt-1 text-gray-400">
-                                    <span>Critical</span>
-                                    <span>Poor</span>
-                                    <span>Low</span>
-                                    <span>Fair</span>
-                                    <span>Good</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg font-bold">{scoreOutOf10.toFixed(1)}</span>
+                                    <span
+                                      className="text-xs px-2 py-1 rounded-full text-white font-medium"
+                                      style={{ backgroundColor: level.color }}
+                                    >
+                                      {level.name}
+                                    </span>
                                   </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-lg font-bold">{scoreOutOf10.toFixed(1)}</span>
-                                  <span
-                                    className="text-xs px-2 py-1 rounded-full text-white font-medium"
-                                    style={{ backgroundColor: level.color }}
-                                  >
-                                    {level.name}
-                                  </span>
-                                </div>
-                              </>
-                            );
-                          })()}
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
+                        {selectedScreenshot.userName && (
+                          <div>
+                            <label className="text-xs text-gray-500 uppercase tracking-wider">User</label>
+                            <p className="text-sm font-medium mt-1">{selectedScreenshot.userName}</p>
+                          </div>
+                        )}
+                        {selectedScreenshot.deviceInfo && (
+                          <div>
+                            <label className="text-xs text-gray-500 uppercase tracking-wider">Device</label>
+                            <p className="text-sm font-medium mt-1">{selectedScreenshot.deviceInfo}</p>
+                          </div>
+                        )}
+                        {selectedScreenshot.trackerVersion && (
+                          <div>
+                            <label className="text-xs text-gray-500 uppercase tracking-wider">Tracker Version</label>
+                            <p className="text-sm font-medium mt-1">v{selectedScreenshot.trackerVersion}</p>
+                          </div>
+                        )}
+                        {(userRole === 'super_admin' || userRole === 'org_admin') && (
+                          <div className="pt-2 border-t">
+                            <label className="text-xs text-gray-500 uppercase tracking-wider">Screenshot ID</label>
+                            <p className="text-xs text-gray-500 mt-1 font-mono break-all">{selectedScreenshot.id}</p>
+                          </div>
+                        )}
                       </div>
-                      {selectedScreenshot.userName && (
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">User</label>
-                          <p className="text-sm font-medium mt-1">{selectedScreenshot.userName}</p>
-                        </div>
-                      )}
-                      {selectedScreenshot.deviceInfo && (
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">Device</label>
-                          <p className="text-sm font-medium mt-1">{selectedScreenshot.deviceInfo}</p>
-                        </div>
-                      )}
-                      {selectedScreenshot.trackerVersion && (
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">Tracker Version</label>
-                          <p className="text-sm font-medium mt-1">v{selectedScreenshot.trackerVersion}</p>
-                        </div>
-                      )}
-                      {(userRole === 'super_admin' || userRole === 'org_admin') && (
-                        <div className="pt-2 border-t">
-                          <label className="text-xs text-gray-500 uppercase tracking-wider">Screenshot ID</label>
-                          <p className="text-xs text-gray-500 mt-1 font-mono break-all">{selectedScreenshot.id}</p>
-                        </div>
-                      )}
                     </div>
-                  </div>
+                  )}
 
-                  {/* Bot Detection Summary */}
-                  {detailedScreenshot?.botDetectionSummary && (
+                  {/* Bot Detection Summary - Hidden for non-India users */}
+                  {isInIndia && detailedScreenshot?.botDetectionSummary && (
                     <div className="mx-4 mb-4 bg-orange-50 rounded-lg p-3 border border-orange-200">
                       <div className="text-sm text-orange-800">
                         <p className="mb-1">
@@ -1030,20 +1052,21 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     </div>
                   )}
 
-                  {/* Per-Minute Activity Breakdown */}
-                  <div className="p-4">
-                    <h3 className="text-sm font-semibold mb-3">Per-Minute Activity Breakdown</h3>
+                  {/* Per-Minute Activity Breakdown - hidden for non-India users */}
+                  {isInIndia && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold mb-3">Per-Minute Activity Breakdown</h3>
 
-                    {loadingActivityPeriods ? (
-                      <div className="text-center py-4">
-                        <Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" />
-                        <p className="text-xs text-gray-500 mt-2">Loading metrics...</p>
-                      </div>
-                    ) : activityPeriods.length > 0 ? (
-                      <div className="space-y-2">
-                        {activityPeriods.map((period, index) => {
-                          const scoreOutOf10 = percentageToTenScale(period.activityScore || 0);
-                          const level = getActivityLevel(scoreOutOf10);
+                      {loadingActivityPeriods ? (
+                        <div className="text-center py-4">
+                          <Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" />
+                          <p className="text-xs text-gray-500 mt-2">Loading metrics...</p>
+                        </div>
+                      ) : activityPeriods.length > 0 ? (
+                        <div className="space-y-2">
+                          {activityPeriods.map((period, index) => {
+                            const scoreOutOf10 = percentageToTenScale(period.activityScore || 0);
+                            const level = getActivityLevel(scoreOutOf10);
                           const tz = developerTimezone || userTimezone || 'Asia/Kolkata';
                           const periodEndTime = new Date(period.periodEnd).toLocaleTimeString('en-US', {
                             hour: '2-digit',
@@ -1095,8 +1118,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {/* Bot Detection Indicator */}
-                                  {period.metrics?.botDetection && (period.metrics.botDetection.keyboardBotDetected || period.metrics.botDetection.mouseBotDetected) && (
+                                  {/* Bot Detection Indicator - Hidden for non-India users */}
+                                  {isInIndia && period.metrics?.botDetection && (period.metrics.botDetection.keyboardBotDetected || period.metrics.botDetection.mouseBotDetected) && (
                                     <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-100 rounded-full">
                                       <AlertCircle className="w-3 h-3 text-orange-600" />
                                       <span className="text-xs font-medium text-orange-700">
@@ -1195,8 +1218,8 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                                         </div>
                                       )}
 
-                                      {/* Bot Detection - Only show if bot activity detected */}
-                                      {period.metrics.botDetection && (period.metrics.botDetection.keyboardBotDetected || period.metrics.botDetection.mouseBotDetected) && (
+                                      {/* Bot Detection - Only show if bot activity detected and user is in India */}
+                                      {isInIndia && period.metrics.botDetection && (period.metrics.botDetection.keyboardBotDetected || period.metrics.botDetection.mouseBotDetected) && (
                                         <div className="bg-orange-50 rounded p-2 border border-orange-200">
                                           <div className="flex items-center gap-2 mb-2">
                                             <AlertCircle className="w-4 h-4 text-orange-500" />
@@ -1241,12 +1264,13 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                           );
                         })}
                       </div>
-                    ) : (
-                      <div className="text-center py-4 text-gray-500 text-sm">
-                        No activity periods found for this screenshot
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 text-sm">
+                          No activity periods found for this screenshot
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
