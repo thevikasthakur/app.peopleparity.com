@@ -141,7 +141,7 @@ function getActivityLevel(score: number): { name: string; color: string; bgColor
   }
 }
 
-export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone, developerTimezone, isViewingAsAdmin, isInIndia = true }: ScreenshotGridProps) {
+export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone, developerTimezone, isViewingAsAdmin, isInIndia = false }: ScreenshotGridProps) {
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState<number>(-1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
