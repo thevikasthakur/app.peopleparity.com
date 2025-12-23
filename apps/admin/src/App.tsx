@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
+import { LocationProvider } from './contexts/LocationContext';
+import { LocationGate } from './components/LocationGate';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
@@ -22,9 +24,11 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Router>
-          <Routes>
+      <LocationProvider>
+        <LocationGate>
+          <AuthProvider>
+            <Router>
+            <Routes>
             <Route path="/login" element={<Login />} />
             <Route
               path="/dashboard"
@@ -67,9 +71,11 @@ function App() {
               }
             />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </Router>
-      </AuthProvider>
+            </Routes>
+            </Router>
+          </AuthProvider>
+        </LocationGate>
+      </LocationProvider>
     </QueryClientProvider>
   );
 }
