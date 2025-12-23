@@ -13,6 +13,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AppVersionModule } from './modules/app-version/app-version.module';
+import { HealthController } from './health.controller';
 
 // Import all entities explicitly for serverless
 import { User } from './entities/user.entity';
@@ -73,5 +74,6 @@ import { AppVersion } from './entities/app-version.entity';
     AdminModule,
     AppVersionModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

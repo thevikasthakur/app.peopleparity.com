@@ -44,7 +44,9 @@ export class ApiSyncService {
     const envUrl = process.env.API_URL || (isDev ? 'http://localhost:3001' : 'https://efr76g502g.execute-api.ap-south-1.amazonaws.com');
     // Replace localhost with 127.0.0.1 to ensure IPv4 in development
     const baseUrl = envUrl.replace('localhost', '127.0.0.1');
-    const apiUrl = `${baseUrl}/api`;
+    // In dev mode with serverless-offline, routes are at /dev/api; in prod they're at /prod/api
+    const stage = isDev ? 'dev' : 'prod';
+    const apiUrl = `${baseUrl}/${stage}/api`;
 
     console.log('🔗 API Service initialized with URL:', apiUrl);
     console.log('📦 App packaged:', app.isPackaged, 'Dev mode:', isDev);
