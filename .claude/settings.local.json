@@ -96,7 +96,8 @@
       "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql -h aws-1-ap-south-1.pooler.supabase.com -p 6543 -U postgres.wbqjfspfleboymnvkkte -d postgres -c \"SELECT jsonb_pretty(ap.metrics->''botDetection'') as bot_detection FROM activity_periods ap WHERE ap.\"\"userId\"\" = ''9e8c1aba-0ed8-4d8a-a937-719f7e025543'' AND ap.\"\"periodStart\"\" = ''2025-10-12 20:55:00+00'';\")",
       "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql:*)",
       "Bash(serverless offline --aws-profile pp-api --stage prod)",
-      "Bash(kill 70866)"
+      "Bash(kill 70866)",
+      "Bash(tsc:*)"
     ],
     "deny": [],
     "ask": []
