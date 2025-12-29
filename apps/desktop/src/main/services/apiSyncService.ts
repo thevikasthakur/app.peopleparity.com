@@ -44,7 +44,9 @@ export class ApiSyncService {
     const envUrl = process.env.API_URL || (isDev ? 'http://localhost:3001' : 'https://efr76g502g.execute-api.ap-south-1.amazonaws.com');
     // Replace localhost with 127.0.0.1 to ensure IPv4 in development
     const baseUrl = envUrl.replace('localhost', '127.0.0.1');
-    const apiUrl = `${baseUrl}/api`;
+    // In dev mode with serverless-offline, routes are at /dev/api; in prod they're at /prod/api
+    const stage = isDev ? 'dev' : 'prod';
+    const apiUrl = `${baseUrl}/${stage}/api`;
 
     console.log('🔗 API Service initialized with URL:', apiUrl);
     console.log('📦 App packaged:', app.isPackaged, 'Dev mode:', isDev);
@@ -705,10 +707,10 @@ export class ApiSyncService {
     this.concurrentSessionDetected = false;
     this.concurrentSessionHandledAt = 0;
 
-    // Start periodic sync - sync more frequently for real-time updates
+    // Start periodic sync - balanced interval for data freshness vs CPU usage
     this.syncInterval = setInterval(() => {
       this.syncData();
-    }, 30 * 1000); // Sync every 30 seconds for near real-time updates
+    }, 60 * 1000); // Sync every 60 seconds (reduced from 30s for CPU optimization)
 
     // Initial sync after a short delay
     setTimeout(() => {
@@ -718,7 +720,7 @@ export class ApiSyncService {
     // Start version checking
     this.startVersionCheck();
 
-    console.log('API sync service started - syncing every 30 seconds');
+    console.log('API sync service started - syncing every 60 seconds');
   }
 
   resetConcurrentSessionFlag() {
@@ -1049,6 +1051,10 @@ export class ApiSyncService {
         }
       }
       
+      // Clean up old synced data to prevent database growth
+      // Only deletes data older than 30 days that has been successfully synced
+      this.db.clearOldSyncedData(2);
+
       console.log('Sync completed successfully');
     } catch (error: any) {
       // Only log ECONNREFUSED once per offline period
@@ -1199,8 +1205,23 @@ export class ApiSyncService {
             }
             throw new Error(activityResponse.data.message || 'Activity period creation failed');
           }
+
+          // Update local activity period with server-calculated data (score and bot detection)
+          if (activityResponse.data.period) {
+            const serverPeriod = activityResponse.data.period;
+            console.log('[SYNC] Server returned period with score:', serverPeriod.activityScore);
+            console.log('[SYNC] Server period metrics keys:', serverPeriod.metrics ? Object.keys(serverPeriod.metrics) : 'NO METRICS');
+            console.log('[SYNC] Server period botDetection:', serverPeriod.metrics?.botDetection ? 'PRESENT' : 'MISSING');
+            if (serverPeriod.metrics?.botDetection) {
+              console.log('[SYNC] Bot detection details:', JSON.stringify(serverPeriod.metrics.botDetection));
+            }
+            this.db.updateActivityPeriodFromServer(item.entityId, {
+              activityScore: serverPeriod.activityScore,
+              metrics: serverPeriod.metrics
+            });
+          }
           break;
-          
+
         case 'screenshot':
           console.log('Processing screenshot sync:', item.entityId);
           const fs = require('fs');
@@ -1432,13 +1453,17 @@ export class ApiSyncService {
       
       const { uploadUrls, key } = urlResponse.data;
       
-      // Step 2: Create thumbnail
-      const thumbnailBuffer = await sharp(fileBuffer)
-        .resize(250, null, { 
+      // Step 2: Create thumbnail (CPU optimized)
+      const thumbnailBuffer = await sharp(fileBuffer, { failOn: 'none' })
+        .resize(250, null, {
           fit: 'inside',
-          withoutEnlargement: false 
+          withoutEnlargement: false,
+          fastShrinkOnLoad: true // CPU optimization
         })
-        .jpeg({ quality: 99 })
+        .jpeg({
+          quality: 80, // Reduced from 99 - thumbnails don't need max quality
+          mozjpeg: false // Faster encoding
+        })
         .toBuffer();
       
       // Step 3: Upload both files directly to S3 using signed URLs

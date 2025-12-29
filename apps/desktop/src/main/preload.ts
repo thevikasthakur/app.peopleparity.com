@@ -86,15 +86,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDashboardStats: () =>
     ipcRenderer.invoke('dashboard:stats'),
   debug: {
-    clearSyncQueue: () => 
+    clearSyncQueue: () =>
       ipcRenderer.invoke('debug:clear-sync-queue'),
-    clearAllData: () => 
+    clearAllData: () =>
       ipcRenderer.invoke('debug:clear-all-data'),
-    checkForeignKeys: () => 
+    checkForeignKeys: () =>
       ipcRenderer.invoke('debug:check-foreign-keys'),
-    enableForeignKeys: () => 
+    enableForeignKeys: () =>
       ipcRenderer.invoke('debug:enable-foreign-keys'),
   },
+  // Data management for Clear Data feature
+  getDataStats: () =>
+    ipcRenderer.invoke('data:get-stats'),
+  clearData: (options: {
+    types: {
+      screenshots: boolean;
+      activityPeriods: boolean;
+      sessions: boolean;
+      syncQueue: boolean;
+      recentNotes: boolean;
+    };
+    includeUnsynced: boolean;
+  }) =>
+    ipcRenderer.invoke('data:clear', options),
   on: (channel: string, callback: (...args: any[]) => void) => {
     const validChannels = ['idle-status', 'session-update', 'screenshot-captured', 'request-recent-activities', 'note-updated', 'tracking-state-changed', 'concurrent-session-detected', 'invalid-operation-detected', 'navigate-to-login', 'version-upgrade-required', 'bot-activity-detected', 'show-start-tracking-modal'];
     if (validChannels.includes(channel)) {

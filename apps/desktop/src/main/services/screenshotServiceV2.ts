@@ -12,6 +12,10 @@ import crypto from 'crypto';
 import { DatabaseService } from './databaseService';
 import { ActivityTrackerV2 } from './activityTrackerV2';
 
+// CPU optimization: Limit sharp's thread pool to reduce CPU contention
+// Default is based on CPU cores, but we limit to 2 for background processing
+sharp.concurrency(2);
+
 export class ScreenshotServiceV2 {
   private isCapturing = false;
   private screenshotDir: string;
@@ -274,31 +278,44 @@ export class ScreenshotServiceV2 {
       console.log('🔍 Debug - localPath type:', typeof localPath, 'value:', localPath);
       console.log('🔍 Debug - img type:', typeof img, 'isBuffer:', Buffer.isBuffer(img), 'length:', img?.length);
       
-      // Save full size image
+      // Save full size image (CPU optimized settings)
       try {
         // Ensure localPath is a string
         const pathStr = String(localPath);
         console.log('🔍 Debug - Using pathStr:', pathStr);
-        
-        await sharp(img)
-          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85 })
+
+        await sharp(img, { failOn: 'none' }) // Don't fail on minor issues
+          .resize(1920, 1080, {
+            fit: 'inside',
+            withoutEnlargement: true,
+            fastShrinkOnLoad: true // CPU optimization: faster resize
+          })
+          .jpeg({
+            quality: 80, // Slightly reduced from 85 for CPU savings
+            mozjpeg: false // Disable mozjpeg for faster encoding
+          })
           .toFile(pathStr);
       } catch (sharpError: any) {
         console.error('❌ Sharp error (full size):', sharpError.message);
         throw sharpError;
       }
-      
+
       console.log('📷 Saving thumbnail to:', thumbnailPath);
-      
-      // Save thumbnail
+
+      // Save thumbnail (CPU optimized settings)
       try {
         // Ensure thumbnailPath is a string
         const thumbPathStr = String(thumbnailPath);
-        
-        await sharp(img)
-          .resize(320, 180, { fit: 'cover' })
-          .jpeg({ quality: 70 })
+
+        await sharp(img, { failOn: 'none' })
+          .resize(320, 180, {
+            fit: 'cover',
+            fastShrinkOnLoad: true // CPU optimization
+          })
+          .jpeg({
+            quality: 65, // Reduced from 70 for thumbnails
+            mozjpeg: false
+          })
           .toFile(thumbPathStr);
       } catch (sharpError: any) {
         console.error('❌ Sharp error (thumbnail):', sharpError.message);

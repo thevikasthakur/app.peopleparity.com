@@ -19,9 +19,13 @@ async function bootstrap(): Promise<Handler> {
   // Get the underlying Express instance from the adapter/Nest
   const expressApp = app.getHttpAdapter().getInstance();
 
+  // Get stage from environment (set by serverless framework)
+  const stage = process.env.STAGE || 'dev';
+
   return serverless(expressApp, {
     requestId: 'x-request-id',
     provider: 'aws',
+    basePath: `/${stage}`, // Strip the stage prefix from incoming requests
   }) as unknown as Handler;
 }
 

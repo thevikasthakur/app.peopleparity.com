@@ -65,7 +65,7 @@ export interface DetailedActivityMetrics {
     finalScore: number;
   };
   classification: {
-    category: 'highly_active' | 'active' | 'moderate' | 'low' | 'idle';
+    category: 'highly_active' | 'active' | 'moderate' | 'low' | 'idle' | 'pending';
     confidence: number;
     tags: string[];
   };
@@ -1484,23 +1484,31 @@ export class MetricsCollector {
       activityPercentage: ((rawMetrics.activeSeconds || 0) / periodDuration) * 100
     };
     
-    const scoreCalculation = this.calculateDetailedScore(
-      keyboardMetrics,
-      mouseMetrics,
-      botDetection,
-      timeMetrics
-    );
-    
-    const classification = this.classifyActivity(
-      scoreCalculation.finalScore,
-      {
-        keyboard: keyboardMetrics,
-        mouse: mouseMetrics,
-        botDetection,
-        timeMetrics
-      }
-    );
-    
+    // Score calculation and classification now happens on API server
+    // Desktop only collects and sends raw metrics
+    const scoreCalculation = {
+      components: {
+        keyboardScore: 0,
+        mouseScore: 0,
+        consistencyScore: 0,
+        activityTimeScore: 0
+      },
+      penalties: {
+        botPenalty: 0,
+        idlePenalty: 0,
+        suspiciousActivityPenalty: 0
+      },
+      formula: 'calculated_on_server',
+      rawScore: 0,
+      finalScore: 0
+    };
+
+    const classification: DetailedActivityMetrics['classification'] = {
+      category: 'pending', // Server will classify
+      confidence: 0,
+      tags: []
+    };
+
     return {
       keyboard: keyboardMetrics,
       mouse: mouseMetrics,
@@ -1509,7 +1517,7 @@ export class MetricsCollector {
       scoreCalculation,
       classification,
       metadata: {
-        version: '1.0',
+        version: '2.0', // Updated version to indicate server-side calculation
         calculatedAt: new Date().toISOString(),
         calculationTimeMs: Date.now() - startTime
       }

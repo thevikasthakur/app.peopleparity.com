@@ -514,7 +514,11 @@ export class DatabaseService {
           
           // Get sync status if available
           const syncStatus = (s as any).syncStatus || null;
-          
+
+          // Get bot detection info (synced from server)
+          const hasBotDetection = (s as any).hasBotDetection || false;
+          const botDetectionCount = (s as any).botDetectionCount || 0;
+
           const result = {
             id: s.id,
             thumbnailUrl: thumbnailUrl || '', // Empty string if no valid URL
@@ -524,16 +528,18 @@ export class DatabaseService {
             mode: s.mode === 'client_hours' ? 'client' as const : 'command' as const,
             activityScore: activityScore,
             activityPeriodIds: activityPeriodIds,
-            syncStatus: syncStatus
+            syncStatus: syncStatus,
+            hasBotDetection: hasBotDetection,  // Bot detection flag (synced from server)
+            botDetectionCount: botDetectionCount  // Number of activity periods with bot detection
           };
-          
+
           return result;
         } catch (mapError) {
           console.error('Error mapping screenshot:', s.id, mapError);
           throw mapError;
         }
       });
-      
+
       console.log(`Successfully mapped ${mappedScreenshots.length} screenshots for date ${date.toDateString()}`);
       return mappedScreenshots;
     } catch (error) {
@@ -613,9 +619,13 @@ export class DatabaseService {
           
           // Get sync status if available
           const syncStatus = (s as any).syncStatus || null;
-          
-          console.log(`Screenshot ${s.id} has activity score: ${activityScore}`);
-          
+
+          // Get bot detection info (synced from server)
+          const hasBotDetection = (s as any).hasBotDetection || false;
+          const botDetectionCount = (s as any).botDetectionCount || 0;
+
+          console.log(`Screenshot ${s.id} has activity score: ${activityScore}, botDetection: ${hasBotDetection} (${botDetectionCount})`);
+
           const result = {
             id: s.id,
             thumbnailUrl: thumbnailUrl || '',  // Empty string if no valid URL
@@ -625,9 +635,11 @@ export class DatabaseService {
             mode: s.mode === 'client_hours' ? 'client' : 'command' as any,
             activityScore: activityScore,  // Calculated from related periods
             activityPeriodIds: activityPeriodIds,  // Array of period IDs from related periods
-            syncStatus: syncStatus  // Add sync status information
+            syncStatus: syncStatus,  // Add sync status information
+            hasBotDetection: hasBotDetection,  // Bot detection flag (synced from server)
+            botDetectionCount: botDetectionCount  // Number of activity periods with bot detection
           };
-          
+
           console.log('Processed screenshot:', result.id, 'score:', result.activityScore, 'thumb:', result.thumbnailUrl || '(empty)');
           return result;
         } catch (mapError) {
@@ -812,9 +824,28 @@ export class DatabaseService {
   getActivityPeriodsForScreenshot(screenshotId: string) {
     return this.localDb.getActivityPeriodsForScreenshot(screenshotId);
   }
-  
+
   getScreenshot(screenshotId: string) {
     return this.localDb.getScreenshot(screenshotId);
+  }
+
+  /**
+   * Update activity period with server-calculated data (score and bot detection)
+   * Called after successful sync to update local data with server response
+   */
+  updateActivityPeriodFromServer(periodId: string, serverData: {
+    activityScore: number;
+    metrics?: {
+      botDetection?: {
+        keyboardBotDetected: boolean;
+        mouseBotDetected: boolean;
+        confidence: number;
+        reasons?: string[];
+        details?: string[];
+      };
+    };
+  }) {
+    return this.localDb.updateActivityPeriodFromServer(periodId, serverData);
   }
 
   // Export and maintenance
@@ -830,12 +861,21 @@ export class DatabaseService {
   getDatabaseInfo() {
     const sizeInBytes = this.localDb.getDatabaseSize();
     const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
-    
+
     return {
       path: path.join(app.getPath('userData'), 'local_tracking.db'),
       sizeInMB: `${sizeInMB} MB`,
       sizeInBytes
     };
+  }
+
+  /**
+   * Clear old synced data from local database to prevent unbounded growth.
+   * Only deletes data that has been successfully synced to the server.
+   * @param daysToKeep Number of days of synced data to keep locally (default: 30)
+   */
+  clearOldSyncedData(daysToKeep = 8) {
+    this.localDb.clearOldData(daysToKeep);
   }
 
   // These methods are no longer needed as auth is handled by API
@@ -898,7 +938,25 @@ export class DatabaseService {
   enableForeignKeys() {
     return this.localDb.enableForeignKeys();
   }
-  
+
+  // Data management for Clear Data feature
+  getDataStats() {
+    return this.localDb.getDataStats();
+  }
+
+  clearSelectedData(options: {
+    types: {
+      screenshots: boolean;
+      activityPeriods: boolean;
+      sessions: boolean;
+      syncQueue: boolean;
+      recentNotes: boolean;
+    };
+    includeUnsynced: boolean;
+  }) {
+    return this.localDb.clearSelectedData(options);
+  }
+
   setActivityTracker(tracker: any) {
     this.activityTracker = tracker;
   }

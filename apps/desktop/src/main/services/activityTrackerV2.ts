@@ -80,7 +80,11 @@ export class ActivityTrackerV2 extends EventEmitter {
   
   // Inactivity detection
   private consecutiveZeroActivityCount: number = 0;
-  
+
+  // Mouse movement throttling (CPU optimization)
+  private lastMouseMoveTime: number = 0;
+  private readonly MOUSE_MOVE_THROTTLE_MS: number = 50; // Only process mouse movements every 50ms
+
   constructor(db: DatabaseService) {
     super();
     this.db = db;
@@ -141,14 +145,30 @@ export class ActivityTrackerV2 extends EventEmitter {
       console.log('\n📦 Window complete event received, saving to database...');
       
       try {
-        // Check for inactivity (0 activity score)
+        // Check for inactivity based on RAW METRICS (not activityScore which is 0 placeholder)
+        // Since score calculation moved to backend, we check actual input metrics
         let hasZeroActivity = false;
-        let avgActivityScore = 0;
-        
+
         if (windowData.activityPeriods.length > 0) {
-          const totalScore = windowData.activityPeriods.reduce((sum: number, p: any) => sum + p.activityScore, 0);
-          avgActivityScore = totalScore / windowData.activityPeriods.length;
-          hasZeroActivity = avgActivityScore === 0;
+          // Check if ANY period has actual activity (keystrokes, clicks, scrolls, mouse movement)
+          const hasAnyActivity = windowData.activityPeriods.some((p: any) => {
+            const metrics = p.metricsBreakdown;
+            if (!metrics) return false;
+
+            const keystrokes = metrics.keyboard?.totalKeystrokes || 0;
+            const clicks = metrics.mouse?.totalClicks || 0;
+            const scrolls = metrics.mouse?.totalScrolls || 0;
+            const mouseDistance = metrics.mouse?.distancePixels || 0;
+
+            // Consider active if any meaningful input detected
+            return keystrokes > 0 || clicks > 0 || scrolls > 0 || mouseDistance > 100;
+          });
+
+          hasZeroActivity = !hasAnyActivity;
+
+          if (hasZeroActivity) {
+            console.log('⚠️ No raw activity metrics detected in any period');
+          }
         } else if (windowData.screenshot) {
           // No activity periods but has screenshot = inactive
           hasZeroActivity = true;
@@ -562,24 +582,31 @@ export class ActivityTrackerV2 extends EventEmitter {
     
     uIOhook.on('mousemove', (e: any) => {
       if (!this.isTracking) return;
-      
+
       const timestamp = Date.now();
-      
+
+      // Throttle mouse movement processing to reduce CPU load
+      // Only process every MOUSE_MOVE_THROTTLE_MS (50ms)
+      if (timestamp - this.lastMouseMoveTime < this.MOUSE_MOVE_THROTTLE_MS) {
+        return; // Skip this event, too soon since last processed
+      }
+      this.lastMouseMoveTime = timestamp;
+
       // Record position for bot detection
       this.metricsCollector.recordMousePosition(e.x, e.y, timestamp);
-      
+
       if (this.currentMetrics.lastMousePosition) {
         const distance = Math.sqrt(
           Math.pow(e.x - this.currentMetrics.lastMousePosition.x, 2) +
           Math.pow(e.y - this.currentMetrics.lastMousePosition.y, 2)
         );
-        
+
         if (distance > 5 && distance < 1000) {
           this.currentMetrics.mouseDistance += distance;
           this.lastActivityTime = new Date();
         }
       }
-      
+
       this.currentMetrics.lastMousePosition = { x: e.x, y: e.y };
     });
   }
@@ -722,20 +749,12 @@ export class ActivityTrackerV2 extends EventEmitter {
       this.currentMinuteStartTime = new Date();
     }
     
-    // If spike detection identifies bot activity with high confidence, set score to 0
-    let activityScore = detailedMetrics.scoreCalculation.finalScore;
-    if (spikeDetectionResult.isBot && spikeDetectionResult.confidence >= 60) {
-      activityScore = 0; // Mark as bot activity (only if confident)
-      console.log(`  🚫 Bot activity detected via spike analysis (confidence: ${spikeDetectionResult.confidence}%): ${spikeDetectionResult.spikeReason}`);
-    } else if (spikeDetectionResult.hasSpike && spikeDetectionResult.confidence >= 50) {
-      // Reduce score proportionally based on spike severity and confidence
-      const reduction = (spikeDetectionResult.spikeScore / 100) * (spikeDetectionResult.confidence / 100);
-      activityScore = Math.max(0, Math.round(activityScore * (1 - reduction)));
-      console.log(`  ⚠️ Activity spike detected, reducing score by ${Math.round(reduction * 100)}%`);
-    }
-    
+    // Score calculation moved to API server - desktop sends placeholder (0)
+    // API will calculate score from raw metrics in metricsBreakdown
+    const activityScore = 0; // Placeholder - API calculates real score
+
     console.log(`\n📊 Saving period: ${this.periodStartTime.toISOString()} - ${periodEnd.toISOString()}`);
-    console.log(`  Activity score: ${activityScore} (formula: ${detailedMetrics.scoreCalculation.formula})`);
+    console.log(`  Activity score: calculated on server from raw metrics`);
     console.log(`  Keystrokes: ${this.currentMetrics.keyHits} (${this.currentMetrics.productiveKeyHits} productive)`);
     console.log(`  Mouse: ${this.currentMetrics.mouseClicks} clicks, ${Math.round(this.currentMetrics.mouseDistance)}px distance`);
     
@@ -854,85 +873,11 @@ export class ActivityTrackerV2 extends EventEmitter {
   }
   
   /**
-   * Calculate activity score based on metrics
-   */
-  private calculateActivityScore(): number {
-    const minutesPassed = 1; // We save every minute
-    
-    // Calculate rates
-    const keysPerMin = this.currentMetrics.productiveKeyHits / minutesPassed;
-    const clicksPerMin = this.currentMetrics.mouseClicks / minutesPassed;
-    const scrollsPerMin = this.currentMetrics.mouseScrolls / minutesPassed;
-    const uniqueKeysPerMin = this.currentMetrics.uniqueKeys.size / minutesPassed;
-    const mouseDistancePerMin = this.currentMetrics.mouseDistance / minutesPassed;
-    
-    // Calculate base score components (0-100 total)
-    // LIBERALIZED: All multipliers increased by 15% for easier scoring
-    let baseScore = 0;
-    
-    // Keyboard activity (0-40 points)
-    baseScore += Math.min(40, keysPerMin * 2.53); // Was 2.2, now +15%
-    
-    // Mouse clicks (0-20 points)
-    baseScore += Math.min(20, clicksPerMin * 6.9); // Was 6, now +15%
-    
-    // Mouse movement (0-15 points)
-    // Normal mouse movement is 1000-5000 pixels per minute
-    baseScore += Math.min(15, mouseDistancePerMin / 174); // Was 200, now -13% (lower divisor = higher score)
-    
-    // Scroll activity (0-10 points)
-    baseScore += Math.min(10, scrollsPerMin * 3.45); // Was 3, now +15%
-    
-    // Key diversity (0-15 points)
-    baseScore += Math.min(15, uniqueKeysPerMin * 3.45); // Was 3, now +15%
-    
-    // Base score capped at 100
-    baseScore = Math.min(100, baseScore);
-    
-    // Mouse activity bonus (0-30 points) - Added ON TOP of base score
-    // Award graduated bonus points for different levels of mouse activity
-    let mouseBonus = 0;
-    const totalMouseActivity = clicksPerMin + scrollsPerMin + (mouseDistancePerMin / 1000);
-    
-    // Apply graduated bonuses based on activity level (avoid suspicious levels > 50)
-    // LIBERALIZED: All thresholds reduced by 15% for easier bonuses
-    if (totalMouseActivity < 50 && (clicksPerMin > 0 || mouseDistancePerMin > 425)) { // Was 500
-      if (totalMouseActivity > 17) { // Was 20
-        mouseBonus = 30; // Very high activity (30% bonus)
-      } else if (totalMouseActivity > 12.75) { // Was 15
-        mouseBonus = 25; // High activity (25% bonus)
-      } else if (totalMouseActivity > 8.5) { // Was 10
-        mouseBonus = 20; // Good activity (20% bonus)
-      } else if (totalMouseActivity > 4.25) { // Was 5
-        mouseBonus = 15; // Moderate activity (15% bonus)
-      } else if (totalMouseActivity > 1.7) { // Was 2
-        mouseBonus = 10; // Light activity (10% bonus)
-      }
-      
-      // Add bonus on top of base score, but cap total at 100
-      const finalScore = Math.min(100, baseScore + mouseBonus);
-      return Math.round(finalScore);
-    }
-    
-    return Math.round(baseScore);
-  }
-  
-  /**
-   * Classify activity based on score
-   */
-  private classifyActivity(score: number): string {
-    if (score >= 80) return 'highly_active';
-    if (score >= 60) return 'active';
-    if (score >= 40) return 'moderate';
-    if (score >= 20) return 'low';
-    return 'idle';
-  }
-  
-  /**
    * Get current activity score (real-time)
+   * @deprecated Score is now calculated on the API server
    */
   getCurrentActivityScore(): number {
-    return this.calculateActivityScore();
+    return 0; // Score calculated on API server
   }
   
   /**

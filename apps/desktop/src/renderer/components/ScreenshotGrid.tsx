@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader, RotateCw, Calendar } from 'lucide-react';
+import { Check, X, ArrowRightLeft, Trash2, Clock, Monitor, Maximize2, Activity, MousePointer, Keyboard, AlertCircle, ChevronLeft, ChevronRight, Info, Edit2, Cloud, CloudOff, Upload, RefreshCw, AlertTriangle, CheckCircle, Loader, RotateCw, Calendar, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ActivityModal } from './ActivityModal';
 
@@ -54,49 +54,8 @@ interface Screenshot {
   syncStatus?: SyncStatus;
   isFromDifferentDevice?: boolean; // Flag for screenshots from other devices
   deviceInfo?: string; // Which device captured this
-}
-
-interface DetailedMetrics {
-  keyboard?: {
-    totalKeystrokes: number;
-    productiveKeystrokes: number;
-    uniqueKeys: number;
-    keysPerMinute: number;
-    typingRhythm?: {
-      consistent: boolean;
-      avgIntervalMs: number;
-      stdDeviationMs: number;
-    };
-  };
-  mouse?: {
-    totalClicks: number;
-    totalScrolls: number;
-    distancePixels: number;
-    distancePerMinute: number;
-    movementPattern?: {
-      smooth: boolean;
-      avgSpeed: number;
-      maxSpeed: number;
-    };
-  };
-  botDetection?: {
-    keyboardBotDetected: boolean;
-    mouseBotDetected: boolean;
-    confidence: number;
-    details: string[];
-  };
-  scoreCalculation?: {
-    components: any;
-    penalties: any;
-    formula: string;
-    rawScore: number;
-    finalScore: number;
-  };
-  classification?: {
-    category: string;
-    confidence: number;
-    tags: string[];
-  };
+  hasBotDetection?: boolean; // Bot activity detected (synced from server)
+  botDetectionCount?: number; // Number of activity periods with bot detection
 }
 
 // Create a safe URL that avoids file:// protocol
@@ -280,9 +239,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [modalScreenshot, setModalScreenshot] = useState<Screenshot | null>(null);
   const [modalScreenshotIndex, setModalScreenshotIndex] = useState<number>(-1);
-  const [detailedMetrics, setDetailedMetrics] = useState<DetailedMetrics[]>([]);
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
-  const [expandedMinutes, setExpandedMinutes] = useState<Set<number>>(new Set());
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [currentEditActivity, setCurrentEditActivity] = useState('');
   const [recentActivities, setRecentActivities] = useState<string[]>([]);
@@ -508,42 +464,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
     });
   };
 
-  const fetchDetailedMetrics = async (screenshot: Screenshot) => {
-    console.log('Fetching metrics for screenshot:', screenshot.id);
-    console.log('Related periods:', screenshot.relatedPeriods);
-    console.log('Activity period IDs:', screenshot.activityPeriodIds);
-    
-    // Try to get period IDs
-    const periodIds = screenshot.activityPeriodIds || 
-                     (screenshot.relatedPeriods?.map(p => p.id)) || 
-                     [];
-    
-    if (periodIds.length === 0) {
-      console.log('No period IDs found for screenshot');
-      return;
-    }
-    
-    console.log('Fetching metrics for period IDs:', periodIds);
-    setLoadingMetrics(true);
-    
-    try {
-      const metrics = await (window as any).electronAPI.activity.getPeriodsWithMetrics(periodIds);
-      console.log('Fetched metrics:', metrics);
-      
-      // Extract metricsBreakdown from each period
-      const detailedMetricsData = metrics
-        .map((m: any) => m.metricsBreakdown)
-        .filter(Boolean);
-      
-      console.log('Detailed metrics data:', detailedMetricsData);
-      setDetailedMetrics(detailedMetricsData);
-    } catch (error) {
-      console.error('Failed to fetch metrics:', error);
-    } finally {
-      setLoadingMetrics(false);
-    }
-  };
-
   const groupScreenshotsByHour = () => {
     const groups: { [hour: string]: (Screenshot | null)[] } = {};
     
@@ -751,7 +671,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     const index = screenshots.findIndex(s => s.id === screenshot.id);
                     setModalScreenshotIndex(index);
                     setModalScreenshot(screenshot);
-                    fetchDetailedMetrics(screenshot);
                   }}
                   onMouseEnter={() => setHoveredId(screenshot.id)}
                   onMouseLeave={() => setHoveredId(null)}
@@ -779,7 +698,58 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                   {isNotFullySynced && (
                     <div className="absolute inset-0 bg-gray-600/20 backdrop-blur-[0.5px] pointer-events-none" />
                   )}
-                  
+
+                  {/* Bot Detection Shield Indicator (synced from server) */}
+                  {(() => {
+                    // Only show shield if screenshot is on or after Oct 16, 2025 and has bot detection
+                    const screenshotDate = new Date(screenshot.timestamp);
+                    const cutoffDate = new Date('2025-10-16T04:30:00Z');
+
+                    if (!screenshot.hasBotDetection || screenshotDate < cutoffDate) {
+                      return null;
+                    }
+
+                    const anomalyCount = screenshot.botDetectionCount || 0;
+
+                    // Calculate background color based on anomaly count (0-10 scale)
+                    // 0 anomalies: dark green, 10 anomalies: dark red
+                    const getShieldColor = (count: number) => {
+                      const clampedCount = Math.min(count, 10);
+                      const ratio = clampedCount / 10;
+                      // Interpolate from dark green (rgb(21, 128, 61)) to dark red (rgb(153, 27, 27))
+                      const r = Math.round(21 + (153 - 21) * ratio);
+                      const g = Math.round(128 + (27 - 128) * ratio);
+                      const b = Math.round(61 + (27 - 61) * ratio);
+                      return `rgba(${r}, ${g}, ${b}, 0.95)`;
+                    };
+
+                    const getTooltipMessage = (count: number) => {
+                      if (count === 1) return "Defence activated: 1 anomaly detected";
+                      if (count <= 3) return `Defence activated: ${count} anomalies detected`;
+                      if (count <= 5) return `Defence activated: ${count} anomalies detected`;
+                      return `Defence activated: ${count} anomalies detected`;
+                    };
+
+                    return (
+                      <div
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 group z-10"
+                        title={getTooltipMessage(anomalyCount)}
+                      >
+                        <div
+                          className="p-1 rounded-full backdrop-blur-sm shadow-lg flex items-center justify-center transition-all duration-200 group-hover:scale-110 group-hover:shadow-xl"
+                          style={{ backgroundColor: getShieldColor(anomalyCount) }}
+                        >
+                          <div className="relative flex items-center justify-center">
+                            <Shield className="w-5 h-5 text-white opacity-40" />
+                            <span className="absolute text-[10px] font-bold text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                              {anomalyCount}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Retry button for failed or stuck partial uploads */}
                   {((screenshot.syncStatus?.status === 'failed' && percentageToTenScale(screenshot.activityScore) > 0) ||
                     (screenshot.syncStatus?.status === 'partial')) && (
@@ -1398,78 +1368,6 @@ export function ScreenshotGrid({ screenshots, onScreenshotClick, onSelectionChan
                     </div>
                   )}
                     
-                  {/* Per-Minute Activity Breakdown */}
-                  <div className="p-4">
-                    <h3 className="text-sm font-semibold mb-3">Per-Minute Activity Breakdown</h3>
-                    
-                    {loadingMetrics ? (
-                      <div className="text-center py-4">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
-                        <p className="text-xs text-gray-500 mt-2">Loading metrics...</p>
-                      </div>
-                    ) : detailedMetrics.length > 0 ? (
-                      <div className="space-y-2">
-                        {detailedMetrics.map((metrics, index) => {
-                          // Get sync status for this period if available
-                          const periodDetail = modalScreenshot?.syncStatus?.activityPeriods?.details?.[index];
-                          const periodSyncStatus = periodDetail?.status || 'unknown';
-                          const getSyncIcon = () => {
-                            switch (periodSyncStatus) {
-                              case 'synced': return <CheckCircle className="w-3 h-3 text-green-500" />;
-                              case 'queued': return <Upload className="w-3 h-3 text-blue-500" />;
-                              case 'failed': return <AlertTriangle className="w-3 h-3 text-red-500" />;
-                              case 'pending': return <Clock className="w-3 h-3 text-gray-400" />;
-                              default: return null;
-                            }
-                          };
-                          
-                          // Format period end time as hh:mm
-                          const formatTime = (timestamp: number) => {
-                            const date = new Date(timestamp);
-                            return date.toLocaleTimeString('en-US', { 
-                              hour: '2-digit', 
-                              minute: '2-digit',
-                              hour12: false 
-                            });
-                          };
-                          const periodEndTime = periodDetail?.periodEnd ? formatTime(periodDetail.periodEnd) : `Minute ${index + 1}`;
-                          
-                          return (
-                          <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">{periodEndTime}</span>
-                                {getSyncIcon()}
-                              </div>
-                              {metrics?.scoreCalculation && (() => {
-                                const scoreOutOf10 = percentageToTenScale(metrics.scoreCalculation.finalScore);
-                                const level = getActivityLevel(scoreOutOf10);
-                                return (
-                                  <div className="text-center">
-                                    <div 
-                                      className="text-sm font-semibold px-3 py-1 rounded text-white inline-block"
-                                      style={{ backgroundColor: level.color }}
-                                    >
-                                      {scoreOutOf10.toFixed(1)}
-                                    </div>
-                                    <div className="text-[10px] font-medium mt-1" style={{ color: level.color }}>
-                                      {level.name}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-
-                            {/* Expandable Details - Removed per user request for non-expandable per-minute activity */}
-                          </div>
-                        );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">No activity data available</p>
-                    )}
-                  </div>
-                  
                   {/* Action Buttons */}
                   <div className="p-4 border-t mt-auto">
                     <button 
