@@ -97,7 +97,8 @@
       "Bash(PGPASSWORD=FIr5FKZ3YqwRuxxv psql:*)",
       "Bash(serverless offline --aws-profile pp-api --stage prod)",
       "Bash(kill 70866)",
-      "Bash(tsc:*)"
+      "Bash(tsc:*)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []
