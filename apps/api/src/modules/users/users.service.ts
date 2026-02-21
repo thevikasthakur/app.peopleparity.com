@@ -197,4 +197,27 @@ export class UsersService {
     user.timezone = timezone;
     return this.usersRepository.save(user);
   }
+
+  async updateUser(userId: string, updates: { name?: string }) {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (updates.name !== undefined) {
+      user.name = updates.name;
+    }
+
+    return this.usersRepository.save(user);
+  }
+
+  async reactivate(userId: string) {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.isActive = true;
+    return this.usersRepository.save(user);
+  }
 }

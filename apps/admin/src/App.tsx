@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
 import { ManualTimeEntry } from './pages/ManualTimeEntry';
+import { UserManagement } from './pages/UserManagement';
 import AppVersions from './pages/AppVersions';
 import { SyncQueueMonitor } from './components/SyncQueueMonitor';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -59,6 +60,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AppVersions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user-management"
+              element={
+                <ProtectedRoute>
+                  <UserManagement />
                 </ProtectedRoute>
               }
             />

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards, Inject, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, UseGuards, Inject, Request, ForbiddenException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -84,14 +84,62 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async createUser(@Body() createUserDto: {
+  async createUser(@Request() req, @Body() createUserDto: {
     email: string;
     name: string;
     password: string;
     organizationId?: string;
     role: 'org_admin' | 'developer';
   }) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can create users');
+    }
     const user = await this.usersService.create(createUserDto);
+    return { success: true, user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async updateUser(@Request() req, @Param('id') id: string, @Body() body: { name?: string }) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can update users');
+    }
+    const user = await this.usersService.updateUser(id, body);
+    return { success: true, user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/role')
+  async updateUserRole(@Request() req, @Param('id') id: string, @Body() body: { role: 'org_admin' | 'developer' }) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can change user roles');
+    }
+    const user = await this.usersService.updateRole(id, body.role);
+    return { success: true, user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/deactivate')
+  async deactivateUser(@Request() req, @Param('id') id: string) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can deactivate users');
+    }
+    const user = await this.usersService.deactivate(id);
+    return { success: true, user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/reactivate')
+  async reactivateUser(@Request() req, @Param('id') id: string) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can reactivate users');
+    }
+    const user = await this.usersService.reactivate(id);
     return { success: true, user };
   }
 }

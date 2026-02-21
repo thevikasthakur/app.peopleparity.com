@@ -219,6 +219,38 @@ export const apiService = {
     return response.data;
   },
 
+  // User management (admin only)
+  async createUser(data: {
+    email: string;
+    name: string;
+    password: string;
+    organizationId?: string;
+    role: 'org_admin' | 'developer';
+  }) {
+    const response = await api.post('/users', data);
+    return response.data;
+  },
+
+  async updateUser(userId: string, data: { name?: string }) {
+    const response = await api.patch(`/users/${userId}`, data);
+    return response.data;
+  },
+
+  async updateUserRole(userId: string, role: 'org_admin' | 'developer') {
+    const response = await api.patch(`/users/${userId}/role`, { role });
+    return response.data;
+  },
+
+  async deactivateUser(userId: string) {
+    const response = await api.patch(`/users/${userId}/deactivate`);
+    return response.data;
+  },
+
+  async reactivateUser(userId: string) {
+    const response = await api.patch(`/users/${userId}/reactivate`);
+    return response.data;
+  },
+
   // Bot detection report
   async getBotDetectionReport(params: {
     userId: string;
