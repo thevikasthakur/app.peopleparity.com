@@ -25,13 +25,18 @@ export const authService = {
         return response.data.user;
       }
 
-      // If verify doesn't return user data, return a default
-      return {
-        id: response.data?.userId || 'unknown',
-        email: response.data?.email || 'user@example.com',
-        name: response.data?.name || 'User',
-        role: 'developer' // Default to developer role
-      };
+      // If verify returns valid but has userId/email in the response body (flat structure)
+      if (response.data?.valid && response.data?.userId) {
+        return {
+          id: response.data.userId,
+          email: response.data.email || '',
+          name: response.data.name || '',
+          role: response.data.role || 'developer',
+        };
+      }
+
+      // No valid user data — treat as auth failure
+      throw new Error('Verify endpoint did not return user data');
     } catch (error) {
       console.error('Failed to get current user:', error);
       throw error;

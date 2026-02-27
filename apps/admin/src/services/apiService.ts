@@ -251,6 +251,47 @@ export const apiService = {
     return response.data;
   },
 
+  // Productive hours for a date range (calls daily endpoint per day, batched)
+  async getProductiveHoursRange(userId: string, startDate: string, endDate: string) {
+    const days: any[] = [];
+    const start = new Date(startDate + 'T00:00:00Z');
+    const end = new Date(endDate + 'T00:00:00Z');
+    const dates: string[] = [];
+
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      dates.push(d.toISOString().split('T')[0]);
+    }
+
+    // Process in batches of 3 to avoid overwhelming the backend
+    const BATCH_SIZE = 3;
+    const results: any[] = new Array(dates.length);
+
+    for (let i = 0; i < dates.length; i += BATCH_SIZE) {
+      const batch = dates.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map((dateStr) =>
+          this.getProductiveHours({ userId, date: dateStr }).catch(() => ({
+            productiveHours: 0,
+            averageActivityScore: 0,
+            totalScreenshots: 0,
+            validScreenshots: 0,
+            activityLevel: 'Inactive',
+            attendance: { earned: 0, status: 'No Data' },
+          }))
+        )
+      );
+      for (let j = 0; j < batchResults.length; j++) {
+        results[i + j] = batchResults[j];
+      }
+    }
+
+    for (let i = 0; i < dates.length; i++) {
+      days.push({ date: dates[i], ...results[i] });
+    }
+
+    return days;
+  },
+
   // Bot detection report
   async getBotDetectionReport(params: {
     userId: string;
@@ -263,6 +304,15 @@ export const apiService = {
     const response = await api.get('/admin/manual-time/bot-detection-report', { params: queryParams });
     return response.data;
   },
+
+  // Activity metrics (keyboard, mouse, bot) for a date range
+  async getActivityMetrics(userId: string, startDate: string, endDate: string) {
+    const response = await api.get('/admin/manual-time/activity-metrics', {
+      params: { userId, startDate, endDate },
+    });
+    return response.data;
+  },
+
 };
 
 export default api;

@@ -29,6 +29,15 @@ export class AdminManualTimeController {
     );
   }
 
+  @Get('activity-metrics')
+  async getActivityMetrics(
+    @Query('userId') userId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.adminManualTimeService.getActivityMetrics(userId, startDate, endDate);
+  }
+
   @Get('bot-detection-report')
   async getBotDetectionReport(
     @Query('userId') userId: string,

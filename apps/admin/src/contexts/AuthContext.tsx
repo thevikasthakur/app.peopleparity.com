@@ -29,13 +29,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
+    let cancelled = false;
+
     const checkAuth = async () => {
       const savedToken = localStorage.getItem('auth_token');
       if (savedToken) {
         try {
           const userData = await authService.getCurrentUser(savedToken);
-          // Determine user type based on role
+          if (cancelled) return;
           const isAdminRole = userData.role === 'super_admin' || userData.role === 'org_admin';
           const enrichedUserData = {
             ...userData,
@@ -46,15 +47,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(enrichedUserData);
           setToken(savedToken);
         } catch (error) {
+          if (cancelled) return;
           console.error('Failed to validate token:', error);
           localStorage.removeItem('auth_token');
           setToken(null);
         }
       }
-      setIsLoading(false);
+      if (!cancelled) setIsLoading(false);
     };
 
     checkAuth();
+    return () => { cancelled = true; };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

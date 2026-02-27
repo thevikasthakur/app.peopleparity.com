@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
@@ -13,6 +13,7 @@ import {
   UserCheck,
   X,
   Loader,
+  Search,
 } from 'lucide-react';
 
 const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
@@ -43,6 +44,7 @@ export function UserManagement() {
   const [success, setSuccess] = useState('');
   const [modal, setModal] = useState<ModalMode>('none');
   const [editingUser, setEditingUser] = useState<TeamMember | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Create form state
   const [createEmail, setCreateEmail] = useState('');
@@ -53,6 +55,17 @@ export function UserManagement() {
   // Edit form state
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<'org_admin' | 'developer'>('developer');
+
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery.trim()) return users;
+    const q = searchQuery.toLowerCase();
+    return users.filter(
+      (m) =>
+        (m.name || '').toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.role.toLowerCase().includes(q)
+    );
+  }, [users, searchQuery]);
 
   useEffect(() => {
     if (hasAdminAccess) {
@@ -231,7 +244,7 @@ export function UserManagement() {
       </div>
 
       {/* Content */}
-      <div className="p-6 pt-12 max-w-4xl mx-auto">
+      <div className="p-6 pt-12 max-w-5xl mx-auto">
         {/* Back Button */}
         <button
           onClick={() => navigate('/dashboard')}
@@ -261,6 +274,18 @@ export function UserManagement() {
           </div>
 
           <div className="p-6">
+            {/* Search */}
+            <div className="mb-4 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name, email, or role..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
             {/* Success / Error banners */}
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
@@ -285,8 +310,10 @@ export function UserManagement() {
                 <Loader className="w-6 h-6 animate-spin text-indigo-600 mr-2" />
                 <span className="text-gray-500 text-sm">Loading users...</span>
               </div>
-            ) : users.length === 0 ? (
-              <div className="text-center py-12 text-gray-500 text-sm">No users found.</div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 text-sm">
+                {searchQuery ? 'No users match your search.' : 'No users found.'}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -300,16 +327,21 @@ export function UserManagement() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((member) => {
+                    {filteredUsers.map((member) => {
                       const isSelf = member.id === user?.id;
                       const isSuperAdmin = member.role === 'super_admin';
                       const isActive = member.isActive !== false;
                       return (
                         <tr key={member.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-3 px-3 font-medium text-gray-900">
-                            {member.name || '—'}
+                          <td className="py-3 px-3">
+                            <button
+                              onClick={() => navigate(`/user-management/${member.id}`)}
+                              className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline text-left"
+                            >
+                              {member.name || member.email}
+                            </button>
                             {isSelf && (
-                              <span className="ml-2 text-xs text-indigo-500 font-normal">(you)</span>
+                              <span className="ml-2 text-xs text-indigo-400 font-normal">(you)</span>
                             )}
                           </td>
                           <td className="py-3 px-3 text-gray-600">{member.email}</td>
@@ -329,7 +361,6 @@ export function UserManagement() {
                           </td>
                           <td className="py-3 px-3">
                             <div className="flex items-center justify-end gap-2">
-                              {/* Edit — not for super_admin */}
                               {!isSuperAdmin && (
                                 <button
                                   onClick={() => openEdit(member)}
@@ -340,8 +371,6 @@ export function UserManagement() {
                                   <Pencil className="w-4 h-4" />
                                 </button>
                               )}
-
-                              {/* Deactivate / Reactivate — not for self or super_admin */}
                               {!isSelf && !isSuperAdmin && (
                                 isActive ? (
                                   <button
@@ -388,20 +417,14 @@ export function UserManagement() {
       {modal !== 'none' && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">
                 {modal === 'create' ? 'Add New User' : 'Edit User'}
               </h2>
-              <button
-                onClick={closeModal}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
-              >
+              <button onClick={closeModal} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            {/* Modal Error */}
             {error && (
               <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
                 <div className="flex items-center gap-2 text-red-700">
@@ -410,148 +433,58 @@ export function UserManagement() {
                 </div>
               </div>
             )}
-
-            {/* Create Form */}
             {modal === 'create' && (
               <form onSubmit={handleCreate} className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={createName}
-                    onChange={(e) => setCreateName(e.target.value)}
-                    placeholder="e.g., Jane Smith"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    disabled={!!actionLoading}
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                  <input type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="e.g., Jane Smith" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={createEmail}
-                    onChange={(e) => setCreateEmail(e.target.value)}
-                    placeholder="jane@company.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    disabled={!!actionLoading}
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
+                  <input type="email" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} placeholder="jane@company.com" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Password <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={createPassword}
-                    onChange={(e) => setCreatePassword(e.target.value)}
-                    placeholder="Temporary password"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    disabled={!!actionLoading}
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
+                  <input type="password" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} placeholder="Temporary password" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select
-                    value={createRole}
-                    onChange={(e) => setCreateRole(e.target.value as 'org_admin' | 'developer')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    disabled={!!actionLoading}
-                  >
+                  <select value={createRole} onChange={(e) => setCreateRole(e.target.value as 'org_admin' | 'developer')} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
                     <option value="developer">Developer</option>
                     <option value="org_admin">Org Admin</option>
                   </select>
                 </div>
                 <div className="pt-2 flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={!!actionLoading}
-                    className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {actionLoading === 'create' ? (
-                      <>
-                        <Loader className="w-4 h-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create User'
-                    )}
+                  <button type="submit" disabled={!!actionLoading} className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    {actionLoading === 'create' ? (<><Loader className="w-4 h-4 animate-spin" />Creating...</>) : 'Create User'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    disabled={!!actionLoading}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
+                  <button type="button" onClick={closeModal} disabled={!!actionLoading} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50">Cancel</button>
                 </div>
               </form>
             )}
-
-            {/* Edit Form */}
             {modal === 'edit' && editingUser && (
               <form onSubmit={handleEdit} className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    disabled={!!actionLoading}
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                  <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={editingUser.email}
-                    className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-sm text-gray-500 cursor-not-allowed"
-                    disabled
-                  />
+                  <input type="email" value={editingUser.email} className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-sm text-gray-500 cursor-not-allowed" disabled />
                   <p className="mt-1 text-xs text-gray-400">Email cannot be changed</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value as 'org_admin' | 'developer')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                    disabled={!!actionLoading}
-                  >
+                  <select value={editRole} onChange={(e) => setEditRole(e.target.value as 'org_admin' | 'developer')} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
                     <option value="developer">Developer</option>
                     <option value="org_admin">Org Admin</option>
                   </select>
                 </div>
                 <div className="pt-2 flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={!!actionLoading}
-                    className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {actionLoading === 'edit' ? (
-                      <>
-                        <Loader className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      'Save Changes'
-                    )}
+                  <button type="submit" disabled={!!actionLoading} className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    {actionLoading === 'edit' ? (<><Loader className="w-4 h-4 animate-spin" />Saving...</>) : 'Save Changes'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    disabled={!!actionLoading}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
+                  <button type="button" onClick={closeModal} disabled={!!actionLoading} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50">Cancel</button>
                 </div>
               </form>
             )}
