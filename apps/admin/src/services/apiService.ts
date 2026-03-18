@@ -251,6 +251,11 @@ export const apiService = {
     return response.data;
   },
 
+  async resetPassword(userId: string, password: string) {
+    const response = await api.patch(`/users/${userId}/reset-password`, { password });
+    return response.data;
+  },
+
   // Productive hours for a date range (calls daily endpoint per day, batched)
   async getProductiveHoursRange(userId: string, startDate: string, endDate: string) {
     const days: any[] = [];

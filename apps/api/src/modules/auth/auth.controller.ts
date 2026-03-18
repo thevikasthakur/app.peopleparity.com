@@ -87,7 +87,7 @@ export class AuthController {
       configured: true,
       entityID: process.env.SAML_ISSUER || 'http://localhost:3001',
       assertionConsumerService: {
-        url: process.env.SAML_CALLBACK_URL || 'http://localhost:3001/api/auth/saml/callback',
+        url: process.env.SAML_CALLBACK_URL || 'http://localhost:3001/dev/api/auth/saml/callback',
         binding: 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST'
       }
     };

@@ -174,7 +174,8 @@ export function Login() {
           <button
             onClick={() => {
               // Redirect to API SAML login
-              window.location.href = `${API_URL}/api/auth/saml/login`;
+              const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001/dev/api';
+              window.location.href = `${apiBase}/auth/saml/login`;
             }}
             disabled={isLoading}
             className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 border-gray-300 hover:border-gray-400 flex items-center justify-center gap-3 hover:shadow-md"
@@ -224,4 +225,3 @@ export function Login() {
   );
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
