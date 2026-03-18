@@ -14,6 +14,7 @@ import {
   X,
   Loader,
   Search,
+  KeyRound,
 } from 'lucide-react';
 
 const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
@@ -29,7 +30,7 @@ interface TeamMember {
   timezone?: string;
 }
 
-type ModalMode = 'none' | 'create' | 'edit';
+type ModalMode = 'none' | 'create' | 'edit' | 'resetPassword';
 
 export function UserManagement() {
   const { user } = useAuth();
@@ -55,6 +56,10 @@ export function UserManagement() {
   // Edit form state
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<'org_admin' | 'developer'>('developer');
+
+  // Reset password state
+  const [resetPasswordUser, setResetPasswordUser] = useState<TeamMember | null>(null);
+  const [newPassword, setNewPassword] = useState('');
 
   const filteredUsers = useMemo(() => {
     if (!searchQuery.trim()) return users;
@@ -113,6 +118,7 @@ export function UserManagement() {
   const closeModal = () => {
     setModal('none');
     setEditingUser(null);
+    setResetPasswordUser(null);
     setError('');
   };
 
@@ -196,6 +202,40 @@ export function UserManagement() {
       await loadUsers();
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to reactivate user');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openResetPassword = (member: TeamMember) => {
+    setResetPasswordUser(member);
+    setNewPassword('');
+    setError('');
+    setModal('resetPassword');
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPasswordUser) return;
+    setError('');
+
+    if (!newPassword.trim()) {
+      setError('Please enter a new password');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setActionLoading('resetPassword');
+    try {
+      await apiService.resetPassword(resetPasswordUser.id, newPassword);
+      closeModal();
+      showSuccess(`Password reset for "${resetPasswordUser.name || resetPasswordUser.email}"`);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to reset password');
     } finally {
       setActionLoading(null);
     }
@@ -372,6 +412,16 @@ export function UserManagement() {
                                 </button>
                               )}
                               {!isSelf && !isSuperAdmin && (
+                                <button
+                                  onClick={() => openResetPassword(member)}
+                                  disabled={!!actionLoading}
+                                  className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors disabled:opacity-40"
+                                  title="Reset password"
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </button>
+                              )}
+                              {!isSelf && !isSuperAdmin && (
                                 isActive ? (
                                   <button
                                     onClick={() => handleDeactivate(member)}
@@ -419,7 +469,7 @@ export function UserManagement() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">
-                {modal === 'create' ? 'Add New User' : 'Edit User'}
+                {modal === 'create' ? 'Add New User' : modal === 'resetPassword' ? 'Reset Password' : 'Edit User'}
               </h2>
               <button onClick={closeModal} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
                 <X className="w-5 h-5" />
@@ -483,6 +533,26 @@ export function UserManagement() {
                 <div className="pt-2 flex gap-3">
                   <button type="submit" disabled={!!actionLoading} className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                     {actionLoading === 'edit' ? (<><Loader className="w-4 h-4 animate-spin" />Saving...</>) : 'Save Changes'}
+                  </button>
+                  <button type="button" onClick={closeModal} disabled={!!actionLoading} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+                </div>
+              </form>
+            )}
+            {modal === 'resetPassword' && resetPasswordUser && (
+              <form onSubmit={handleResetPassword} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">User</label>
+                  <p className="text-sm text-gray-600">{resetPasswordUser.name || resetPasswordUser.email}</p>
+                  <p className="text-xs text-gray-400">{resetPasswordUser.email}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Password <span className="text-red-500">*</span></label>
+                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading} />
+                  <p className="mt-1 text-xs text-gray-400">Minimum 6 characters</p>
+                </div>
+                <div className="pt-2 flex gap-3">
+                  <button type="submit" disabled={!!actionLoading} className="flex-1 bg-amber-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    {actionLoading === 'resetPassword' ? (<><Loader className="w-4 h-4 animate-spin" />Resetting...</>) : 'Reset Password'}
                   </button>
                   <button type="button" onClick={closeModal} disabled={!!actionLoading} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-50">Cancel</button>
                 </div>

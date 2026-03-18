@@ -100,17 +100,6 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Patch(':id')
-  async updateUser(@Request() req, @Param('id') id: string, @Body() body: { name?: string }) {
-    const currentUser = await this.usersService.findById(req.user.userId);
-    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
-      throw new ForbiddenException('Only admins can update users');
-    }
-    const user = await this.usersService.updateUser(id, body);
-    return { success: true, user };
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Patch(':id/role')
   async updateUserRole(@Request() req, @Param('id') id: string, @Body() body: { role: 'org_admin' | 'developer' }) {
     const currentUser = await this.usersService.findById(req.user.userId);
@@ -140,6 +129,28 @@ export class UsersController {
       throw new ForbiddenException('Only admins can reactivate users');
     }
     const user = await this.usersService.reactivate(id);
+    return { success: true, user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/reset-password')
+  async resetPassword(@Request() req, @Param('id') id: string, @Body() body: { password: string }) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can reset passwords');
+    }
+    await this.usersService.resetPassword(id, body.password);
+    return { success: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async updateUser(@Request() req, @Param('id') id: string, @Body() body: { name?: string }) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can update users');
+    }
+    const user = await this.usersService.updateUser(id, body);
     return { success: true, user };
   }
 }
