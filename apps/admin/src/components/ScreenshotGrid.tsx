@@ -466,8 +466,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
         const hourScore = validScreenshots.length > 0
           ? validScreenshots.reduce((sum, s) => sum + percentageToTenScale(s.activityScore || 0), 0) / validScreenshots.length
           : 0;
-        // For non-India users, use neutral color; otherwise use score-based color
-        const hourLevel = isInIndia ? getActivityLevel(hourScore) : { name: '', color: '#E5E7EB', bgColor: 'bg-gray-200', textColor: 'text-gray-400' };
+        const hourLevel = getActivityLevel(hourScore);
 
         const activityGroups: { activity: string; count: number; startIdx: number }[] = [];
         let currentActivity = '';
@@ -693,39 +692,39 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                       );
                     })()}
 
-                    <button
-                      className={`
-                        absolute top-2 left-2 w-6 h-6 rounded-full z-10
-                        flex items-center justify-center transition-all
-                        ${isSelected
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-white/80 backdrop-blur text-gray-600 hover:bg-white'
-                        }
-                      `}
-                      onClick={(e) => toggleSelection(screenshot.id, e)}
-                    >
-                      {isSelected && <Check className="w-4 h-4" />}
-                    </button>
-
-                    {/* Activity score badge - hidden for non-India users */}
                     {isInIndia && (
-                      <div className="absolute top-2 right-2">
-                        <div className="text-right">
-                          <div
-                            className="px-1 py-0 rounded-full text-[8px] font-medium backdrop-blur text-white"
-                            style={{ backgroundColor: level.color + 'CC' }}
-                          >
-                            {scoreOutOf10.toFixed(1)}
-                          </div>
-                          <div
-                            className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium backdrop-blur text-white"
-                            style={{ backgroundColor: level.color + 'AA' }}
-                          >
-                            {level.name}
-                          </div>
+                      <button
+                        className={`
+                          absolute top-2 left-2 w-6 h-6 rounded-full z-10
+                          flex items-center justify-center transition-all
+                          ${isSelected
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white/80 backdrop-blur text-gray-600 hover:bg-white'
+                          }
+                        `}
+                        onClick={(e) => toggleSelection(screenshot.id, e)}
+                      >
+                        {isSelected && <Check className="w-4 h-4" />}
+                      </button>
+                    )}
+
+                    {/* Activity score badge */}
+                    <div className="absolute top-2 right-2">
+                      <div className="text-right">
+                        <div
+                          className="px-1 py-0 rounded-full text-[8px] font-medium backdrop-blur text-white"
+                          style={{ backgroundColor: level.color + 'CC' }}
+                        >
+                          {scoreOutOf10.toFixed(1)}
+                        </div>
+                        <div
+                          className="mt-0.5 px-1 py-0 rounded text-[8px] font-medium backdrop-blur text-white"
+                          style={{ backgroundColor: level.color + 'AA' }}
+                        >
+                          {level.name}
                         </div>
                       </div>
-                    )}
+                    </div>
 
                     <div className="absolute bottom-2 left-2 flex flex-col gap-1">
                       {/* Mode badge (CLIENT/CMD) - hidden for non-India users */}
@@ -738,7 +737,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                           {(screenshot.mode === 'client' || screenshot.mode === 'client_hours') ? 'CLIENT' : 'CMD'}
                         </div>
                       )}
-                      {screenshot.trackerVersion && (
+                      {isInIndia && screenshot.trackerVersion && (
                         <div className="px-1 py-0.5 rounded text-[8px] font-medium backdrop-blur text-white bg-gray-800/70">
                           v{screenshot.trackerVersion}
                         </div>
@@ -775,7 +774,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
             </div>
 
             {activityGroups.length > 0 && (
-              <div className="relative h-6 bg-gray-100 rounded overflow-hidden">
+              <div className="relative h-4 bg-gray-100 rounded overflow-hidden !mt-[0.1rem]">
                 {activityGroups.map((group, idx) => {
                   const leftPosition = (group.startIdx / 6) * 100;
                   const width = (group.count / 6) * 100;
@@ -783,11 +782,11 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                   return (
                     <div
                       key={idx}
-                      className={`absolute h-full flex items-center justify-center text-[11px] font-medium px-1 rounded-sm ${isInIndia ? 'text-white' : 'text-gray-600'}`}
+                      className="absolute h-full flex items-center justify-center text-[11px] font-medium px-1 rounded-sm text-white"
                       style={{
                         left: `${leftPosition}%`,
                         width: `calc(${width}% - 3px)`,
-                        backgroundColor: hourLevel.color + 'DD',
+                        backgroundColor: isInIndia ? hourLevel.color + 'DD' : '#4A90D9DD',
                         marginRight: '3px'
                       }}
                       title={group.activity}
@@ -798,7 +797,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                     </div>
                   );
                 })}
-                {/* Score badge on ribbon - hidden for non-India users */}
+                {/* Score badge on ribbon - only for internal users */}
                 {isInIndia && (
                   <div
                     className="absolute right-0 top-0 h-full px-2 flex items-center text-[10px] font-bold text-white"
@@ -1012,7 +1011,7 @@ export function ScreenshotGrid({ screenshots, isLoading, userRole, userTimezone,
                             <p className="text-sm font-medium mt-1">{selectedScreenshot.deviceInfo}</p>
                           </div>
                         )}
-                        {selectedScreenshot.trackerVersion && (
+                        {isInIndia && selectedScreenshot.trackerVersion && (
                           <div>
                             <label className="text-xs text-gray-500 uppercase tracking-wider">Tracker Version</label>
                             <p className="text-sm font-medium mt-1">v{selectedScreenshot.trackerVersion}</p>

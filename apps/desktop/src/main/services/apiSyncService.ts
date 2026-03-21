@@ -222,6 +222,15 @@ export class ApiSyncService {
       const { user, token, projects } = response.data;
       console.log('Login successful, storing user data...');
 
+      // Block external users from desktop app login
+      if (user.role === 'external') {
+        console.log('External user attempted desktop login - blocked');
+        return {
+          success: false,
+          message: 'External users cannot login to the desktop tracker. Please use the web admin panel instead.',
+        };
+      }
+
       // Store user info locally for offline access
       this.db.setCurrentUser({
         id: user.id,

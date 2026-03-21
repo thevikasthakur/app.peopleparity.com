@@ -49,6 +49,15 @@ export class ScreenshotsController {
 
     const targetUserId = userId || req.user.userId;
 
+    // External users can only view screenshots of their assigned users
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role === 'external') {
+      const assignedIds = currentUser.assignedUserIds || [];
+      if (targetUserId !== req.user.userId && !assignedIds.includes(targetUserId)) {
+        throw new HttpException('You can only view screenshots of your assigned users', HttpStatus.FORBIDDEN);
+      }
+    }
+
     return this.screenshotsService.findByUser(targetUserId, start, end, includeDevice);
   }
 
@@ -70,6 +79,14 @@ export class ScreenshotsController {
     if (currentUser.role === 'org_admin' && currentUser.organizationId) {
       const screenshotUser = await this.usersService.findById(screenshot.userId);
       if (screenshotUser?.organizationId === currentUser.organizationId) {
+        return screenshot;
+      }
+    }
+
+    // External users can access screenshots of their assigned users
+    if (currentUser.role === 'external') {
+      const assignedIds = currentUser.assignedUserIds || [];
+      if (assignedIds.includes(screenshot.userId)) {
         return screenshot;
       }
     }
@@ -105,6 +122,12 @@ export class ScreenshotsController {
       if (screenshotUser?.organizationId === currentUser.organizationId) {
         canAccess = true;
         console.log('✅ Access granted: org_admin');
+      }
+    } else if (currentUser.role === 'external') {
+      const assignedIds = currentUser.assignedUserIds || [];
+      if (assignedIds.includes(screenshot.userId)) {
+        canAccess = true;
+        console.log('✅ Access granted: external user with assignment');
       }
     } else if (screenshot.userId === req.user.userId) {
       canAccess = true;

@@ -13,44 +13,38 @@ export class UsersController {
   async getTeamMembers(@Request() req) {
     const currentUser = await this.usersService.findById(req.user.userId);
 
+    const mapUser = (user: any) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      organizationId: user.organizationId,
+      organizationName: user.organization?.name,
+      timezone: user.timezone,
+      assignedUserIds: user.assignedUserIds,
+    });
+
     // Super admin can see all users
     if (currentUser.role === 'super_admin') {
       const allUsers = await this.usersService.getAllUsers();
-      return allUsers.map(user => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        organizationId: user.organizationId,
-        organizationName: user.organization?.name,
-        timezone: user.timezone
-      }));
+      return allUsers.map(mapUser);
     }
 
     // Org admin can only see users in their organization
     if (currentUser.role === 'org_admin' && currentUser.organizationId) {
       const orgUsers = await this.usersService.getOrganizationUsers(currentUser.organizationId);
-      return orgUsers.map(user => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        organizationId: user.organizationId,
-        organizationName: user.organization?.name,
-        timezone: user.timezone
-      }));
+      return orgUsers.map(mapUser);
+    }
+
+    // External users can only see their assigned users
+    if (currentUser.role === 'external') {
+      const assignedUsers = await this.usersService.getAssignedUsers(currentUser.id);
+      return assignedUsers.map(mapUser);
     }
 
     // Developers can only see themselves
-    return [{
-      id: currentUser.id,
-      name: currentUser.name,
-      email: currentUser.email,
-      role: currentUser.role,
-      organizationId: currentUser.organizationId,
-      organizationName: currentUser.organization?.name,
-      timezone: currentUser.timezone
-    }];
+    return [mapUser(currentUser)];
   }
 
   @UseGuards(JwtAuthGuard)
@@ -89,7 +83,9 @@ export class UsersController {
     name: string;
     password: string;
     organizationId?: string;
-    role: 'org_admin' | 'developer';
+    role: 'org_admin' | 'developer' | 'external';
+    assignedUserIds?: string[];
+    timezone?: string;
   }) {
     const currentUser = await this.usersService.findById(req.user.userId);
     if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
@@ -101,12 +97,23 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id/role')
-  async updateUserRole(@Request() req, @Param('id') id: string, @Body() body: { role: 'org_admin' | 'developer' }) {
+  async updateUserRole(@Request() req, @Param('id') id: string, @Body() body: { role: 'org_admin' | 'developer' | 'external' }) {
     const currentUser = await this.usersService.findById(req.user.userId);
     if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
       throw new ForbiddenException('Only admins can change user roles');
     }
     const user = await this.usersService.updateRole(id, body.role);
+    return { success: true, user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/assigned-users')
+  async updateAssignedUsers(@Request() req, @Param('id') id: string, @Body() body: { assignedUserIds: string[] }) {
+    const currentUser = await this.usersService.findById(req.user.userId);
+    if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
+      throw new ForbiddenException('Only admins can manage user assignments');
+    }
+    const user = await this.usersService.updateAssignedUsers(id, body.assignedUserIds);
     return { success: true, user };
   }
 
@@ -145,7 +152,7 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  async updateUser(@Request() req, @Param('id') id: string, @Body() body: { name?: string }) {
+  async updateUser(@Request() req, @Param('id') id: string, @Body() body: { name?: string; timezone?: string }) {
     const currentUser = await this.usersService.findById(req.user.userId);
     if (currentUser.role !== 'super_admin' && currentUser.role !== 'org_admin') {
       throw new ForbiddenException('Only admins can update users');

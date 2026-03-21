@@ -51,11 +51,15 @@ export function UserManagement() {
   const [createEmail, setCreateEmail] = useState('');
   const [createName, setCreateName] = useState('');
   const [createPassword, setCreatePassword] = useState('');
-  const [createRole, setCreateRole] = useState<'org_admin' | 'developer'>('developer');
+  const [createRole, setCreateRole] = useState<'org_admin' | 'developer' | 'external'>('developer');
+  const [createAssignedUserIds, setCreateAssignedUserIds] = useState<string[]>([]);
+  const [createTimezone, setCreateTimezone] = useState('UTC');
 
   // Edit form state
   const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState<'org_admin' | 'developer'>('developer');
+  const [editRole, setEditRole] = useState<'org_admin' | 'developer' | 'external'>('developer');
+  const [editAssignedUserIds, setEditAssignedUserIds] = useState<string[]>([]);
+  const [editTimezone, setEditTimezone] = useState('Asia/Kolkata');
 
   // Reset password state
   const [resetPasswordUser, setResetPasswordUser] = useState<TeamMember | null>(null);
@@ -101,6 +105,8 @@ export function UserManagement() {
     setCreateName('');
     setCreatePassword('');
     setCreateRole('developer');
+    setCreateAssignedUserIds([]);
+    setCreateTimezone('UTC');
     setError('');
     setModal('create');
   };
@@ -109,8 +115,10 @@ export function UserManagement() {
     setEditingUser(member);
     setEditName(member.name || '');
     setEditRole(
-      member.role === 'org_admin' || member.role === 'developer' ? member.role : 'developer'
+      member.role === 'org_admin' || member.role === 'developer' || member.role === 'external' ? member.role : 'developer'
     );
+    setEditAssignedUserIds((member as any).assignedUserIds || []);
+    setEditTimezone(member.timezone || 'Asia/Kolkata');
     setError('');
     setModal('edit');
   };
@@ -138,6 +146,8 @@ export function UserManagement() {
         name: createName.trim(),
         password: createPassword,
         role: createRole,
+        assignedUserIds: createRole === 'external' ? createAssignedUserIds : undefined,
+        timezone: createRole === 'external' ? createTimezone : undefined,
       });
       closeModal();
       showSuccess(`User "${createName}" created successfully`);
@@ -161,14 +171,19 @@ export function UserManagement() {
 
     setActionLoading('edit');
     try {
-      if (editName.trim() !== (editingUser.name || '')) {
-        await apiService.updateUser(editingUser.id, { name: editName.trim() });
-      }
+      await apiService.updateUser(editingUser.id, {
+        name: editName.trim(),
+        timezone: editTimezone,
+      });
       if (
         editRole !== editingUser.role &&
-        (editingUser.role === 'org_admin' || editingUser.role === 'developer')
+        (editingUser.role === 'org_admin' || editingUser.role === 'developer' || editingUser.role === 'external')
       ) {
         await apiService.updateUserRole(editingUser.id, editRole);
+      }
+      // Update assigned users if role is external
+      if (editRole === 'external') {
+        await apiService.updateAssignedUsers(editingUser.id, editAssignedUserIds);
       }
       closeModal();
       showSuccess(`User "${editName}" updated successfully`);
@@ -262,11 +277,13 @@ export function UserManagement() {
       super_admin: 'bg-purple-100 text-purple-700',
       org_admin: 'bg-indigo-100 text-indigo-700',
       developer: 'bg-gray-100 text-gray-700',
+      external: 'bg-amber-100 text-amber-700',
     };
     const labels: Record<string, string> = {
       super_admin: 'Super Admin',
       org_admin: 'Org Admin',
       developer: 'Developer',
+      external: 'External',
     };
     return (
       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[role] || 'bg-gray-100 text-gray-700'}`}>
@@ -499,11 +516,61 @@ export function UserManagement() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select value={createRole} onChange={(e) => setCreateRole(e.target.value as 'org_admin' | 'developer')} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
+                  <select value={createRole} onChange={(e) => { setCreateRole(e.target.value as 'org_admin' | 'developer' | 'external'); if (e.target.value !== 'external') setCreateAssignedUserIds([]); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
                     <option value="developer">Developer</option>
                     <option value="org_admin">Org Admin</option>
+                    <option value="external">External</option>
                   </select>
                 </div>
+                {createRole === 'external' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assign Users</label>
+                    <p className="text-xs text-gray-500 mb-2">Select which developers this external user can monitor</p>
+                    <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 space-y-1">
+                      {users.filter(u => u.role === 'developer' && u.isActive !== false).map(u => (
+                        <label key={u.id} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={createAssignedUserIds.includes(u.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setCreateAssignedUserIds([...createAssignedUserIds, u.id]);
+                              } else {
+                                setCreateAssignedUserIds(createAssignedUserIds.filter(id => id !== u.id));
+                              }
+                            }}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            disabled={!!actionLoading}
+                          />
+                          <span className="text-sm text-gray-700">{u.name || u.email}</span>
+                        </label>
+                      ))}
+                      {users.filter(u => u.role === 'developer' && u.isActive !== false).length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-2">No developers available</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {createRole === 'external' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                    <select value={createTimezone} onChange={(e) => setCreateTimezone(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
+                      <option value="UTC">UTC (GMT+0:00)</option>
+                      <option value="America/New_York">Eastern Time (GMT-5:00)</option>
+                      <option value="America/Chicago">Central Time (GMT-6:00)</option>
+                      <option value="America/Denver">Mountain Time (GMT-7:00)</option>
+                      <option value="America/Los_Angeles">Pacific Time (GMT-8:00)</option>
+                      <option value="Europe/London">London (GMT+0:00)</option>
+                      <option value="Europe/Paris">Paris (GMT+1:00)</option>
+                      <option value="Europe/Berlin">Berlin (GMT+1:00)</option>
+                      <option value="Asia/Dubai">Dubai (GMT+4:00)</option>
+                      <option value="Asia/Kolkata">India Standard Time (GMT+5:30)</option>
+                      <option value="Asia/Singapore">Singapore (GMT+8:00)</option>
+                      <option value="Asia/Tokyo">Tokyo (GMT+9:00)</option>
+                      <option value="Australia/Sydney">Sydney (GMT+10:00)</option>
+                    </select>
+                  </div>
+                )}
                 <div className="pt-2 flex gap-3">
                   <button type="submit" disabled={!!actionLoading} className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                     {actionLoading === 'create' ? (<><Loader className="w-4 h-4 animate-spin" />Creating...</>) : 'Create User'}
@@ -525,9 +592,57 @@ export function UserManagement() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                  <select value={editRole} onChange={(e) => setEditRole(e.target.value as 'org_admin' | 'developer')} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
+                  <select value={editRole} onChange={(e) => { setEditRole(e.target.value as 'org_admin' | 'developer' | 'external'); if (e.target.value !== 'external') setEditAssignedUserIds([]); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
                     <option value="developer">Developer</option>
                     <option value="org_admin">Org Admin</option>
+                    <option value="external">External</option>
+                  </select>
+                </div>
+                {editRole === 'external' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assign Users</label>
+                    <p className="text-xs text-gray-500 mb-2">Select which developers this external user can monitor</p>
+                    <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2 space-y-1">
+                      {users.filter(u => u.role === 'developer' && u.isActive !== false && u.id !== editingUser.id).map(u => (
+                        <label key={u.id} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editAssignedUserIds.includes(u.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setEditAssignedUserIds([...editAssignedUserIds, u.id]);
+                              } else {
+                                setEditAssignedUserIds(editAssignedUserIds.filter(id => id !== u.id));
+                              }
+                            }}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            disabled={!!actionLoading}
+                          />
+                          <span className="text-sm text-gray-700">{u.name || u.email}</span>
+                        </label>
+                      ))}
+                      {users.filter(u => u.role === 'developer' && u.isActive !== false && u.id !== editingUser.id).length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-2">No developers available</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                  <select value={editTimezone} onChange={(e) => setEditTimezone(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm" disabled={!!actionLoading}>
+                    <option value="UTC">UTC (GMT+0:00)</option>
+                    <option value="America/New_York">Eastern Time (GMT-5:00)</option>
+                    <option value="America/Chicago">Central Time (GMT-6:00)</option>
+                    <option value="America/Denver">Mountain Time (GMT-7:00)</option>
+                    <option value="America/Los_Angeles">Pacific Time (GMT-8:00)</option>
+                    <option value="Europe/London">London (GMT+0:00)</option>
+                    <option value="Europe/Paris">Paris (GMT+1:00)</option>
+                    <option value="Europe/Berlin">Berlin (GMT+1:00)</option>
+                    <option value="Asia/Dubai">Dubai (GMT+4:00)</option>
+                    <option value="Asia/Kolkata">India Standard Time (GMT+5:30)</option>
+                    <option value="Asia/Singapore">Singapore (GMT+8:00)</option>
+                    <option value="Asia/Tokyo">Tokyo (GMT+9:00)</option>
+                    <option value="Australia/Sydney">Sydney (GMT+10:00)</option>
                   </select>
                 </div>
                 <div className="pt-2 flex gap-3">

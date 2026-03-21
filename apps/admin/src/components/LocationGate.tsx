@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { useLocation } from '../contexts/LocationContext';
+import { useAuth } from '../contexts/AuthContext';
 import { MapPin, AlertTriangle, XCircle, Loader2, Globe, Mail } from 'lucide-react';
 
 const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
@@ -10,6 +11,21 @@ interface LocationGateProps {
 
 export function LocationGate({ children }: LocationGateProps) {
   const { status, isLoading, errorMessage } = useLocation();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  // External users bypass the location gate entirely
+  if (user?.role === 'external') {
+    return <>{children}</>;
+  }
+
+  // If user is not yet authenticated, skip geo-gate so they can reach the login page.
+  // Geo-enforcement applies after authentication for non-external users.
+  if (!user && !isAuthLoading) {
+    return <>{children}</>;
+  }
+  if (isAuthLoading) {
+    return <>{children}</>;
+  }
 
   // Loading state
   if (isLoading) {

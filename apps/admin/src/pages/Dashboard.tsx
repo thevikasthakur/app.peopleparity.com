@@ -1,20 +1,21 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { TodaysHustle } from '../components/TodaysHustle';
 import { ScreenshotGrid } from '../components/ScreenshotGrid';
 import { ProfileDropdown } from '../components/ProfileDropdown';
 import { useAuth } from '../contexts/AuthContext';
-import { useLocation } from '../contexts/LocationContext';
 import { apiService } from '../services/apiService';
-import { Activity, Calendar, ChevronLeft, ChevronRight, Users, RefreshCw, Download, Loader2 } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, ChevronLeft, ChevronRight, Users, RefreshCw, Download, Loader2 } from 'lucide-react';
 import { generateBotDetectionTextReport, generateBotDetectionCSV, downloadFile } from '../utils/botReportGenerator';
 
 const logoImage = 'https://people-parity-assets.s3.ap-south-1.amazonaws.com/people-parity-logo.png';
 
 export function Dashboard() {
   const { user } = useAuth();
-  const { isInIndia } = useLocation();
+
+  // External users see limited UI (no activity scores, bot detection, etc.)
+  const showDetailedMetrics = !user?.isExternal;
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -50,21 +51,53 @@ export function Dashboard() {
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   // For developers, always use their own ID
+  // External users must select from their assigned users
   // Validate that user.id is not 'unknown' (indicates invalid auth)
   const effectiveUserId = user?.isDeveloper
     ? (user.id !== 'unknown' ? user.id : null)
     : selectedUserId;
 
-  // Fetch team members (only for admins)
+  // Fetch team members (for admins and external users)
   const { data: teamMembers } = useQuery({
     queryKey: ['teamMembers'],
     queryFn: () => apiService.getTeamMembers(),
-    enabled: user?.isAdmin === true,
+    enabled: user?.isAdmin === true || user?.isExternal === true,
   });
 
-  // Get selected developer's timezone when admin is viewing a specific user
+  // Auto-select user for external users
+  useEffect(() => {
+    if (!user?.isExternal || !teamMembers || teamMembers.length === 0) return;
+    // Already have a selection from URL param
+    if (selectedUserId && teamMembers.some((m: any) => m.id === selectedUserId)) return;
+
+    if (teamMembers.length === 1) {
+      // Only one assigned user — select them
+      setSelectedUserId(teamMembers[0].id);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set('userId', teamMembers[0].id);
+      setSearchParams(newParams);
+    } else {
+      // Multiple users — restore last selection from localStorage
+      const lastSelected = localStorage.getItem('external_last_selected_user');
+      if (lastSelected && teamMembers.some((m: any) => m.id === lastSelected)) {
+        setSelectedUserId(lastSelected);
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('userId', lastSelected);
+        setSearchParams(newParams);
+      }
+    }
+  }, [user?.isExternal, teamMembers]);
+
+  // Persist external user's selection
+  useEffect(() => {
+    if (user?.isExternal && selectedUserId) {
+      localStorage.setItem('external_last_selected_user', selectedUserId);
+    }
+  }, [user?.isExternal, selectedUserId]);
+
+  // Get selected developer's timezone when admin/external user is viewing a specific user
   const selectedDeveloperTimezone = useMemo(() => {
-    if (!user?.isAdmin || !selectedUserId || !teamMembers) return undefined;
+    if ((!user?.isAdmin && !user?.isExternal) || !selectedUserId || !teamMembers) return undefined;
     const selectedMember = teamMembers.find((m: any) => m.id === selectedUserId);
     console.log('DEBUG - Selected developer timezone:', {
       selectedUserId,
@@ -75,7 +108,7 @@ export function Dashboard() {
     return selectedMember?.timezone;
   }, [user?.isAdmin, selectedUserId, teamMembers]);
 
-  const isViewingAsAdmin = user?.isAdmin && selectedUserId !== null;
+  const isViewingAsAdmin = (user?.isAdmin || user?.isExternal) && selectedUserId !== null;
 
   console.log('DEBUG - Props being passed to ScreenshotGrid:', {
     userTimezone: user?.timezone,
@@ -85,13 +118,16 @@ export function Dashboard() {
   });
 
   // Fetch screenshots for the user/team and date
-  const { data: screenshotsData, isLoading: isLoadingScreenshots } = useQuery({
+  const { data: screenshotsData, isLoading: isLoadingScreenshots, error: screenshotsError } = useQuery({
     queryKey: ['screenshots', effectiveUserId, selectedDate.toISOString(), refreshKey],
     queryFn: () => apiService.getScreenshots({
       userId: effectiveUserId || undefined,
       date: selectedDate.toISOString().split('T')[0],
     }),
   });
+
+  // Check if screenshots query returned a 403 Forbidden
+  const isScreenshotsForbidden = screenshotsError && (screenshotsError as any)?.response?.status === 403;
 
   // Normalize screenshots data - ensure it's always an array
   const screenshots = useMemo(() => {
@@ -242,8 +278,8 @@ export function Dashboard() {
               </div>
 
               <div className="flex items-center gap-3">
-                {/* Show team selector only for admins */}
-                {user?.isAdmin && teamMembers && (
+                {/* Show team selector for admins and external users */}
+                {(user?.isAdmin || user?.isExternal) && teamMembers && (
                   <div className="relative">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors">
                       <Users className="w-3.5 h-3.5 text-indigo-600" />
@@ -263,8 +299,12 @@ export function Dashboard() {
                         className="text-sm font-medium text-gray-700 bg-transparent border-none focus:outline-none focus:ring-0 cursor-pointer pr-6 appearance-none"
                         style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236366f1\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.25rem center', backgroundSize: '1.25rem' }}
                       >
-                        <option value="">All Team Members</option>
-                        {teamMembers.filter((member: any) => member.role === 'developer').map((member: any) => (
+                        {!user?.isExternal && <option value="">All Team Members</option>}
+                        {user?.isExternal && <option value="">Select a user...</option>}
+                        {(user?.isExternal
+                          ? teamMembers
+                          : teamMembers.filter((member: any) => member.role === 'developer')
+                        ).map((member: any) => (
                           <option key={member.id} value={member.id}>
                             {member.name || member.email}
                           </option>
@@ -274,8 +314,8 @@ export function Dashboard() {
                   </div>
                 )}
 
-                {/* Bot Detection Report Download - Only show when user is selected */}
-                {user?.isAdmin && selectedUserId && (
+                {/* Bot Detection Report Download - Only show for admins when user is selected */}
+                {user?.isAdmin && !user?.isExternal && selectedUserId && (
                   <div className="relative group">
                     <button
                       onClick={() => handleDownloadBotReport('txt')}
@@ -370,8 +410,8 @@ export function Dashboard() {
           </div>
 
           {/* Time Stats - Today's Hustle only (no Weekly Marathon for admin) */}
-          {/* Hide Today's Hustle for users outside India */}
-          {isInIndia && (
+          {/* Hide Today's Hustle for external users and users outside India */}
+          {showDetailedMetrics && (
             <div className="grid grid-cols-1 gap-4">
               <TodaysHustle
                 key={`hustle-${refreshKey}`}
@@ -395,7 +435,15 @@ export function Dashboard() {
               </span>
             </div>
 
-            {isLoadingScreenshots ? (
+            {isScreenshotsForbidden ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+                <p className="text-red-600 font-medium text-lg">Access Denied</p>
+                <p className="text-gray-500 text-sm mt-2 max-w-md">
+                  You do not have permission to view this user's data. The URL may have been modified, or this user is not assigned to you.
+                </p>
+              </div>
+            ) : isLoadingScreenshots ? (
               <div className="flex items-center justify-center py-12">
                 <div className="text-gray-500">Loading screenshots...</div>
               </div>
@@ -408,7 +456,7 @@ export function Dashboard() {
                 userTimezone={user?.timezone}
                 developerTimezone={selectedDeveloperTimezone}
                 isViewingAsAdmin={isViewingAsAdmin}
-                isInIndia={isInIndia}
+                isInIndia={showDetailedMetrics}
               />
             )}
           </div>

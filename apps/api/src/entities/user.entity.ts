@@ -4,7 +4,7 @@ import { Session } from './session.entity';
 import { ActivityPeriod } from './activity-period.entity';
 import { Screenshot } from './screenshot.entity';
 
-export type UserRole = 'super_admin' | 'org_admin' | 'developer';
+export type UserRole = 'super_admin' | 'org_admin' | 'developer' | 'external';
 
 @Entity('users')
 export class User {
@@ -28,10 +28,14 @@ export class User {
 
   @Column({
     type: 'enum',
-    enum: ['super_admin', 'org_admin', 'developer'],
+    enum: ['super_admin', 'org_admin', 'developer', 'external'],
     default: 'developer'
   })
   role: UserRole;
+
+  // IDs of users assigned to this external user (only used when role is 'external')
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  assignedUserIds: string[];
 
   @Column({ type: 'varchar', nullable: true })
   organizationId: string;

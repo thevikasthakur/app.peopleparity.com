@@ -62,7 +62,7 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
               <p className="text-xs text-gray-500 mt-1">{user?.email}</p>
             </div>
 
-            {/* Manual Time Entry - Only for admins */}
+            {/* Manual Time Entry - Only for admins (not external) */}
             {(user?.role === 'super_admin' || user?.role === 'org_admin') && (
               <button
                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
@@ -73,7 +73,7 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
               </button>
             )}
 
-            {/* App Versions - Only for admins */}
+            {/* App Versions - Only for admins (not external) */}
             {(user?.role === 'super_admin' || user?.role === 'org_admin') && (
               <button
                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
@@ -84,7 +84,7 @@ export function ProfileDropdown({ user }: ProfileDropdownProps) {
               </button>
             )}
 
-            {/* User Management - Only for admins */}
+            {/* User Management - Only for admins (not external) */}
             {(user?.role === 'super_admin' || user?.role === 'org_admin') && (
               <button
                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"

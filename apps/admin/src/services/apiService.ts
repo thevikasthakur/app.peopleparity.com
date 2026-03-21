@@ -225,19 +225,26 @@ export const apiService = {
     name: string;
     password: string;
     organizationId?: string;
-    role: 'org_admin' | 'developer';
+    role: 'org_admin' | 'developer' | 'external';
+    assignedUserIds?: string[];
+    timezone?: string;
   }) {
     const response = await api.post('/users', data);
     return response.data;
   },
 
-  async updateUser(userId: string, data: { name?: string }) {
+  async updateUser(userId: string, data: { name?: string; timezone?: string }) {
     const response = await api.patch(`/users/${userId}`, data);
     return response.data;
   },
 
-  async updateUserRole(userId: string, role: 'org_admin' | 'developer') {
+  async updateUserRole(userId: string, role: 'org_admin' | 'developer' | 'external') {
     const response = await api.patch(`/users/${userId}/role`, { role });
+    return response.data;
+  },
+
+  async updateAssignedUsers(userId: string, assignedUserIds: string[]) {
+    const response = await api.patch(`/users/${userId}/assigned-users`, { assignedUserIds });
     return response.data;
   },
 

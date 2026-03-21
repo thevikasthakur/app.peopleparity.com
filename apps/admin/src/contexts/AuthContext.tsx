@@ -8,6 +8,7 @@ interface User {
   role?: string;
   isAdmin?: boolean;
   isDeveloper?: boolean;
+  isExternal?: boolean;
   timezone?: string;
 }
 
@@ -41,7 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const enrichedUserData = {
             ...userData,
             isDeveloper: userData.role === 'developer',
-            isAdmin: isAdminRole
+            isAdmin: isAdminRole,
+            isExternal: userData.role === 'external',
           };
           console.log('CheckAuth - User role:', userData.role, 'isAdmin:', isAdminRole, 'userData:', enrichedUserData);
           setUser(enrichedUserData);
@@ -71,7 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = {
         ...response.user,
         isDeveloper: response.user.role === 'developer',
-        isAdmin: isAdminRole
+        isAdmin: isAdminRole,
+        isExternal: response.user.role === 'external',
       };
       console.log('Login - User role:', response.user.role, 'isAdmin:', isAdminRole, 'userData:', userData);
       setUser(userData);
@@ -95,7 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const enrichedUserData = {
           ...userData,
           isDeveloper: userData.role === 'developer',
-          isAdmin: isAdminRole
+          isAdmin: isAdminRole,
+          isExternal: userData.role === 'external',
         };
         setUser(enrichedUserData);
       } catch (error) {

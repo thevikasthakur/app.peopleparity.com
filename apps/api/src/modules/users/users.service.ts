@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity';
 import { Organization } from '../../entities/organization.entity';
 import { Project } from '../../entities/project.entity';
@@ -62,7 +62,9 @@ export class UsersService {
     name: string;
     password: string;
     organizationId?: string;
-    role: 'org_admin' | 'developer';
+    role: 'org_admin' | 'developer' | 'external';
+    assignedUserIds?: string[];
+    timezone?: string;
   }) {
     const existingUser = await this.findByEmail(createUserDto.email);
     if (existingUser) {
@@ -71,9 +73,12 @@ export class UsersService {
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
+    const { assignedUserIds, timezone, ...rest } = createUserDto;
     const user = this.usersRepository.create({
-      ...createUserDto,
+      ...rest,
       password: hashedPassword,
+      assignedUserIds: createUserDto.role === 'external' ? (assignedUserIds || []) : null,
+      ...(timezone ? { timezone } : {}),
     });
 
     return this.usersRepository.save(user);
@@ -114,7 +119,7 @@ export class UsersService {
     });
   }
 
-  async updateRole(userId: string, role: 'org_admin' | 'developer') {
+  async updateRole(userId: string, role: 'org_admin' | 'developer' | 'external') {
     const user = await this.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -125,7 +130,39 @@ export class UsersService {
     }
 
     user.role = role;
+    // Clear assignedUserIds if changing away from external
+    if (role !== 'external') {
+      user.assignedUserIds = null;
+    }
     return this.usersRepository.save(user);
+  }
+
+  async updateAssignedUsers(userId: string, assignedUserIds: string[]) {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role !== 'external') {
+      throw new ConflictException('Only external users can have assigned users');
+    }
+
+    user.assignedUserIds = assignedUserIds;
+    return this.usersRepository.save(user);
+  }
+
+  async getAssignedUsers(userId: string) {
+    const user = await this.findById(userId);
+    if (!user || user.role !== 'external' || !user.assignedUserIds?.length) {
+      return [];
+    }
+
+    const users = await this.usersRepository.find({
+      where: { id: In(user.assignedUserIds) },
+      relations: ['organization'],
+      order: { name: 'ASC' },
+    });
+    return users;
   }
 
   async deactivate(userId: string) {
@@ -198,7 +235,7 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
-  async updateUser(userId: string, updates: { name?: string }) {
+  async updateUser(userId: string, updates: { name?: string; timezone?: string }) {
     const user = await this.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -206,6 +243,9 @@ export class UsersService {
 
     if (updates.name !== undefined) {
       user.name = updates.name;
+    }
+    if (updates.timezone !== undefined) {
+      user.timezone = updates.timezone;
     }
 
     return this.usersRepository.save(user);
